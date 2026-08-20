@@ -1,2 +1,11 @@
 .worktrees/
 .superpowers/
+node_modules/
+.next/
+out/
+api-dist/
+api/dist/
+playwright-report/
+test-results/
+coverage/
+*.tsbuildinfo

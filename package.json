@@ -1,0 +1,39 @@
+{
+  "name": "inf-aserdargun-com",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.22.0",
+  "engines": { "node": ">=22.0.0 <23" },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3000",
+    "build": "next build",
+    "api:build": "pnpm --filter @inf/api build && pnpm --filter @inf/api deploy --prod api-dist",
+    "artifact:verify": "node scripts/verify-artifacts.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit && pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm api:build && pnpm artifact:verify && git diff --check"
+  },
+  "dependencies": {
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@azure/static-web-apps-cli": "2.0.10",
+    "@eslint/js": "9.39.1",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.1",
+    "playwright": "1.62.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}

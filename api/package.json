@@ -1,0 +1,21 @@
+{
+  "name": "@inf/api",
+  "private": true,
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "files": ["dist", "host.json"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@azure/functions": "4.16.2",
+    "googleapis": "176.0.0",
+    "sharp": "0.35.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "7.0.2"
+  }
+}
