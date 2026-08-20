@@ -1,3 +1,4 @@
+import babelParser from "@babel/eslint-parser";
 import js from "@eslint/js";
 
 export default [
@@ -13,6 +14,29 @@ export default [
     ]
   },
   js.configs.recommended,
+  {
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      parser: babelParser,
+      globals: {
+        console: "readonly",
+        process: "readonly"
+      },
+      parserOptions: {
+        requireConfigFile: false,
+        babelOptions: {
+          babelrc: false,
+          configFile: false,
+          parserOpts: {
+            plugins: ["typescript", "jsx"]
+          }
+        }
+      }
+    },
+    rules: {
+      "no-unused-vars": "off"
+    }
+  },
   {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
