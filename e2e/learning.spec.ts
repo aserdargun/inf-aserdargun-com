@@ -12,10 +12,10 @@ const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 test("surprise makes one persisted selection per intent without seen posts or rerender duplicates", async ({ page }) => {
   let surpriseCalls = 0;
   let seenPosts = 0;
-  let held: import("playwright/test").Route | undefined;
+  const heldRoutes = new Map<number, import("playwright/test").Route>();
   await page.route("**/api/surprise", async (route) => {
     surpriseCalls += 1;
-    if (surpriseCalls === 2 || surpriseCalls === 4) { held = route; return; }
+    if (surpriseCalls === 2 || surpriseCalls === 4) { heldRoutes.set(surpriseCalls, route); return; }
     const title = surpriseCalls === 3 ? "Third diagram" : surpriseCalls === 5 ? "Fresh diagram" : "Reviewable diagram";
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title } }) });
   });
@@ -30,10 +30,10 @@ test("surprise makes one persisted selection per intent without seen posts or re
   expect(surpriseCalls).toBe(1);
   expect(seenPosts).toBe(0);
   await page.getByRole("button", { name: "Show another" }).click();
-  await expect.poll(() => held !== undefined).toBeTruthy();
+  await expect.poll(() => heldRoutes.has(2)).toBe(true);
   await expect(page.getByRole("button", { name: "Show another" })).toBeDisabled();
   expect(surpriseCalls).toBe(2);
-  await held!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Second diagram" } }) });
+  await heldRoutes.get(2)!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Second diagram" } }) });
   await expect(page.getByRole("img", { name: "Second diagram" })).toBeVisible();
   await page.getByRole("button", { name: "Switch to light theme" }).dispatchEvent("click");
   await page.getByRole("img", { name: "Second diagram" }).evaluate((image) => image.dispatchEvent(new Event("load")));
@@ -42,11 +42,12 @@ test("surprise makes one persisted selection per intent without seen posts or re
   await expect(page.getByRole("img", { name: "Third diagram" })).toBeVisible();
   expect(surpriseCalls).toBe(3);
   await page.getByRole("button", { name: "Show another" }).click();
-  await expect.poll(() => held !== undefined).toBeTruthy();
+  await expect.poll(() => heldRoutes.has(4)).toBe(true);
+  const staleHeld = heldRoutes.get(4)!;
   await page.goto("/settings/");
   await page.goto("/surprise/");
   await expect(page.getByRole("img", { name: "Fresh diagram" })).toBeVisible();
-  await held!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Stale diagram" } }) }).catch(() => undefined);
+  await staleHeld.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Stale diagram" } }) }).catch(() => undefined);
   await expect(page.getByRole("img", { name: "Fresh diagram" })).toBeVisible();
   expect(seenPosts).toBe(0);
 });
@@ -55,14 +56,17 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   let dueCalls = 0;
   let reviewCalls = 0;
   let releaseReview: (() => void) | undefined;
+  const persisted: Array<{ id: string; rating: string }> = [];
   await page.route("**/api/review", async (route) => {
     dueCalls += 1;
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: dueCalls === 1 ? [item] : [] }) });
   });
   await page.route(`**/api/infographics/${item.id}/reviews`, async (route) => {
     reviewCalls += 1;
+    const request = route.request();
+    persisted.push({ id: new URL(request.url()).pathname.split("/")[3], rating: JSON.parse(request.postData() ?? "{}").rating });
     await new Promise<void>((resolve) => { releaseReview = resolve; });
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "00000000-0000-4000-8000-000000000013", infographicId: item.id, rating: "good", reviewedAt: "2026-08-21T10:00:00.000Z", previousIntervalDays: null, intervalDays: 7, dueAt: "2026-08-28T10:00:00.000Z" }) });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "00000000-0000-4000-8000-000000000013", infographicId: item.id, rating: persisted[0]?.rating, reviewedAt: "2026-08-21T10:00:00.000Z", previousIntervalDays: null, intervalDays: 7, dueAt: "2026-08-28T10:00:00.000Z" }) });
   });
   await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: png }));
   await page.goto("/review/");
@@ -72,6 +76,7 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   await expect(page.getByRole("button", { name: /Good/ })).toBeDisabled();
   await page.keyboard.press("3");
   expect(reviewCalls).toBe(1);
+  expect(persisted).toEqual([{ id: item.id, rating: "good" }]);
   releaseReview!();
   await expect(page.getByText("Review saved.", { exact: true })).toBeVisible();
   await expect(page.getByText("You are caught up.", { exact: true })).toBeVisible();
