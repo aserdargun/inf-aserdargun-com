@@ -6,9 +6,12 @@
   "files": ["dist", "host.json"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "vitest": "vitest"
   },
   "dependencies": {
+    "@inf/contracts": "workspace:0.1.0",
     "@azure/functions": "4.16.2",
     "googleapis": "176.0.0",
     "sharp": "0.35.3",
@@ -16,6 +19,7 @@
   },
   "devDependencies": {
     "@types/node": "24.10.1",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }

@@ -1,7 +1,5 @@
 import { z } from "zod";
 import {
-  DriveFolderStateSchema,
-  ImageMimeTypeSchema,
   PublicSafeTitleSchema,
   UtcDateTimeSchema,
   UuidSchema,
@@ -10,15 +8,9 @@ import {
 export const PublicInfographicSchema = z.strictObject({
   id: UuidSchema,
   title: PublicSafeTitleSchema,
-  thumbnailDriveFileId: z.string().min(1),
-  detectedMimeType: ImageMimeTypeSchema,
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-  capturedAt: UtcDateTimeSchema,
-  categoryIds: z.array(UuidSchema),
-  tagIds: z.array(UuidSchema),
-  archived: z.boolean(),
-  folderState: DriveFolderStateSchema,
+  publishedAt: UtcDateTimeSchema,
+  thumbnailUrl: z.string().startsWith("/api/public/images/"),
+  imageUrl: z.string().startsWith("/api/public/images/"),
 });
 
 export const PublicCatalogResponseSchema = z.array(PublicInfographicSchema);

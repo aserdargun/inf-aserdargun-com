@@ -38,7 +38,7 @@ export default [
     }
   },
   {
-    files: ["packages/contracts/**/*.ts", "packages/domain/**/*.ts"],
+    files: ["api/**/*.ts", "packages/contracts/**/*.ts", "packages/domain/**/*.ts"],
     rules: {
       "no-undef": "off"
     }
