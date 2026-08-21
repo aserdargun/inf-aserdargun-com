@@ -130,7 +130,10 @@ export async function exchangeAuthorizationCode({ clientId, clientSecret, code, 
   const response = await fetchImpl("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
   const value = await response.json();
   if (!response.ok || typeof value.access_token !== "string" || typeof value.refresh_token !== "string") throw new Error("OAuth code exchange did not return the required tokens.");
-  return { accessToken: value.access_token, refreshToken: value.refresh_token };
+  if (typeof value.scope !== "string" || value.scope.length === 0 || value.scope.trim() !== value.scope || !/^[^\s]+(?: [^\s]+)*$/.test(value.scope)) throw new Error("OAuth code exchange returned missing or malformed granted scope metadata.");
+  const grantedScopes = value.scope.split(" ");
+  if (!grantedScopes.includes(scope)) throw new Error("OAuth authorization did not grant the required full Drive scope.");
+  return { accessToken: value.access_token, refreshToken: value.refresh_token, grantedScopes };
 }
 
 export async function verifyDriveOwner(accessToken, expectedOwner = EXPECTED_OWNER, fetchImpl = globalThis.fetch) {
@@ -139,6 +142,13 @@ export async function verifyDriveOwner(accessToken, expectedOwner = EXPECTED_OWN
   const emailAddress = value?.user?.emailAddress;
   if (!response.ok || typeof emailAddress !== "string" || emailAddress.toLowerCase() !== expectedOwner.toLowerCase()) throw new Error("Drive owner verification failed.");
   return { emailAddress, displayName: typeof value.user.displayName === "string" ? value.user.displayName : "" };
+}
+
+export async function completeDriveAuthorization({ envFile, clientId, clientSecret, code, verifier, redirectUri, expectedOwner = EXPECTED_OWNER, fetchImpl = globalThis.fetch }) {
+  const tokens = await exchangeAuthorizationCode({ clientId, clientSecret, code, verifier, redirectUri, fetchImpl });
+  const owner = await verifyDriveOwner(tokens.accessToken, expectedOwner, fetchImpl);
+  await updateEnvironmentFile(envFile, { GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret, GOOGLE_REFRESH_TOKEN: tokens.refreshToken });
+  return { owner, grantedScopes: tokens.grantedScopes };
 }
 
 export async function createOAuthCallbackSession(expectedState, { timeoutMs = 300_000 } = {}) {
@@ -191,9 +201,7 @@ async function authorize(envFile) {
     const requestDetails = createOAuthRequest(env.GOOGLE_CLIENT_ID, callback.redirectUri, { state });
     process.stdout.write(`Open this owner-consent URL (full Drive scope is required for the existing shared root and manually uploaded files):\n${requestDetails.url}\n`);
     const authorizationCode = await callback.code;
-    const tokens = await exchangeAuthorizationCode({ clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, code: authorizationCode, verifier: requestDetails.verifier, redirectUri: callback.redirectUri });
-    const owner = await verifyDriveOwner(tokens.accessToken);
-    await updateEnv(envFile, { GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN: tokens.refreshToken });
+    const { owner } = await completeDriveAuthorization({ envFile, clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, code: authorizationCode, verifier: requestDetails.verifier, redirectUri: callback.redirectUri });
     process.stdout.write(`Drive owner ${owner.emailAddress} verified; credentials stored with mode 0600 in ${envFile}. Secret values were not printed.\n`);
   } finally { await callback.close(); }
 }

@@ -52,10 +52,10 @@ test("OAuth exchange sends PKCE verifier and owner verification rejects a differ
   let exchangeBody = "";
   const fetchExchange = async (_url, init) => {
     exchangeBody = String(init.body);
-    return new globalThis.Response(JSON.stringify({ access_token: "access-value", refresh_token: "refresh-value" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new globalThis.Response(JSON.stringify({ access_token: "access-value", refresh_token: "refresh-value", scope: "https://www.googleapis.com/auth/drive" }), { status: 200, headers: { "content-type": "application/json" } });
   };
   const tokens = await driveRelease.exchangeAuthorizationCode({ clientId: "client-id", clientSecret: "client-secret", code: "authorization-code", verifier: "pkce-verifier", redirectUri: "http://127.0.0.1:30001/oauth/callback", fetchImpl: fetchExchange });
-  assert.deepEqual(tokens, { accessToken: "access-value", refreshToken: "refresh-value" });
+  assert.deepEqual(tokens, { accessToken: "access-value", refreshToken: "refresh-value", grantedScopes: ["https://www.googleapis.com/auth/drive"] });
   const body = new URLSearchParams(exchangeBody);
   assert.equal(body.get("code_verifier"), "pkce-verifier");
   assert.equal(body.get("code"), "authorization-code");
@@ -63,6 +63,55 @@ test("OAuth exchange sends PKCE verifier and owner verification rejects a differ
 
   const fetchOwner = async () => new globalThis.Response(JSON.stringify({ user: { emailAddress: "different@example.com", displayName: "Different" } }), { status: 200 });
   await assert.rejects(driveRelease.verifyDriveOwner("access-value", "aserdargun@gmail.com", fetchOwner), /owner/i);
+});
+
+test("OAuth exchange fails closed unless the exact full Drive scope token was granted", async () => {
+  const rejectedScopes = [
+    undefined,
+    null,
+    42,
+    "",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/drive-prefix",
+    "prefix-https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive/suffix",
+    "https://www.googleapis.com/auth/drive\thttps://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive  https://www.googleapis.com/auth/drive.file",
+  ];
+  for (const grantedScope of rejectedScopes) {
+    const fetchImpl = async () => new globalThis.Response(JSON.stringify({ access_token: "access-value", refresh_token: "refresh-value", scope: grantedScope }), { status: 200 });
+    await assert.rejects(
+      driveRelease.exchangeAuthorizationCode({ clientId: "client-id", clientSecret: "client-secret", code: "authorization-code", verifier: "pkce-verifier", redirectUri: "http://127.0.0.1:30001/oauth/callback", fetchImpl }),
+      /scope/i,
+      `scope ${String(grantedScope)} must be rejected`,
+    );
+  }
+
+  const fetchWithAdditionalScope = async () => new globalThis.Response(JSON.stringify({
+    access_token: "access-value", refresh_token: "refresh-value",
+    scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive",
+  }), { status: 200 });
+  await assert.doesNotReject(() => driveRelease.exchangeAuthorizationCode({ clientId: "client-id", clientSecret: "client-secret", code: "authorization-code", verifier: "pkce-verifier", redirectUri: "http://127.0.0.1:30001/oauth/callback", fetchImpl: fetchWithAdditionalScope }));
+});
+
+test("a rejected OAuth scope cannot modify the credential handoff file", async () => {
+  assert.equal(typeof driveRelease.completeDriveAuthorization, "function");
+  const root = await mkdtemp(join(tmpdir(), "inf-oauth-scope-"));
+  const envFile = join(root, "handoff.env");
+  const original = "GOOGLE_CLIENT_ID=client-id\nGOOGLE_CLIENT_SECRET=secret-value\nUNCHANGED=exact-bytes\n";
+  try {
+    await writeFile(envFile, original, { mode: 0o600 });
+    const fetchImpl = async () => new globalThis.Response(JSON.stringify({
+      access_token: "access-value", refresh_token: "refresh-value", scope: "https://www.googleapis.com/auth/drive.file",
+    }), { status: 200 });
+    await assert.rejects(driveRelease.completeDriveAuthorization({
+      envFile, clientId: "client-id", clientSecret: "secret-value", code: "authorization-code", verifier: "pkce-verifier",
+      redirectUri: "http://127.0.0.1:30001/oauth/callback", fetchImpl,
+    }), /scope/i);
+    assert.equal(await readFile(envFile, "utf8"), original);
+    assert.equal((await stat(envFile)).mode & 0o777, 0o600);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("OAuth callback listens only on loopback, validates state, and times out within a bound", async () => {

@@ -154,9 +154,11 @@ const task15LiveReady = process.env.INF_DRIVE_INTEGRATION === "1"
   && Boolean(process.env.GOOGLE_CLIENT_ID)
   && Boolean(process.env.GOOGLE_CLIENT_SECRET)
   && Boolean(process.env.GOOGLE_REFRESH_TOKEN);
+const liveDriveTestTimeoutMs = 110_000;
 
 (task15LiveReady ? test : test.skip)(
   "live Drive adapter isolates create/read/property-search/move/ancestry/trash in the restricted test root",
+  { timeout: liveDriveTestTimeoutMs },
   async () => {
     const testRootId = process.env.INF_DRIVE_TEST_ROOT_ID!;
     const credentials = {
