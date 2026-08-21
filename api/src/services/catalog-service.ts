@@ -1,5 +1,5 @@
 import { compareUtcInstants, foldEvents, searchCatalog, selectWeighted, sortDueItems, utcInstantFrom } from "@inf/domain";
-import type { MaterializedCatalog, MaterializedInfographic } from "@inf/contracts";
+import type { MaterializedCatalog, MaterializedInfographic, OwnerCatalogQuery } from "@inf/contracts";
 import type { EventStore } from "../storage/event-store.js";
 import { AppError } from "../http/errors.js";
 
@@ -20,8 +20,20 @@ export class CatalogService {
     return item;
   }
 
-  list(snapshot: CatalogSnapshot, query?: string): MaterializedInfographic[] {
-    return query === undefined ? snapshot.infographics : searchCatalog(snapshot.infographics, query, snapshot.catalog);
+  /** The owner Library query is a single server-side meaning for normalized search, filters, and stable sorting. */
+  libraryList(snapshot: CatalogSnapshot, query: OwnerCatalogQuery): MaterializedInfographic[] {
+    const categoryIds = query.category === undefined ? undefined : new Set(snapshot.catalog.categories.filter((entry) => entry.slug === query.category).map((entry) => entry.id));
+    const tagIds = query.tag === undefined ? undefined : new Set(snapshot.catalog.tags.filter((entry) => entry.slug === query.tag).map((entry) => entry.id));
+    if (categoryIds?.size === 0 || tagIds?.size === 0) return [];
+    const searched = query.q === undefined ? snapshot.infographics : searchCatalog(snapshot.infographics, query.q, snapshot.catalog);
+    return searched.filter((item) => item.folderState === "Library" && !item.archived)
+      .filter((item) => categoryIds === undefined || item.categoryIds.some((id) => categoryIds.has(id)))
+      .filter((item) => tagIds === undefined || item.tagIds.some((id) => tagIds.has(id)))
+      .filter((item) => query.favorite === undefined || item.favorite === query.favorite)
+      .filter((item) => query.source === undefined || (query.source ? item.sourceUrl !== null : item.sourceUrl === null))
+      .sort((left, right) => query.sort === "least-seen"
+        ? (left.lastSeenAt ?? "").localeCompare(right.lastSeenAt ?? "") || left.id.localeCompare(right.id)
+        : right.capturedAt.localeCompare(left.capturedAt) || left.id.localeCompare(right.id));
   }
 
   surprise(snapshot: CatalogSnapshot, owner: string, now: Date): MaterializedInfographic | null {

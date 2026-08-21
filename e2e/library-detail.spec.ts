@@ -17,11 +17,15 @@ async function mockLibrary(page: import("playwright/test").Page, options: { dele
   let deleted = false;
   let deleteCalls = 0;
   let publicCatalogCalls = 0;
+  const catalogRequests: string[] = [];
   let releaseDelete: (() => void) | undefined;
   await page.route("**/api/infographics**", async (route) => {
     const request = route.request();
-    if (request.url().endsWith("/api/infographics") && request.method() === "GET") {
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: deleted ? [] : [current], categories: [category], tags: [tag] }) });
+    const url = new URL(request.url());
+    if (url.pathname === "/api/infographics" && request.method() === "GET") {
+      catalogRequests.push(url.search);
+      const filtered = url.searchParams.get("q") === "absent";
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: deleted || filtered ? [] : [current], categories: [category], tags: [tag] }) });
     }
     if (request.url().endsWith(`/api/infographics/${item.id}`) && request.method() === "GET") {
       return deleted ? route.fulfill({ status: 404, contentType: "application/json", body: "{}" }) : route.fulfill({ contentType: "application/json", body: JSON.stringify(current) });
@@ -40,17 +44,28 @@ async function mockLibrary(page: import("playwright/test").Page, options: { dele
   });
   await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
   await page.route("**/api/public/infographics**", (route) => { publicCatalogCalls += 1; return route.fulfill({ contentType: "application/json", body: "[]" }); });
-  return { patches, deleteCalls: () => deleteCalls, publicCatalogCalls: () => publicCatalogCalls, releaseDelete: () => releaseDelete?.() };
+  return { patches, deleteCalls: () => deleteCalls, publicCatalogCalls: () => publicCatalogCalls, catalogRequests, releaseDelete: () => releaseDelete?.() };
 }
 
-test("searches, restores filters, opens detail, favorites, archives, and confirms deletion", async ({ page }) => {
+test("searches, restores all server query filters through history, opens detail, favorites, archives, and confirms deletion", async ({ page }) => {
   const mock = await mockLibrary(page);
   await page.goto("/library/?q=%20MEMORY%20&category=gpu&tag=memory&sort=recent");
   await expect(page.getByRole("link", { name: "Open Memory hierarchy" })).toBeVisible();
   await expect(page.getByLabel("Search library")).toHaveValue("MEMORY");
   await expect(page.getByLabel("Category")).toHaveValue("gpu");
+  await expect(page.getByLabel("Tag")).toHaveValue("memory");
   await page.reload();
   await expect(page.getByRole("link", { name: "Open Memory hierarchy" })).toBeVisible();
+  await expect.poll(() => mock.catalogRequests.some((search) => search.includes("q=MEMORY") && search.includes("category=gpu") && search.includes("tag=memory") && search.includes("sort=recent"))).toBeTruthy();
+  await page.getByLabel("Favorite").check();
+  await page.getByLabel("Source").check();
+  await expect(page).toHaveURL(/favorite=true.*source=true/);
+  await page.goBack();
+  await expect(page.getByLabel("Favorite")).toBeChecked();
+  await expect(page.getByLabel("Source")).not.toBeChecked();
+  await page.goForward();
+  await expect(page.getByLabel("Favorite")).toBeChecked();
+  await expect(page.getByLabel("Source")).toBeChecked();
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-11-library-desktop.png" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-11-library-mobile.png" });
@@ -70,6 +85,10 @@ test("searches, restores filters, opens detail, favorites, archives, and confirm
   const deleteTrigger = page.getByRole("button", { name: "Delete" });
   await deleteTrigger.click();
   await expect(page.getByRole("dialog", { name: "Delete infographic?" })).toContainText("Memory hierarchy will be moved to Trash.");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Delete infographic?" })).toBeHidden();
+  await expect(deleteTrigger).toBeFocused();
+  await deleteTrigger.click();
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(deleteTrigger).toBeFocused();
   await deleteTrigger.click();
@@ -91,13 +110,15 @@ test("prevents a duplicate delete and keeps a failed delete generic", async ({ p
 });
 
 test("renders Library loading, empty, no-results, and safe error states", async ({ page }) => {
-  await page.route("**/api/infographics", () => new Promise(() => undefined));
+  await page.route("**/api/infographics**", () => new Promise(() => undefined));
   await page.goto("/library/");
   await expect(page.getByText("Loading Library…", { exact: true })).toBeVisible();
   await page.unrouteAll();
-  await page.route("**/api/infographics", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [], tags: [] }) }));
+  await page.route("**/api/infographics**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [], tags: [] }) }));
   await page.reload();
   await expect(page.getByText("Library is empty.", { exact: true })).toBeVisible();
+  await page.goto("/library/?q=absent&favorite=true");
+  await expect(page.getByText("No infographics match these filters.", { exact: true })).toBeVisible();
   await page.unrouteAll();
   await mockLibrary(page);
   await page.goto("/library/?q=absent");
@@ -105,7 +126,7 @@ test("renders Library loading, empty, no-results, and safe error states", async 
   await page.getByLabel("Library filters").getByRole("button", { name: "Clear filters" }).click();
   await expect(page).toHaveURL(/\/library\/$/);
   await page.unrouteAll();
-  await page.route("**/api/infographics", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/infographics**", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
   await page.reload();
   await expect(page.getByText("Library could not be loaded. Try again.", { exact: true })).toBeVisible();
 });

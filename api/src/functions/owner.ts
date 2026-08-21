@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, ReviewRequestSchema, SyncRequestSchema, type Category } from "@inf/contracts";
+import { CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, OwnerCatalogQuerySchema, ReviewRequestSchema, SyncRequestSchema, type Category, type OwnerCatalogQuery } from "@inf/contracts";
 import { authorizeOwner } from "../auth/authorize.js";
 import { AppError, emptyResponse, errorResponse, jsonResponse, type HttpResponse } from "../http/errors.js";
 import { optionalFormString, parseJson, parseMultipart, uuidPath, type RequestLike } from "../http/parse.js";
@@ -75,12 +75,29 @@ function event(deps: OwnerDependencies, type: string, infographicId: string, pay
   return InfEventSchema.parse({ eventId: uuid(deps), schemaVersion: 1, type, occurredAt: now(deps).toISOString(), infographicId, payload });
 }
 
+function catalogQuery(request: RequestLike): OwnerCatalogQuery | undefined {
+  let params: URLSearchParams;
+  try { params = new URL(request.url).searchParams; } catch { throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid"); }
+  if ([...params].length === 0) return undefined;
+  const raw: Record<string, string> = {};
+  for (const [key, value] of params) {
+    if (key in raw) throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid");
+    raw[key] = value;
+  }
+  const parsed = OwnerCatalogQuerySchema.safeParse(raw);
+  if (!parsed.success) throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid");
+  return parsed.data;
+}
+
 export function ownerSession(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
   return owner(request, deps, async (_snapshot, mode) => jsonResponse({ authenticated: true, owner: deps.allowedGithubUser, mode }));
 }
 
 export function ownerList(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
-  return owner(request, deps, async (snapshot) => jsonResponse({ infographics: snapshot.infographics, categories: snapshot.catalog.categories, tags: snapshot.catalog.tags }));
+  return owner(request, deps, async (snapshot) => {
+    const query = catalogQuery(request); const catalog = new CatalogService(deps.events);
+    return jsonResponse({ infographics: query === undefined ? snapshot.infographics : catalog.libraryList(snapshot, query), categories: snapshot.catalog.categories, tags: snapshot.catalog.tags });
+  });
 }
 
 export function ownerGet(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {

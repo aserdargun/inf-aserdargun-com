@@ -64,6 +64,16 @@ export const OwnerCatalogResponseSchema = z.strictObject({
   tags: z.array(TagSchema),
 });
 
+const CatalogQuerySlugSchema = z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80);
+export const OwnerCatalogQuerySchema = z.strictObject({
+  q: z.string().trim().min(1).max(200).optional(),
+  category: CatalogQuerySlugSchema.optional(),
+  tag: CatalogQuerySlugSchema.optional(),
+  favorite: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
+  source: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
+  sort: z.enum(["recent", "least-seen"]).optional(),
+});
+
 export const ReviewResponseSchema = ReviewRecordSchema;
 export const DueReviewResponseSchema = z.strictObject({ infographics: z.array(MaterializedInfographicSchema) });
 export const SurpriseResponseSchema = z.strictObject({ infographic: MaterializedInfographicSchema.nullable() });
@@ -85,5 +95,6 @@ export type CaptureMetadata = z.infer<typeof CaptureMetadataSchema>;
 export type InfographicPatch = z.infer<typeof InfographicPatchSchema>;
 export type ReviewRequest = z.infer<typeof ReviewRequestSchema>;
 export type OwnerCatalogResponse = z.infer<typeof OwnerCatalogResponseSchema>;
+export type OwnerCatalogQuery = z.infer<typeof OwnerCatalogQuerySchema>;
 export type DueReviewResponse = z.infer<typeof DueReviewResponseSchema>;
 export type SettingsStatsResponse = z.infer<typeof SettingsStatsResponseSchema>;

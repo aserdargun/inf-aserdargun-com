@@ -82,6 +82,29 @@ describe("owner HTTP API", () => {
     expect((await ownerGet(request(`/api/infographics/${infographicId}`), deps)).status).toBe(200);
   });
 
+  test("validates and executes deterministic owner Library query parameters without weakening owner access", async () => {
+    const { deps, events } = fixture();
+    const tag = { id: "00000000-0000-4000-8000-000000000098", displayName: "Memory", normalizedName: "memory", slug: "memory" };
+    const secondId = "00000000-0000-4000-8000-000000000003";
+    events.push(
+      { eventId: "00000000-0000-4000-8000-000000000090", schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: "2026-08-20T10:01:00.000Z", infographicId, payload: { categories: [category] } },
+      { eventId: "00000000-0000-4000-8000-000000000091", schemaVersion: 1, type: "infographic.tagsAssigned", occurredAt: "2026-08-20T10:02:00.000Z", infographicId, payload: { tags: [tag] } },
+      { eventId: "00000000-0000-4000-8000-000000000092", schemaVersion: 1, type: "infographic.favoriteChanged", occurredAt: "2026-08-20T10:03:00.000Z", infographicId, payload: { favorite: true } },
+      { eventId: "00000000-0000-4000-8000-000000000093", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: "b".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU reference", notes: null, sourceUrl: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Inbox" } },
+      { eventId: "00000000-0000-4000-8000-000000000094", schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: "2026-08-21T10:01:00.000Z", infographicId: secondId, payload: { categories: [category] } },
+      { eventId: "00000000-0000-4000-8000-000000000095", schemaVersion: 1, type: "infographic.seen", occurredAt: "2026-08-21T10:02:00.000Z", infographicId: secondId, payload: {} },
+    );
+    const response = await ownerList(request("/api/infographics?q=%20GPU%20&category=gpu&tag=memory&favorite=true&source=true&sort=least-seen"), deps);
+    expect(response.status).toBe(200);
+    expect(await json(response)).toMatchObject({ infographics: [expect.objectContaining({ id: infographicId, favorite: true, notes: "private" })], categories: [category], tags: [tag] });
+    expect((await json(await ownerList(request("/api/infographics?category=gpu&sort=recent"), deps))).infographics.map((entry: { id: string }) => entry.id)).toEqual([secondId, infographicId]);
+    expect((await json(await ownerList(request("/api/infographics?category=gpu&sort=least-seen"), deps))).infographics.map((entry: { id: string }) => entry.id)).toEqual([infographicId, secondId]);
+    expect((await ownerList(request("/api/infographics?favorite=maybe"), deps)).status).toBe(400);
+    expect((await ownerList(request("/api/infographics?q=one&q=two"), deps)).status).toBe(400);
+    expect((await ownerList(request("/api/infographics?unexpected=true"), deps)).status).toBe(400);
+    expect((await ownerList(new Request("http://localhost/api/infographics?q=gpu"), deps)).status).toBe(401);
+  });
+
   test("rejects malformed sync, patch, delete, review, and multipart capture input", async () => {
     const { deps } = fixture();
     expect((await ownerSync(request("/api/sync", { method: "POST", body: "no", headers: { ...authorizingHeader, "content-type": "application/json" } }), deps)).status).toBe(400);
