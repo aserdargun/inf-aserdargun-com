@@ -3,12 +3,16 @@ export class ApiClientError extends Error {
   constructor(status: number, message = "Something went wrong. Try again.") { super(message); this.name = "ApiClientError"; this.status = status; }
 }
 
+function isAbort(error: unknown, signal?: AbortSignal | null) {
+  return signal?.aborted || (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError");
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(path, { ...init, headers: { Accept: "application/json", ...init?.headers }, credentials: "same-origin" }); }
-  catch (error) { if (init?.signal?.aborted) throw error; throw new ApiClientError(0, "Unable to reach INF. Try again."); }
+  catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(0, "Unable to reach INF. Try again."); }
   if (!response.ok) throw new ApiClientError(response.status);
   if (response.status === 204) return undefined as T;
   try { return await response.json() as T; }
-  catch { throw new ApiClientError(response.status, "INF returned an invalid response. Try again."); }
+  catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(response.status, "INF returned an invalid response. Try again."); }
 }

@@ -28,20 +28,22 @@ function catalogUrl(value: LibraryFiltersValue) {
 }
 
 export function LibraryPage() {
-  const [state, setState] = useState<LibraryState>("loading"); const [catalog, setCatalog] = useState<OwnerCatalogResponse | null>(null); const [filters, setFilters] = useState<LibraryFiltersValue>(defaultFilters); const [ready, setReady] = useState(false); const requestId = useRef(0); const lifecycle = useRef<AbortController | null>(null);
+  const [state, setState] = useState<LibraryState>("loading"); const [catalog, setCatalog] = useState<OwnerCatalogResponse | null>(null); const [filters, setFilters] = useState<LibraryFiltersValue>(defaultFilters); const [ready, setReady] = useState(false); const requestId = useRef(0); const activeRequest = useRef<AbortController | null>(null);
   const load = useCallback(async (nextFilters: LibraryFiltersValue) => {
-    const id = ++requestId.current; const signal = lifecycle.current?.signal;
+    const id = ++requestId.current; activeRequest.current?.abort(); const controller = new AbortController(); activeRequest.current = controller;
     setState("loading");
     try {
-      const next = await apiRequest<OwnerCatalogResponse>(catalogUrl(nextFilters), { signal });
+      const next = await apiRequest<OwnerCatalogResponse>(catalogUrl(nextFilters), { signal: controller.signal });
       if (id !== requestId.current) return;
       setCatalog(next); setState(next.infographics.length > 0 ? "success" : hasActiveFilters(nextFilters) ? "no-results" : "empty");
     } catch {
-      if (signal?.aborted || id !== requestId.current) return;
+      if (controller.signal.aborted || id !== requestId.current) return;
       setState("error");
+    } finally {
+      if (activeRequest.current === controller) activeRequest.current = null;
     }
   }, []);
-  useEffect(() => { const controller = new AbortController(); lifecycle.current = controller; const restore = () => setFilters(parseFilters()); restore(); setReady(true); window.addEventListener("popstate", restore); return () => { requestId.current += 1; controller.abort(); if (lifecycle.current === controller) lifecycle.current = null; window.removeEventListener("popstate", restore); }; }, []);
+  useEffect(() => { const restore = () => setFilters(parseFilters()); restore(); setReady(true); window.addEventListener("popstate", restore); return () => { requestId.current += 1; activeRequest.current?.abort(); activeRequest.current = null; window.removeEventListener("popstate", restore); }; }, []);
   useEffect(() => { if (ready) void load(filters); }, [filters, load, ready]);
   const updateFilters = useCallback((next: LibraryFiltersValue) => { setFilters(next); window.history.pushState(null, "", filterUrl(next)); }, []);
   const heading = <header className="library-page__header"><h1>Library</h1><p>Your organized infographics.</p></header>;

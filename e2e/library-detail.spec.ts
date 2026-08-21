@@ -132,7 +132,6 @@ test("keeps the latest URL query when an older Library response resolves last", 
   await delayedSecond!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [second], categories: [category], tags: [tag] }) });
   await expect(page.getByRole("link", { name: "Open Second query" })).toBeVisible();
   await delayedFirst!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [category], tags: [tag] }) });
-  await page.waitForTimeout(100);
   await expect(page).toHaveURL(/\/library\/\?q=second$/);
   await expect(search).toHaveValue("second");
   await expect(page.getByRole("link", { name: "Open Second query" })).toBeVisible();
