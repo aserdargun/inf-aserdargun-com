@@ -3,7 +3,7 @@ import { once } from "node:events";
 
 const local = spawn(process.execPath, ["scripts/local-dev.mjs"], {
   cwd: process.cwd(),
-  env: { ...process.env, INF_LOCAL_SKIP_API_BUILD: "true" },
+  env: { ...process.env, INF_LOCAL_SKIP_API_BUILD: "true", INF_LOCAL_WEB_ARTIFACT: "out" },
   stdio: "inherit",
 });
 let stopping = false;

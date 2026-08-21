@@ -24,7 +24,7 @@ test("owner sees Today navigation and primary learning actions", async ({ page }
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Inbox" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Library" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Add" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Add", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Review", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Surprise me" })).toBeVisible();
 });
@@ -53,10 +53,29 @@ test("persists an accessible keyboard theme choice", async ({ page }) => {
 });
 
 test("applies a persisted theme before the first client interaction", async ({ page }) => {
+  const hydrationProblems: string[] = [];
+  page.on("console", (message) => { if (/hydration|did not match/i.test(message.text())) hydrationProblems.push(message.text()); });
   await page.addInitScript(() => localStorage.setItem("inf-theme", "dark"));
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(page.getByRole("button", { name: "Switch to light theme" })).toBeVisible();
+  const toggle = page.getByRole("button", { name: "Switch to light theme" });
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(toggle).toHaveAttribute("title", "Switch to light theme");
+  await expect(toggle.locator("svg")).toHaveClass(/lucide-sun/);
+  expect(hydrationProblems).toEqual([]);
+});
+
+test("persisted dark bootstrap keeps the pre-hydration toggle semantically neutral", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("inf-theme", "dark"));
+  await page.route("**/_next/static/**", (route) => route.request().resourceType() === "script" ? route.abort() : route.continue());
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const toggle = page.getByRole("button", { name: "Color theme" });
+  await expect(toggle).toBeDisabled();
+  await expect(toggle).not.toHaveAttribute("aria-pressed", /.+/);
+  await expect(toggle).toHaveAttribute("title", "Color theme");
+  await expect(toggle.locator('[data-theme-icon="neutral"]')).toHaveCount(1);
 });
 
 test("shows loading, empty, error, and success Today states with exact copy", async ({ page }) => {

@@ -3,6 +3,42 @@ import { readFileSync } from "node:fs";
 
 const image = readFileSync("api/test/fixtures/valid-infographic.png");
 
+test("production-static routes enforce functional CSP and intentional cache headers", async ({ page, request }) => {
+  const violations: string[] = [];
+  page.on("console", (message) => { if (/content security policy|refused to (?:execute|load|apply)/i.test(message.text())) violations.push(message.text()); });
+  page.on("pageerror", (error) => { if (/content security policy/i.test(error.message)) violations.push(error.message); });
+  const viewHtml = readFileSync("out/view/index.html", "utf8");
+  const immutablePath = viewHtml.match(/\/(?:_next\/static\/[^"']+)/)?.[0];
+  expect(immutablePath).toBeTruthy();
+  const expected = [
+    ["/", "private, no-store"],
+    ["/view/", "public, max-age=0, must-revalidate"],
+    ["/manifest.webmanifest", "public, max-age=300, must-revalidate"],
+    ["/view/sw.js", "public, max-age=0, must-revalidate"],
+    [immutablePath!, "public, max-age=31536000, immutable"],
+  ];
+  let csp = "";
+  for (const [path, cache] of expected) {
+    const response = await request.get(path);
+    expect(response.status(), path).toBe(200);
+    expect(response.headers()["cache-control"], path).toBe(cache);
+    expect(response.headers()["referrer-policy"], path).toBe("no-referrer");
+    expect(response.headers()["x-content-type-options"], path).toBe("nosniff");
+    expect(response.headers()["x-frame-options"], path).toBe("DENY");
+    csp ||= response.headers()["content-security-policy"] ?? "";
+    expect(response.headers()["content-security-policy"], path).toBe(csp);
+  }
+  expect(csp).toContain("frame-ancestors 'none'");
+  expect(csp).toMatch(/script-src 'self' 'sha256-/);
+  expect(csp).not.toMatch(/script-src[^;]*(?:unsafe-inline|unsafe-eval|\*|https?:)/);
+  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.goto("/view/");
+  await expect(page.getByRole("heading", { name: "Infographics" })).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+  expect(violations).toEqual([]);
+});
+
 test("View Mode exposes a local manifest, icons, and non-blocking service-worker registration", async ({ page, request }) => {
   const external: string[] = [];
   page.on("request", (entry) => { if (new URL(entry.url()).origin !== "http://127.0.0.1:4280") external.push(entry.url()); });

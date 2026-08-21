@@ -80,7 +80,11 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   expect(dueCalls).toBe(1);
   await expect(page.getByRole("heading", { name: "Next review" })).toBeVisible();
   releaseReview!();
-  await expect(page.getByText("Review saved.", { exact: true })).toBeVisible();
+  const saved = page.getByText("Review saved.", { exact: true });
+  await expect(saved).toBeVisible();
+  await expect(saved).toHaveCSS("color", "rgb(22, 121, 74)");
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(saved).toHaveCSS("color", "rgb(79, 209, 139)");
   await expect(page.getByText("You are caught up.", { exact: true })).toBeVisible();
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-12-review-desktop.png" });
   expect(dueCalls).toBe(2);
@@ -110,6 +114,10 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   await page.route("**/api/settings/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...health, rawMalformedBody: "refresh_token=do-not-render" }) }));
   await page.goto("/settings/");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  const healthy = page.locator(".health--ok");
+  await expect(healthy.first()).toHaveCSS("color", "rgb(22, 121, 74)");
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(healthy.first()).toHaveCSS("color", "rgb(79, 209, 139)");
   await expect(page.getByText("INF does not use AI.", { exact: true })).toBeVisible();
   const rejectedFiles = page.getByRole("list", { name: "Rejected files" });
   await expect(rejectedFiles).toHaveAccessibleName("Rejected files");

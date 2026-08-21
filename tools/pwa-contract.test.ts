@@ -52,8 +52,12 @@ describe("public PWA contract", () => {
 
   test("links PWA metadata and confines registration to the public shell", () => {
     const layout = readFileSync(resolve(root, "app/layout.tsx"), "utf8");
+    const themeBootstrap = readFileSync(resolve(root, "public/theme-bootstrap.js"), "utf8");
     const registration = readFileSync(resolve(root, "features/pwa/service-worker-registration.tsx"), "utf8");
     expect(layout).toContain('manifest: "/manifest.webmanifest"');
+    expect(layout).toContain('<script src="/theme-bootstrap.js" />');
+    expect(layout).not.toContain("dangerouslySetInnerHTML");
+    expect(themeBootstrap).toContain('localStorage.getItem("inf-theme")');
     const shell = readFileSync(resolve(root, "components/public-shell.tsx"), "utf8");
     expect(layout).not.toContain("ServiceWorkerRegistration");
     expect(shell).toContain("ServiceWorkerRegistration");
@@ -67,7 +71,11 @@ describe("public PWA contract", () => {
     const workerIndex = swa.routes.findIndex((route: { route: string }) => route.route === "/view/sw.js");
     const shellIndex = swa.routes.findIndex((route: { route: string }) => route.route === "/view/*");
     expect(workerIndex).toBeGreaterThanOrEqual(0); expect(workerIndex).toBeLessThan(shellIndex);
-    expect(swa.routes[workerIndex]).toEqual({ route: "/view/sw.js", allowedRoles: ["anonymous"] });
+    expect(swa.routes[workerIndex]).toEqual({
+      route: "/view/sw.js",
+      allowedRoles: ["anonymous"],
+      headers: { "Cache-Control": "public, max-age=0, must-revalidate" },
+    });
     const worker = readFileSync(resolve(root, "out/view/sw.js"), "utf8");
     expect(worker).toContain("self.addEventListener");
     expect(worker).not.toContain("<html");

@@ -100,6 +100,8 @@ test("deployment contract parser accepts only the pinned non-domain production w
     ["wrong branch", validWorkflow.replace("      - main", "      - develop"), /main|branch/i],
     ["missing branch", validWorkflow.replace(/ {2}push:\n {4}branches:\n {6}- main\n/, "  push:\n"), /main|branch/i],
     ["missing dispatch", validWorkflow.replace("  workflow_dispatch:\n", ""), /dispatch/i],
+    ["self-hosted runner", validWorkflow.replace("runs-on: ubuntu-latest", "runs-on: self-hosted"), /ubuntu-latest|runner/i],
+    ["extra job", validWorkflow.replace("jobs:\n", "jobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pnpm lint\n"), /one|deploy job|topology/i],
     ["write permissions", validWorkflow.replace("contents: read", "contents: write"), /permission/i],
     ["missing permissions", validWorkflow.replace(/permissions:\n {2}contents: read\n\n/, ""), /permission/i],
     ["wrong concurrency", validWorkflow.replace("swa-inf-aserdargun-com-production", "deploy-swa-inf-aserdargun-com"), /concurrency/i],

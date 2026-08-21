@@ -2,24 +2,29 @@
   "routes": [
     {
       "route": "/view/sw.js",
-      "allowedRoles": ["anonymous"]
+      "allowedRoles": ["anonymous"],
+      "headers": { "Cache-Control": "public, max-age=0, must-revalidate" }
     },
     {
       "route": "/view/*",
       "rewrite": "/view/index.html",
-      "allowedRoles": ["anonymous"]
+      "allowedRoles": ["anonymous"],
+      "headers": { "Cache-Control": "public, max-age=0, must-revalidate" }
     },
     {
       "route": "/view*",
       "rewrite": "/view/index.html",
-      "allowedRoles": ["anonymous"]
+      "allowedRoles": ["anonymous"],
+      "headers": { "Cache-Control": "public, max-age=0, must-revalidate" }
     },
-    { "route": "/api/public/*", "allowedRoles": ["anonymous"] },
+    { "route": "/api/public/*", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" } },
     { "route": "/login", "allowedRoles": ["anonymous"] },
+    { "route": "/_next/static/*", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=31536000, immutable" } },
     { "route": "/_next/*", "allowedRoles": ["anonymous"] },
-    { "route": "/manifest.webmanifest", "allowedRoles": ["anonymous"] },
-    { "route": "/icons/*", "allowedRoles": ["anonymous"] },
-    { "route": "/favicon.ico", "allowedRoles": ["anonymous"] },
+    { "route": "/manifest.webmanifest", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=300, must-revalidate" } },
+    { "route": "/theme-bootstrap.js", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=300, must-revalidate" } },
+    { "route": "/icons/*", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=86400, must-revalidate" } },
+    { "route": "/favicon.ico", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=86400, must-revalidate" } },
     { "route": "/.auth/login/aad", "statusCode": 404 },
     {
       "route": "/infographic/*",
@@ -30,6 +35,13 @@
   ],
   "platform": {
     "apiRuntime": "node:22"
+  },
+  "globalHeaders": {
+    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' __INF_CSP_SCRIPT_HASHES__; style-src 'self' 'unsafe-inline'; worker-src 'self'",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Cache-Control": "private, no-store"
   },
   "responseOverrides": {
     "401": {

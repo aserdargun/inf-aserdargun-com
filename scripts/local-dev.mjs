@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
+import { CSP_HASH_PLACEHOLDER } from "./static-security-contract.mjs";
 
 const checkout = resolve(process.cwd());
 const runDirectory = resolve(checkout, ".codex/run");
@@ -30,7 +31,13 @@ delete env.WEBSITE_SITE_NAME;
 async function prepare() {
   await mkdir(runDirectory, { recursive: true, mode: 0o700 });
   await chmod(runDirectory, 0o700);
-  const productionConfig = JSON.parse(await readFile(resolve(checkout, "public/staticwebapp.config.json"), "utf8"));
+  const configSource = env.INF_LOCAL_WEB_ARTIFACT === "out"
+    ? resolve(env.INF_LOCAL_STATIC_ROOT, "staticwebapp.config.json")
+    : resolve(checkout, "public/staticwebapp.config.json");
+  const productionConfig = JSON.parse(await readFile(configSource, "utf8"));
+  if (env.INF_LOCAL_WEB_ARTIFACT !== "out" && productionConfig.globalHeaders?.["Content-Security-Policy"]?.includes(CSP_HASH_PLACEHOLDER)) {
+    delete productionConfig.globalHeaders["Content-Security-Policy"];
+  }
   for (const route of productionConfig.routes) if (route.allowedRoles?.includes("authenticated")) route.allowedRoles = ["anonymous"];
   await writeFile(configPath, JSON.stringify(productionConfig), { mode: 0o600 });
 }

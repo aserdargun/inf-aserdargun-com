@@ -117,12 +117,30 @@ describe("LocalDriveAdapter", () => {
   ])("refuses %s before writing outside sentinel", async (_label, segment) => {
     const root = await mkdtemp(join(tmpdir(), "inf-symlink-matrix-")); temporaryRoots.push(root);
     const outside = await mkdtemp(join(tmpdir(), "inf-outside-matrix-")); temporaryRoots.push(outside); await writeFile(join(outside, "sentinel"), "safe");
-    if (segment === "root") { await rm(root, { recursive: true }); await symlink(outside, root); const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots }); await expect(storage.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i); }
-    else {
-      const setup = new LocalDriveAdapter({ rootPath: root, folderPaths: roots }); const source = await setup.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("x") });
+    if (segment === "root") {
+      await rm(root, { recursive: true });
+      await symlink(outside, root);
+      const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
+      await expect(storage.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i);
+    } else {
+      const setup = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
+      const sourceBytes = Buffer.from("x");
+      const source = await setup.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.inbox, bytes: sourceBytes });
       const target = segment === ".trash" ? join(root, ".trash") : segment === "public" ? join(root, "public") : join(root, "public", "Inbox");
-      if (segment !== ".trash") await rm(target, { recursive: true }); await symlink(outside, target);
-      await expect(segment === ".trash" ? setup.trashFile(source.id) : setup.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i); expect(await readdir(outside)).toEqual(["sentinel"]);
+      if (segment !== ".trash") {
+        await rm(target, { recursive: true });
+      }
+      await symlink(outside, target);
+      if (segment === ".trash") {
+        await expect(setup.trashFile(source.id)).rejects.toThrow(/symlink|unsafe/i);
+        await rm(target);
+        expect(await setup.readFile(source.id)).toEqual(sourceBytes);
+        expect(await setup.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: source.id })]);
+      } else {
+        await expect(setup.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i);
+      }
+      expect(await readdir(outside)).toEqual(["sentinel"]);
+      expect(await readFile(join(outside, "sentinel"), "utf8")).toBe("safe");
     }
   });
 

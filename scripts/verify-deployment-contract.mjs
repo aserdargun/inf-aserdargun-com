@@ -98,6 +98,11 @@ function requireTopLevelPolicy(workflow) {
   requireContract(workflow.concurrency["cancel-in-progress"] === false, "cancel-in-progress must be false");
 }
 
+function requireJobTopology(workflow) {
+  requireContract(exactKeys(workflow.jobs, ["deploy"]), "workflow must contain exactly one job named deploy");
+  requireContract(workflow.jobs.deploy["runs-on"] === "ubuntu-latest", "deploy runner must be exactly ubuntu-latest");
+}
+
 function requireNoDomainCommands(workflows) {
   const forbidden = /\baz\s+staticwebapp\s+(?:hostname|custom-domain)\b|\baz\s+network\s+dns\b|\bcustom[- ]domain\b|\b(?:CNAME|TXT)\b|\bihsdns\b|\binf\.aserdargun\.com\b/i;
   for (const { path, value } of workflows) {
@@ -180,6 +185,7 @@ export async function verifyDeploymentContract(root = process.cwd()) {
   requireContract(target, `required workflow is missing at ${contract.workflow}`);
   requireTriggers(target.value);
   requireTopLevelPolicy(target.value);
+  requireJobTopology(target.value);
   requireNoDomainCommands(workflows);
 
   const workflowActionEntries = workflows.flatMap(({ path, value }) => workflowSteps(value).map((entry) => ({ ...entry, path })));
