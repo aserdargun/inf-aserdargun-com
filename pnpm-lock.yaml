@@ -12,6 +12,9 @@ importers:
       '@inf/contracts':
         specifier: workspace:*
         version: link:packages/contracts
+      '@inf/domain':
+        specifier: workspace:*
+        version: link:packages/domain
       lucide-react:
         specifier: 0.468.0
         version: 0.468.0(react@19.2.8)

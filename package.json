@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@inf/contracts": "workspace:*",
+    "@inf/domain": "workspace:*",
     "lucide-react": "0.468.0",
     "next": "16.3.1",
     "react": "19.2.8",

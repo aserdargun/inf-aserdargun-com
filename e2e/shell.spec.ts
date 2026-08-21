@@ -7,10 +7,10 @@ const item = {
   seenCount: 0, categoryIds: [], tagIds: [], folderState: "Inbox", reviewCount: 0, lastReviewedAt: null, reviewDueAt: "2026-08-21T10:00:00.000Z",
 };
 
-async function mockToday(page: import("playwright/test").Page, mode: "success" | "empty" | "error") {
+async function mockToday(page: import("playwright/test").Page, mode: "success" | "empty" | "error", infographics = [item]) {
   await page.route("**/api/infographics", async (route) => {
     if (mode === "error") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: mode === "empty" ? [] : [item], categories: [], tags: [] }) });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: mode === "empty" ? [] : infographics, categories: [], tags: [] }) });
   });
   await page.route("**/api/settings/stats", async (route) => {
     if (mode === "error") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
@@ -52,6 +52,13 @@ test("persists an accessible keyboard theme choice", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => localStorage.getItem("inf-theme"))).toBe("dark");
 });
 
+test("applies a persisted theme before the first client interaction", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("inf-theme", "dark"));
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("button", { name: "Switch to light theme" })).toBeVisible();
+});
+
 test("shows loading, empty, error, and success Today states with exact copy", async ({ page }) => {
   await page.route("**/api/infographics", () => new Promise(() => undefined));
   await page.route("**/api/settings/stats", () => new Promise(() => undefined));
@@ -77,9 +84,30 @@ test("shows loading, empty, error, and success Today states with exact copy", as
   await expect(page.getByText("Library 0", { exact: true })).toBeVisible();
   await expect(page.getByText("Due today 1", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recently added" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "GPU memory hierarchy" })).toBeVisible();
+  await expect(page.getByLabel("Recently added").getByRole("img", { name: "GPU memory hierarchy" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Review next" })).toBeVisible();
   await expect(page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).resolves.toBeTruthy();
+});
+
+test("orders Today content, excludes archived review rows, and preserves diagram labels", async ({ page }) => {
+  const now = Date.now();
+  const at = (days: number) => new Date(now + days * 86_400_000).toISOString();
+  const infographics = [
+    { ...item, id: "00000000-0000-4000-8000-000000000004", title: "Latest diagram", capturedAt: at(-1), reviewDueAt: at(3), width: 1600, height: 400 },
+    { ...item, id: "00000000-0000-4000-8000-000000000002", title: "Oldest diagram", capturedAt: at(-4), reviewDueAt: at(1) },
+    { ...item, id: "00000000-0000-4000-8000-000000000003", title: "Middle diagram", capturedAt: at(-2), reviewDueAt: at(2) },
+    { ...item, id: "00000000-0000-4000-8000-000000000005", title: "Archived diagram", capturedAt: at(-5), reviewDueAt: at(0), archived: true },
+  ];
+  await mockToday(page, "success", infographics);
+  await page.goto("/");
+
+  await expect.poll(() => page.locator(".media-frame img").evaluateAll((images) => images.map((image) => image.getAttribute("alt")))).toEqual(["Latest diagram", "Middle diagram", "Oldest diagram"]);
+  await expect(page.locator(".review-next li")).toHaveCount(3);
+  await expect.poll(() => page.locator(".review-next li").evaluateAll((rows) => rows.map((row) => row.textContent?.trim()))).toEqual(["Oldest diagramDue tomorrow", "Middle diagramDue in 2 days", "Latest diagramDue in 3 days"]);
+  await expect(page.locator(".review-next__thumbnail")).toHaveCount(3);
+  await expect(page.locator(".review-next__thumbnail").first()).toHaveAttribute("alt", "Oldest diagram");
+  await expect(page.locator(".review-next__thumbnail").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height }))).resolves.toEqual({ fit: "contain", width: 64, height: 48 });
+  await expect(page.locator(".media-frame img").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, background: getComputedStyle(image.parentElement!).backgroundColor }))).resolves.toEqual({ fit: "contain", background: "rgb(247, 248, 250)" });
 });
 
 test("login and public view keep their approved access boundaries", async ({ page }) => {
