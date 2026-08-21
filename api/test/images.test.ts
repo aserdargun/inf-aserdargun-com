@@ -60,6 +60,31 @@ describe("processImage", () => {
     expect(result.detectedMime).toBe(declaredMime);
   });
 
+  it("uses decoded AVIF media type rather than rejecting its ISO-BMFF container details", async () => {
+    const bytes = await sharp(await validBytes()).avif().toBuffer();
+    const metadata = await sharp(bytes).metadata();
+
+    expect(metadata).toMatchObject({ format: "heif", mediaType: "image/avif" });
+    await expect(processImage({ bytes, declaredMime: "image/avif" })).resolves.toMatchObject({
+      detectedMime: "image/avif",
+    });
+  });
+
+  it("rejects a HEIF whose minor version merely spells the AVIF brand", async () => {
+    const avif = await sharp(await validBytes()).avif().toBuffer();
+    const spoof = Buffer.from(avif);
+    const ftypSize = spoof.readUInt32BE(0);
+    spoof.write("heic", 8, "ascii");
+    spoof.write("avif", 12, "ascii");
+    for (let offset = 16; offset + 4 <= ftypSize; offset += 4) spoof.write("heic", offset, "ascii");
+
+    const metadata = await sharp(spoof).metadata();
+    expect(metadata).toMatchObject({ format: "heif", mediaType: "image/heic" });
+    await expect(processImage({ bytes: spoof, declaredMime: "image/avif" })).rejects.toMatchObject({
+      code: "UNSUPPORTED_IMAGE_FORMAT",
+    });
+  });
+
   it("rejects a declaration outside the standard supported image MIME values", async () => {
     await expect(processImage(await validInput({ declaredMime: "image/svg+xml" }))).rejects.toMatchObject({
       code: "UNSUPPORTED_MIME",
@@ -138,6 +163,7 @@ describe("processImage", () => {
     }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
     const result = await processImage({ bytes, declaredMime: "image/jpeg" });
 
+    expect([result.width, result.height]).toEqual([600, 1200]);
     expect([result.thumbnailWidth, result.thumbnailHeight]).toEqual([480, 960]);
   });
 });

@@ -33,20 +33,10 @@ const imageMimeBySharpFormat: Record<string, Exclude<SupportedImageMime, "image/
   gif: "image/gif",
 };
 
-function hasAvifBrand(bytes: Buffer): boolean {
-  if (bytes.length < 16 || bytes.subarray(4, 8).toString("ascii") !== "ftyp") return false;
-
-  const boxSize = bytes.readUInt32BE(0);
-  if (boxSize < 16 || boxSize > bytes.length) return false;
-  for (let offset = 8; offset + 4 <= boxSize; offset += 4) {
-    const brand = bytes.subarray(offset, offset + 4).toString("ascii");
-    if (brand === "avif" || brand === "avis") return true;
-  }
-  return false;
-}
-
-function detectedMime(metadata: Metadata, bytes: Buffer): SupportedImageMime | null {
-  if (metadata.format === "heif") return hasAvifBrand(bytes) ? "image/avif" : null;
+function detectedMime(metadata: Metadata): SupportedImageMime | null {
+  // Sharp/libvips distinguishes AVIF from HEIC after decoding the HEIF container.
+  // This also handles valid ISO-BMFF extended-size boxes without hand parsing them.
+  if (metadata.format === "heif") return metadata.mediaType === "image/avif" ? "image/avif" : null;
   return imageMimeBySharpFormat[metadata.format ?? ""] ?? null;
 }
 
@@ -73,6 +63,14 @@ function dimensionsWithinPixelLimit(metadata: Metadata, maxPixels: number): { wi
     throw new ImageProcessingError("IMAGE_PIXEL_LIMIT_EXCEEDED", "Decoded image pixels exceed the allowed limit.");
   }
   return { width, height };
+}
+
+function logicalDimensions(metadata: Metadata, raw: { width: number; height: number }): { width: number; height: number } {
+  if (metadata.autoOrient === undefined) return raw;
+  return {
+    width: requirePositiveDimension(metadata.autoOrient.width, "oriented width"),
+    height: requirePositiveDimension(metadata.autoOrient.height, "oriented height"),
+  };
 }
 
 function isSharpPixelLimitError(error: unknown): boolean {
@@ -133,22 +131,23 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
   // Copy before asynchronous work: the caller can retain and mutate its Buffer after this call begins.
   const originalBytes = Buffer.from(validated.bytes);
   const metadata = await readSourceMetadata(originalBytes, validated.maxPixels);
-  const detected = detectedMime(metadata, originalBytes);
+  const detected = detectedMime(metadata);
   if (detected === null) {
     throw new ImageProcessingError("UNSUPPORTED_IMAGE_FORMAT", "Decoded image format is unsupported.");
   }
   if (detected !== validated.declaredMime) {
     throw new ImageProcessingError("MIME_MISMATCH", "Declared MIME type does not match decoded image content.");
   }
-  const { width, height } = dimensionsWithinPixelLimit(metadata, validated.maxPixels);
+  const rawDimensions = dimensionsWithinPixelLimit(metadata, validated.maxPixels);
+  const dimensions = logicalDimensions(metadata, rawDimensions);
   const thumbnailBytes = await makeThumbnail(originalBytes, validated.maxPixels);
   const thumbnail = await validatedThumbnailMetadata(thumbnailBytes);
 
   return {
     originalBytes,
     detectedMime: detected,
-    width,
-    height,
+    width: dimensions.width,
+    height: dimensions.height,
     sha256: sha256(originalBytes),
     thumbnailBytes,
     thumbnailMime: "image/webp",
