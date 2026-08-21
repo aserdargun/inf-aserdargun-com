@@ -109,6 +109,36 @@ test("prevents a duplicate delete and keeps a failed delete generic", async ({ p
   expect(mock.deleteCalls()).toBe(1);
 });
 
+test("keeps the latest URL query when an older Library response resolves last", async ({ page }) => {
+  const second = { ...item, id: "00000000-0000-4000-8000-000000000023", title: "Second query" };
+  let delayedFirst: import("playwright/test").Route | undefined;
+  let delayedSecond: import("playwright/test").Route | undefined;
+  await page.route("**/api/infographics**", async (route) => {
+    const request = route.request(); const url = new URL(request.url());
+    if (url.pathname !== "/api/infographics" || request.method() !== "GET") return route.fallback();
+    const q = url.searchParams.get("q");
+    if (q === "first") { delayedFirst = route; return; }
+    if (q === "second") { delayedSecond = route; return; }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [item], categories: [category], tags: [tag] }) });
+  });
+  await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
+  await page.goto("/library/?q=ready");
+  await expect(page.getByRole("link", { name: "Open Memory hierarchy" })).toBeVisible();
+  const search = page.getByLabel("Search library");
+  await search.fill("first");
+  await expect.poll(() => delayedFirst !== undefined).toBeTruthy();
+  await search.fill("second");
+  await expect.poll(() => delayedSecond !== undefined).toBeTruthy();
+  await delayedSecond!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [second], categories: [category], tags: [tag] }) });
+  await expect(page.getByRole("link", { name: "Open Second query" })).toBeVisible();
+  await delayedFirst!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [category], tags: [tag] }) });
+  await page.waitForTimeout(100);
+  await expect(page).toHaveURL(/\/library\/\?q=second$/);
+  await expect(search).toHaveValue("second");
+  await expect(page.getByRole("link", { name: "Open Second query" })).toBeVisible();
+  await expect(page.getByText("No infographics match these filters.", { exact: true })).toBeHidden();
+});
+
 test("renders Library loading, empty, no-results, and safe error states", async ({ page }) => {
   await page.route("**/api/infographics**", () => new Promise(() => undefined));
   await page.goto("/library/");

@@ -1,7 +1,7 @@
 "use client";
 
 import type { OwnerCatalogResponse } from "@inf/contracts";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageState, RetryButton } from "../../components/ui/page-state";
 import { apiRequest } from "../../lib/api-client";
 import { routes } from "../../lib/routes";
@@ -28,14 +28,25 @@ function catalogUrl(value: LibraryFiltersValue) {
 }
 
 export function LibraryPage() {
-  const [state, setState] = useState<LibraryState>("loading"); const [catalog, setCatalog] = useState<OwnerCatalogResponse | null>(null); const [filters, setFilters] = useState<LibraryFiltersValue>(defaultFilters); const [ready, setReady] = useState(false);
-  const load = useCallback(async (nextFilters: LibraryFiltersValue) => { setState("loading"); try { const next = await apiRequest<OwnerCatalogResponse>(catalogUrl(nextFilters)); setCatalog(next); setState(next.infographics.length > 0 ? "success" : hasActiveFilters(nextFilters) ? "no-results" : "empty"); } catch { setState("error"); } }, []);
-  useEffect(() => { const restore = () => setFilters(parseFilters()); restore(); setReady(true); window.addEventListener("popstate", restore); return () => window.removeEventListener("popstate", restore); }, []);
+  const [state, setState] = useState<LibraryState>("loading"); const [catalog, setCatalog] = useState<OwnerCatalogResponse | null>(null); const [filters, setFilters] = useState<LibraryFiltersValue>(defaultFilters); const [ready, setReady] = useState(false); const requestId = useRef(0); const lifecycle = useRef<AbortController | null>(null);
+  const load = useCallback(async (nextFilters: LibraryFiltersValue) => {
+    const id = ++requestId.current; const signal = lifecycle.current?.signal;
+    setState("loading");
+    try {
+      const next = await apiRequest<OwnerCatalogResponse>(catalogUrl(nextFilters), { signal });
+      if (id !== requestId.current) return;
+      setCatalog(next); setState(next.infographics.length > 0 ? "success" : hasActiveFilters(nextFilters) ? "no-results" : "empty");
+    } catch {
+      if (signal?.aborted || id !== requestId.current) return;
+      setState("error");
+    }
+  }, []);
+  useEffect(() => { const controller = new AbortController(); lifecycle.current = controller; const restore = () => setFilters(parseFilters()); restore(); setReady(true); window.addEventListener("popstate", restore); return () => { requestId.current += 1; controller.abort(); if (lifecycle.current === controller) lifecycle.current = null; window.removeEventListener("popstate", restore); }; }, []);
   useEffect(() => { if (ready) void load(filters); }, [filters, load, ready]);
   const updateFilters = useCallback((next: LibraryFiltersValue) => { setFilters(next); window.history.pushState(null, "", filterUrl(next)); }, []);
   const heading = <header className="library-page__header"><h1>Library</h1><p>Your organized infographics.</p></header>;
-  if (state === "loading") return <section className="library-page">{heading}<PageState kind="loading" title="Loading Library…" /></section>;
+  if (state === "loading" && !catalog) return <section className="library-page">{heading}<PageState kind="loading" title="Loading Library…" /></section>;
   if (state === "error") return <section className="library-page">{heading}<PageState action={<RetryButton onRetry={() => void load(filters)} />} kind="error" title="Library could not be loaded. Try again." /></section>;
   if (state === "empty") return <section className="library-page">{heading}<PageState action={<a className="button button--primary" href={routes.inbox}>Go to Inbox</a>} description="Organize an item from Inbox to add it here." kind="empty" title="Library is empty." /></section>;
-  return <section className="library-page">{heading}<LibraryFilters categories={catalog!.categories} onChange={updateFilters} onClear={() => updateFilters(defaultFilters)} tags={catalog!.tags} value={filters} />{state === "no-results" ? <PageState action={<button className="button button--secondary" onClick={() => updateFilters(defaultFilters)} type="button">Clear filters</button>} kind="empty" title="No infographics match these filters." /> : <LibraryGrid items={catalog!.infographics} />}</section>;
+  return <section className="library-page">{heading}<LibraryFilters categories={catalog!.categories} onChange={updateFilters} onClear={() => updateFilters(defaultFilters)} tags={catalog!.tags} value={filters} />{state === "loading" ? <PageState kind="loading" title="Loading Library…" /> : state === "no-results" ? <PageState action={<button className="button button--secondary" onClick={() => updateFilters(defaultFilters)} type="button">Clear filters</button>} kind="empty" title="No infographics match these filters." /> : <LibraryGrid items={catalog!.infographics} />}</section>;
 }

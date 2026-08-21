@@ -6,7 +6,7 @@ export class ApiClientError extends Error {
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(path, { ...init, headers: { Accept: "application/json", ...init?.headers }, credentials: "same-origin" }); }
-  catch { throw new ApiClientError(0, "Unable to reach INF. Try again."); }
+  catch (error) { if (init?.signal?.aborted) throw error; throw new ApiClientError(0, "Unable to reach INF. Try again."); }
   if (!response.ok) throw new ApiClientError(response.status);
   if (response.status === 204) return undefined as T;
   try { return await response.json() as T; }
