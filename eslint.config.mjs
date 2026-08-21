@@ -38,6 +38,12 @@ export default [
     }
   },
   {
+    files: ["packages/contracts/**/*.ts", "packages/domain/**/*.ts"],
+    rules: {
+      "no-undef": "off"
+    }
+  },
+  {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
       globals: {

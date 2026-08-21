@@ -95,10 +95,17 @@ importers:
         version: 7.0.2
 
   packages/domain:
+    dependencies:
+      '@inf/contracts':
+        specifier: workspace:0.1.0
+        version: link:../contracts
     devDependencies:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@24.10.1)(vite@8.2.1(@types/node@24.10.1)(jiti@2.7.0)(yaml@2.9.0))
 
 packages:
 
