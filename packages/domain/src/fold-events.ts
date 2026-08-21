@@ -41,6 +41,13 @@ interface ValidInput {
   inputIndex: number;
 }
 
+interface IsoInstantParts {
+  wholeSecondMilliseconds: number;
+  fractionalSecond: string;
+}
+
+const ISO_INSTANT_PARTS = /^(.*?)(?:\.(\d+))?(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+
 function isUnknownSchemaVersion(input: unknown): boolean {
   if (typeof input !== "object" || input === null || !("schemaVersion" in input)) {
     return false;
@@ -49,8 +56,31 @@ function isUnknownSchemaVersion(input: unknown): boolean {
   return (input as { schemaVersion?: unknown }).schemaVersion !== 1;
 }
 
+function parseIsoInstant(timestamp: string): IsoInstantParts {
+  const parts = ISO_INSTANT_PARTS.exec(timestamp);
+  if (parts === null) throw new TypeError("Expected a validated ISO instant");
+
+  return {
+    wholeSecondMilliseconds: Date.parse(`${parts[1]}${parts[3]}`),
+    fractionalSecond: parts[2] ?? "",
+  };
+}
+
+function compareFractionalSeconds(left: string, right: string): number {
+  const width = Math.max(left.length, right.length);
+  const leftPadded = left.padEnd(width, "0");
+  const rightPadded = right.padEnd(width, "0");
+  if (leftPadded < rightPadded) return -1;
+  if (leftPadded > rightPadded) return 1;
+  return 0;
+}
+
 function compareEvents(left: ValidInput, right: ValidInput): number {
-  return Date.parse(left.event.occurredAt) - Date.parse(right.event.occurredAt)
+  const leftInstant = parseIsoInstant(left.event.occurredAt);
+  const rightInstant = parseIsoInstant(right.event.occurredAt);
+
+  return leftInstant.wholeSecondMilliseconds - rightInstant.wholeSecondMilliseconds
+    || compareFractionalSeconds(leftInstant.fractionalSecond, rightInstant.fractionalSecond)
     || left.event.eventId.localeCompare(right.event.eventId);
 }
 

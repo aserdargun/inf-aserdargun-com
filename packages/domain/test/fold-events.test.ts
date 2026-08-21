@@ -148,6 +148,16 @@ describe("foldEvents", () => {
     expect(result.quarantine).toEqual([]);
   });
 
+  test("orders UTC instants that differ only beyond millisecond precision", () => {
+    const result = foldEvents([
+      event("infographic.metadataUpdated", "10000000-0000-4000-8000-000000000001", "2026-08-20T10:00:00.0002Z", { title: "Two ten-thousandths later" }),
+      event("infographic.created", "20000000-0000-4000-8000-000000000002", "2026-08-20T10:00:00.0001Z", createdPayload()),
+    ]);
+
+    expect(result.catalog.infographics[0]?.title).toBe("Two ten-thousandths later");
+    expect(result.quarantine).toEqual([]);
+  });
+
   test("folds metadata, category, tag, favorite, archive, seen, and review mutations", () => {
     const result = foldEvents([
       event("infographic.created", "00000001-0000-4000-8000-000000000001", "2026-08-20T10:00:00.000Z", createdPayload()),
