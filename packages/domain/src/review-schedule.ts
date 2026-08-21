@@ -1,16 +1,9 @@
 import type { MaterializedInfographic, ReviewRating } from "@inf/contracts";
-
-const MILLISECONDS_PER_DAY = 86_400_000;
+import { addWholeUtcDays, compareUtcInstants, parseUtcInstant } from "./utc-instant";
 
 export interface ReviewSchedule {
   intervalDays: number;
   dueAt: string;
-}
-
-function validUtcMilliseconds(timestamp: string): number {
-  const milliseconds = Date.parse(timestamp);
-  if (!Number.isFinite(milliseconds)) throw new RangeError("Expected a valid reviewedAt timestamp");
-  return milliseconds;
 }
 
 function validPreviousInterval(previousIntervalDays: number): number {
@@ -47,14 +40,13 @@ export function scheduleReview(
   previousIntervalDays: number | null,
   reviewedAt: string,
 ): ReviewSchedule {
-  const reviewedAtMilliseconds = validUtcMilliseconds(reviewedAt);
   const intervalDays = previousIntervalDays === null
     ? firstInterval(rating)
     : subsequentInterval(rating, validPreviousInterval(previousIntervalDays));
 
   return {
     intervalDays,
-    dueAt: new Date(reviewedAtMilliseconds + intervalDays * MILLISECONDS_PER_DAY).toISOString(),
+    dueAt: addWholeUtcDays(reviewedAt, intervalDays),
   };
 }
 
@@ -69,11 +61,15 @@ export function sortDueItems(items: readonly MaterializedInfographic[]): Materia
   return items
     .filter((item) => item.reviewDueAt !== null)
     .sort((left, right) => {
-      const dueOrder = validUtcMilliseconds(left.reviewDueAt!) - validUtcMilliseconds(right.reviewDueAt!);
+      const dueOrder = compareUtcInstants(parseUtcInstant(left.reviewDueAt!), parseUtcInstant(right.reviewDueAt!));
       if (dueOrder !== 0) return dueOrder;
 
-      const leftReviewedAt = left.lastReviewedAt === null ? Number.NEGATIVE_INFINITY : validUtcMilliseconds(left.lastReviewedAt);
-      const rightReviewedAt = right.lastReviewedAt === null ? Number.NEGATIVE_INFINITY : validUtcMilliseconds(right.lastReviewedAt);
-      return leftReviewedAt - rightReviewedAt || compareText(left.id, right.id);
+      if (left.lastReviewedAt === null && right.lastReviewedAt !== null) return -1;
+      if (left.lastReviewedAt !== null && right.lastReviewedAt === null) return 1;
+      if (left.lastReviewedAt !== null && right.lastReviewedAt !== null) {
+        const reviewOrder = compareUtcInstants(parseUtcInstant(left.lastReviewedAt), parseUtcInstant(right.lastReviewedAt));
+        if (reviewOrder !== 0) return reviewOrder;
+      }
+      return compareText(left.id, right.id);
     });
 }

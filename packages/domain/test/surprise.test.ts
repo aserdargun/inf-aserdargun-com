@@ -55,6 +55,12 @@ describe("surpriseWeight", () => {
     expect(surpriseWeight(itemFixture({ lastSeenAt: "2026-08-21T00:00:00.000Z" }), NOW)).toBe(1);
   });
 
+  test("keeps sub-millisecond precision when flooring elapsed UTC days", () => {
+    const item = itemFixture({ lastSeenAt: "2026-08-18T00:00:00.000001Z" });
+
+    expect(surpriseWeight(item, "2026-08-20T00:00:00.000000Z")).toBe(1);
+  });
+
   test("rejects invalid timestamps explicitly", () => {
     expect(() => surpriseWeight(itemFixture({ capturedAt: "not-a-date" }), NOW)).toThrow(RangeError);
     expect(() => surpriseWeight(itemFixture(), "not-a-date")).toThrow(RangeError);

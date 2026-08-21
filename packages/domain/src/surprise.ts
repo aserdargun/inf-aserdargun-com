@@ -1,12 +1,5 @@
 import type { MaterializedInfographic } from "@inf/contracts";
-
-const MILLISECONDS_PER_DAY = 86_400_000;
-
-function toUtcMilliseconds(value: Date | string): number {
-  const milliseconds = value instanceof Date ? value.getTime() : Date.parse(value);
-  if (!Number.isFinite(milliseconds)) throw new RangeError("Expected a valid timestamp");
-  return milliseconds;
-}
+import { elapsedWholeUtcDaysSince, utcInstantFrom } from "./utc-instant";
 
 function nonnegativeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -15,23 +8,19 @@ function nonnegativeInteger(value: number, name: string): number {
   return value;
 }
 
-function wholeUtcDaysSince(timestamp: string, nowMilliseconds: number): number {
-  return Math.floor((nowMilliseconds - toUtcMilliseconds(timestamp)) / MILLISECONDS_PER_DAY);
-}
-
 /**
  * Uses the surprise-selection formula from the design spec. Day differences are
  * floored elapsed 24-hour UTC periods, so time-zone transitions cannot affect them.
  */
 export function surpriseWeight(item: MaterializedInfographic, now: Date | string): number {
-  const nowMilliseconds = toUtcMilliseconds(now);
+  const nowInstant = utcInstantFrom(now);
   const seenCount = nonnegativeInteger(item.seenCount, "seenCount");
   const reviewCount = nonnegativeInteger(item.reviewCount, "reviewCount");
   const lastSeenAt = item.lastSeenAt;
   const neverSeen = lastSeenAt === null;
   const age = neverSeen
-    ? Math.max(14, wholeUtcDaysSince(item.capturedAt, nowMilliseconds) + 7)
-    : Math.max(1, wholeUtcDaysSince(lastSeenAt, nowMilliseconds));
+    ? Math.max(14, elapsedWholeUtcDaysSince(item.capturedAt, nowInstant) + 7)
+    : Math.max(1, elapsedWholeUtcDaysSince(lastSeenAt, nowInstant));
   const weight = age * (neverSeen ? 2 : 1)
     / ((1 + seenCount) * (1 + reviewCount * 0.5));
 

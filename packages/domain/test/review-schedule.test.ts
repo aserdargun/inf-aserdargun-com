@@ -55,6 +55,13 @@ describe("scheduleReview", () => {
       dueAt: "2024-03-06T23:30:00.000Z",
     });
   });
+
+  test("preserves accepted sub-millisecond precision when deriving dueAt", () => {
+    expect(scheduleReview("again", null, "2026-08-20T10:30:00.123456Z")).toEqual({
+      intervalDays: 1,
+      dueAt: "2026-08-21T10:30:00.123456Z",
+    });
+  });
 });
 
 describe("sortDueItems", () => {
@@ -75,5 +82,23 @@ describe("sortDueItems", () => {
       "33333333-3333-4333-8333-333333333333",
     ]);
     expect(items).toEqual(before);
+  });
+
+  test("orders due instants that differ only beyond millisecond precision before review and ID ties", () => {
+    const earliestDue = itemFixture({
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      reviewDueAt: "2026-08-20T00:00:00.000001Z",
+      lastReviewedAt: "2026-08-19T00:00:00.000Z",
+    });
+    const laterDue = itemFixture({
+      id: "00000000-0000-4000-8000-000000000000",
+      reviewDueAt: "2026-08-20T00:00:00.000002Z",
+      lastReviewedAt: "2026-08-18T00:00:00.000Z",
+    });
+
+    expect(sortDueItems([laterDue, earliestDue]).map(({ id }) => id)).toEqual([
+      earliestDue.id,
+      laterDue.id,
+    ]);
   });
 });
