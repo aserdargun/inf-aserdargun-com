@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFile as execFileCallback, spawn } from "node:child_process";
+import { request as httpRequest } from "node:http";
 import { access, readFile, rm } from "node:fs/promises";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -42,6 +44,19 @@ async function noListeners() {
   return true;
 }
 
+async function chunkedOverLimit() {
+  return new Promise((resolveResult, rejectResult) => {
+    let responseStarted = false;
+    const request = httpRequest({ host: "127.0.0.1", port: 7072, method: "POST", path: "/api/infographics", headers: { "content-type": "application/octet-stream", "transfer-encoding": "chunked" } }, (response) => {
+      responseStarted = true; response.resume(); response.once("end", () => resolveResult(response.statusCode));
+    });
+    request.on("error", (error) => { if (!responseStarted) rejectResult(error); });
+    request.write(Buffer.alloc((21 * 1024 * 1024) + 1));
+    request.end();
+  });
+}
+
+
 test("real local Run reaches compiled handlers and Stop reaps the complete loopback tree", { timeout: 60_000 }, async () => {
   await run(process.execPath, ["scripts/stop-local.mjs"]);
   const beforeNextEnv = await readFile("next-env.d.ts", "utf8");
@@ -67,6 +82,8 @@ test("real local Run reaches compiled handlers and Stop reaps the complete loopb
     assert.match(publicCatalog.headers.get("cache-control") ?? "", /public/);
     const ownerCatalog = await fetch("http://127.0.0.1:4280/api/infographics");
     assert.equal(ownerCatalog.status, 200);
+    assert.equal(await chunkedOverLimit(), 413);
+    assert.equal((await fetch("http://127.0.0.1:4280/api/session")).status, 200);
     for (const port of ports) {
       const { stdout } = await execFile("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-F", "n"]);
       assert.match(stdout, /n127\.0\.0\.1:/, `port ${port} must be loopback-only`);

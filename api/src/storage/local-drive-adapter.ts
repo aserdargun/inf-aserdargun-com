@@ -92,7 +92,6 @@ export class LocalDriveAdapter implements StoragePort {
     this.assertInside(fromPath, metadata.dataPath);
     const destination = resolve(toPath, `${fileId}.blob`);
     this.assertInside(toPath, destination);
-    await this.assertAbsent(destination);
     await this.assertAbsent(`${destination}${sidecarSuffix}`);
     await this.publish(metadata, destination, { parentIds: [toFolderId], dataPath: destination, trashed: false });
     });
@@ -106,7 +105,6 @@ export class LocalDriveAdapter implements StoragePort {
     this.assertInside(this.rootPath, trashPath);
     await this.ensureSafeDirectory(trashPath);
     const destination = resolve(trashPath, `${fileId}.blob`);
-    await this.assertAbsent(destination);
     await this.assertAbsent(`${destination}${sidecarSuffix}`);
     await this.publish(metadata, destination, { parentIds: metadata.parentIds, dataPath: destination, trashed: true });
     });
@@ -236,7 +234,17 @@ export class LocalDriveAdapter implements StoragePort {
     let sourceDataRemoved = false;
     try {
       this.fault?.("beforeDataPublish");
-      await link(sourceData, destination); // atomic EEXIST refusal: never replaces a destination.
+      try {
+        await link(sourceData, destination); // atomic EEXIST refusal: never replaces a destination.
+      } catch (linkError) {
+        if ((linkError as NodeJS.ErrnoException).code !== "EEXIST") throw linkError;
+        // A prior interrupted attempt leaves only our hardlink and no commit
+        // marker. Resume that exact inode; contested names are never removed.
+        const [sourceInfo, destinationInfo, destinationSidecar] = await Promise.all([
+          lstat(sourceData), lstat(destination), lstat(destinationMeta).catch((error) => (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : Promise.reject(error)),
+        ]);
+        if (destinationSidecar || sourceInfo.dev !== destinationInfo.dev || sourceInfo.ino !== destinationInfo.ino) throw linkError;
+      }
       this.fault?.("afterDataPublish");
       this.fault?.("beforeMetadataPublish");
       // The final sidecar is the commit marker. Keep it absent until the source

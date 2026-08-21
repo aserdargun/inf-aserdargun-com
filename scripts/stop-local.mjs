@@ -42,11 +42,17 @@ async function startIdentityFor(pid) {
 async function controlPids() {
   try {
     const parsed = JSON.parse(await readFile(controlPath, "utf8"));
-    if (!Array.isArray(parsed.pids)) return [];
-    return parsed.pids
-      .filter((entry) => entry && Number.isInteger(entry.pid) && typeof entry.startIdentity === "string")
-      .map((entry) => ({ pid: entry.pid, startIdentity: entry.startIdentity, group: entry.group === true }));
-  } catch { return []; }
+    if (parsed.version !== 2 || parsed.checkout !== checkout || !Array.isArray(parsed.pids) || parsed.pids.length === 0) throw new Error("invalid control schema");
+    const records = parsed.pids.map((entry) => {
+      if (!entry || !Number.isInteger(entry.pid) || entry.pid < 1 || typeof entry.startIdentity !== "string" || !entry.startIdentity || typeof entry.group !== "boolean") throw new Error("invalid control process");
+      return { pid: entry.pid, startIdentity: entry.startIdentity, group: entry.group };
+    });
+    if (new Set(records.map((entry) => entry.pid)).size !== records.length) throw new Error("duplicate control process");
+    return records;
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw new Error(`Refusing to stop with corrupt local control state: ${error?.message ?? "unknown error"}`);
+  }
 }
 
 const recorded = await controlPids();
@@ -54,9 +60,9 @@ const expectedIdentity = new Map(recorded.map((entry) => [entry.pid, entry.start
 const candidates = new Set([...expectedIdentity.keys(), ...(await Promise.all(ports.map(listenerPids))).flat()]);
 const owned = [];
 for (const pid of candidates) {
-  const expected = expectedIdentity.get(pid);
-  const actualIdentity = expected ? await startIdentityFor(pid) : undefined;
-  if (expected && actualIdentity !== expected) {
+  const expected = expectedIdentity.get(pid) ?? await startIdentityFor(pid);
+  const actualIdentity = await startIdentityFor(pid);
+  if (!expected || actualIdentity !== expected) {
     console.error(`Refusing to stop PID ${pid}: recorded identity no longer matches.`);
     continue;
   }
@@ -74,6 +80,7 @@ if (owned.length === 0) {
 
 for (const processRecord of owned) {
   try {
+    if (await startIdentityFor(processRecord.pid) !== processRecord.startIdentity || !insideCheckout(await cwdFor(processRecord.pid) ?? "")) continue;
     if (processRecord.group) process.kill(-processRecord.pid, "SIGTERM");
     else process.kill(processRecord.pid, "SIGTERM");
   } catch { /* A concurrent graceful exit is already safe. */ }

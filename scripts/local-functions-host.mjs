@@ -1,5 +1,4 @@
 import http from "node:http";
-import { Readable, Transform } from "node:stream";
 import { createRuntime } from "../api-dist/dist/index.js";
 import { publicGet, publicImage, publicList } from "../api-dist/dist/functions/public.js";
 import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSurprise, ownerSync } from "../api-dist/dist/functions/owner.js";
@@ -34,20 +33,33 @@ async function toRequest(request) {
   for (const [name, value] of Object.entries(request.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
   const declared = headers.get("content-length");
   if (declared && /^\d+$/.test(declared) && Number(declared) > MAX_REQUEST_BYTES) {
-    // Drain rather than buffer the rejected upload so the keep-alive connection
-    // cannot hold shutdown hostage after its 413 response is written.
-    request.resume();
+    // Consume a declared-too-large request before replying. Ending the response
+    // while the client is still writing makes Node reset a chunked client socket
+    // (EPIPE/ECONNRESET) rather than reliably delivering the 413.
+    for await (const chunk of request) { void chunk; /* drain without retaining bytes */ }
     const error = new Error("REQUEST_TOO_LARGE"); error.code = "REQUEST_TOO_LARGE"; throw error;
   }
   if (["GET", "HEAD"].includes(request.method ?? "GET")) return new Request(`http://127.0.0.1:${port}${request.url}`, { method: request.method, headers });
   let total = 0;
-  const capped = new Transform({ transform(chunk, _encoding, callback) {
+  const chunks = [];
+  let tooLarge = false;
+  // This is the first request boundary. It retains at most the accepted 20 MiB
+  // body, then drains the remainder before writing a 413. No body is passed to
+  // the function runtime until that bounded transport check has completed.
+  for await (const chunk of request) {
+    if (tooLarge) continue;
     total += chunk.length;
-    if (total > MAX_REQUEST_BYTES) { const error = new Error("REQUEST_TOO_LARGE"); error.code = "REQUEST_TOO_LARGE"; request.destroy(error); callback(error); return; }
-    callback(null, chunk);
-  } });
-  request.pipe(capped);
-  return new Request(`http://127.0.0.1:${port}${request.url}`, { method: request.method, headers, body: Readable.toWeb(capped), duplex: "half" });
+    if (total > MAX_REQUEST_BYTES) {
+      tooLarge = true;
+      chunks.length = 0;
+      continue;
+    }
+    chunks.push(chunk);
+  }
+  if (tooLarge) {
+    const error = new Error("REQUEST_TOO_LARGE"); error.code = "REQUEST_TOO_LARGE"; throw error;
+  }
+  return new Request(`http://127.0.0.1:${port}${request.url}`, { method: request.method, headers, body: Buffer.concat(chunks), duplex: "half" });
 }
 
 const server = http.createServer(async (request, response) => {

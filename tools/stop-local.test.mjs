@@ -78,7 +78,7 @@ test("safe stop refuses a reused recorded PID identity", async () => {
     await writeFile(".codex/run/inf-local.json", JSON.stringify({
       version: 2,
       checkout: process.cwd(),
-      pids: [{ pid: foreign.pid, startIdentity: "Thu Jan  1 00:00:00 1970" }],
+      pids: [{ pid: foreign.pid, startIdentity: "Thu Jan  1 00:00:00 1970", group: false }],
     }));
     const output = await stop();
     assert.match(output, /already stopped/);
@@ -89,3 +89,25 @@ test("safe stop refuses a reused recorded PID identity", async () => {
     await rm(foreignDirectory, { recursive: true, force: true });
   }
 });
+
+for (const [_label, control] of [
+  ["malformed JSON", "{"],
+  ["wrong checkout", JSON.stringify({ version: 2, checkout: "/tmp/not-this-checkout", pids: [{ pid: 1, startIdentity: "identity", group: false }] })],
+  ["unsupported version", JSON.stringify({ version: 99, checkout: process.cwd(), pids: [{ pid: 1, startIdentity: "identity", group: false }] })],
+]) {
+test(`safe stop fails closed for ${_label} control state`, async () => {
+  const foreignDirectory = await mkdtemp(join(tmpdir(), "inf-corrupt-control-"));
+  const foreign = listener(foreignDirectory);
+  try {
+    await listenerReady();
+    await mkdir(".codex/run", { recursive: true });
+    await writeFile(".codex/run/inf-local.json", control);
+    await assert.rejects(stop(), /stop exited/);
+    assert.equal(foreign.exitCode, null);
+  } finally {
+    await rm(".codex/run/inf-local.json", { force: true });
+    await terminate(foreign);
+    await rm(foreignDirectory, { recursive: true, force: true });
+  }
+});
+}

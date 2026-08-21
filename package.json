@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
-    "build": "next build",
+    "web:build": "next build",
+    "build": "pnpm --filter @inf/contracts build && pnpm --filter @inf/domain build && pnpm web:build",
     "api:build": "node scripts/build-api.mjs",
     "artifact:verify": "node scripts/verify-artifacts.mjs",
     "lint": "eslint .",
@@ -20,8 +21,8 @@
     "lifecycle:test": "INF_LOCAL_SKIP_API_BUILD=true node --test --test-concurrency=1 tools/codex-environment.test.mjs tools/local-dev.test.mjs tools/stop-local.test.mjs tools/local-lifecycle.integration.test.mjs tools/stop-process-tree.test.mjs tools/playwright-wrapper.test.mjs",
     "dev:codex": "node scripts/local-dev.mjs",
     "stop:codex": "node scripts/stop-local.mjs",
-    "validate:codex": "pnpm lint && pnpm typecheck && pnpm api:build && pnpm build && pnpm artifact:verify && pnpm lifecycle:test && pnpm test && pnpm e2e && git diff --check",
-    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm api:build && pnpm build && pnpm artifact:verify && git diff --check"
+    "validate:codex": "pnpm lint && pnpm typecheck && pnpm api:build && pnpm web:build && pnpm artifact:verify && pnpm lifecycle:test && pnpm test && pnpm e2e && git diff --check",
+    "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm api:build && pnpm web:build && pnpm artifact:verify && git diff --check"
   },
   "dependencies": {
     "@inf/contracts": "workspace:*",
