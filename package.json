@@ -4,7 +4,9 @@
   "type": "module",
   "version": "0.1.0",
   "packageManager": "pnpm@11.22.0",
-  "engines": { "node": ">=22.0.0 <23" },
+  "engines": {
+    "node": ">=22.0.0 <23"
+  },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
     "build": "next build",
@@ -18,6 +20,8 @@
     "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm api:build && pnpm artifact:verify && git diff --check"
   },
   "dependencies": {
+    "@inf/contracts": "workspace:*",
+    "lucide-react": "0.468.0",
     "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",

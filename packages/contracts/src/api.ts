@@ -84,3 +84,6 @@ export type SyncRequest = z.infer<typeof SyncRequestSchema>;
 export type CaptureMetadata = z.infer<typeof CaptureMetadataSchema>;
 export type InfographicPatch = z.infer<typeof InfographicPatchSchema>;
 export type ReviewRequest = z.infer<typeof ReviewRequestSchema>;
+export type OwnerCatalogResponse = z.infer<typeof OwnerCatalogResponseSchema>;
+export type DueReviewResponse = z.infer<typeof DueReviewResponseSchema>;
+export type SettingsStatsResponse = z.infer<typeof SettingsStatsResponseSchema>;

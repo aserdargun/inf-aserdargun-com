@@ -38,6 +38,10 @@ export default [
     }
   },
   {
+    files: ["app/login/**/*.tsx", "components/**/*.{ts,tsx}", "e2e/**/*.ts", "features/**/*.{ts,tsx}", "lib/**/*.ts", "tools/api-client.test.ts"],
+    rules: { "no-undef": "off" }
+  },
+  {
     files: ["api/**/*.ts", "packages/contracts/**/*.ts", "packages/domain/**/*.ts"],
     rules: {
       "no-undef": "off"
