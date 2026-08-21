@@ -36,7 +36,7 @@ async function stop() {
 }
 
 test("safe stop is scoped, idempotent, and does not use broad process matching", async () => {
-  const source = await readFile("scripts/stop-local.mjs", "utf8");
+  const source = `${await readFile("scripts/stop-local.mjs", "utf8")}\n${await readFile("scripts/stop-local-core.mjs", "utf8")}`;
   assert.match(source, /lsof/);
   assert.match(source, /cwd/);
   assert.match(source, /SIGTERM/);
@@ -60,8 +60,7 @@ test("safe stop terminates an owned listener and refuses a foreign checkout list
   const foreign = listener(foreignDirectory);
   try {
     await listenerReady();
-    const output = await stop();
-    assert.match(output, /already stopped/);
+    await assert.rejects(stop(), /stop exited 1/);
     assert.equal(foreign.exitCode, null);
   } finally {
     await terminate(foreign);
@@ -80,8 +79,7 @@ test("safe stop refuses a reused recorded PID identity", async () => {
       checkout: process.cwd(),
       pids: [{ pid: foreign.pid, startIdentity: "Thu Jan  1 00:00:00 1970", group: false }],
     }));
-    const output = await stop();
-    assert.match(output, /already stopped/);
+    await assert.rejects(stop(), /stop exited 1/);
     assert.equal(foreign.exitCode, null);
   } finally {
     await rm(".codex/run/inf-local.json", { force: true });
@@ -94,6 +92,7 @@ for (const [_label, control] of [
   ["malformed JSON", "{"],
   ["wrong checkout", JSON.stringify({ version: 2, checkout: "/tmp/not-this-checkout", pids: [{ pid: 1, startIdentity: "identity", group: false }] })],
   ["unsupported version", JSON.stringify({ version: 99, checkout: process.cwd(), pids: [{ pid: 1, startIdentity: "identity", group: false }] })],
+  ["duplicate PID", JSON.stringify({ version: 2, checkout: process.cwd(), pids: [{ pid: 1, startIdentity: "identity", group: false }, { pid: 1, startIdentity: "identity", group: false }] })],
 ]) {
 test(`safe stop fails closed for ${_label} control state`, async () => {
   const foreignDirectory = await mkdtemp(join(tmpdir(), "inf-corrupt-control-"));

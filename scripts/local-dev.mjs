@@ -22,6 +22,8 @@ const env = { ...process.env,
   INF_LOCAL_STORAGE_ROOT: resolve(runDirectory, "storage"),
   INF_LOCAL_FUNCTIONS_PORT: "7071",
   INF_LOCAL_API_PROXY_PORT: "7072",
+  INF_LOCAL_STATIC_ROOT: resolve(checkout, "out"),
+  INF_LOCAL_WEB_PORT: "3000",
 };
 delete env.WEBSITE_SITE_NAME;
 
@@ -77,7 +79,9 @@ if (env.INF_LOCAL_SKIP_API_BUILD !== "true") {
   const build = child("pnpm", ["api:build"]);
   await new Promise((resolveBuild, rejectBuild) => build.once("exit", (code) => code === 0 ? resolveBuild() : rejectBuild(new Error("API build failed."))));
 }
-const next = child("pnpm", ["exec", "next", "dev", "--hostname", "127.0.0.1", "--port", "3000"]);
+const next = env.INF_LOCAL_WEB_ARTIFACT === "out"
+  ? child("node", ["scripts/local-static-host.mjs"])
+  : child("pnpm", ["exec", "next", "dev", "--hostname", "127.0.0.1", "--port", "3000"]);
 const functions = child("node", ["scripts/local-functions-host.mjs"]);
 const proxy = child("node", ["scripts/local-api-proxy.mjs"]);
 const swa = child("pnpm", ["exec", "swa", "start", "http://127.0.0.1:3000", "--api-devserver-url", "http://127.0.0.1:7072", "--host", "127.0.0.1", "--port", "4280", "--swa-config-location", runDirectory]);

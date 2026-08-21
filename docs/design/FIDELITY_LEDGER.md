@@ -1,20 +1,18 @@
 # Fidelity ledger
 
-Evidence: accepted [owner desktop](inf-owner-desktop.png), [owner mobile](inf-owner-mobile.png), and [public View](inf-public-view.png); implementation [owner desktop](evidence/owner-desktop.png), [owner mobile](evidence/owner-mobile.png), [public desktop](evidence/public-desktop.png), and [public mobile](evidence/public-mobile.png). The public production captures are 1280×720 and 390×844. The retained owner captures are 1536×1024 and 853×1844 and therefore are reference-only, not evidence of exact release viewport parity.
+Accepted concepts: [owner desktop](inf-owner-desktop.png), [owner mobile](inf-owner-mobile.png), [public View](inf-public-view.png). Production-artifact evidence: [owner desktop](evidence/owner-desktop.png), [owner mobile](evidence/owner-mobile.png), [public desktop](evidence/public-desktop.png), [public mobile](evidence/public-mobile.png). Desktop files are exactly 1280×720; mobile files are exactly 390×844. All four were captured from `out/` through the real 4280→7072→7071 chain with one real 1200×800 PNG, decoded 960×640 WebP thumbnail, truthful Inbox 1/Library 0/Due 0 counts, no browser/dev chrome, and no horizontal overflow.
 
-| Area | Observed delta | Fix and residual |
+| Area | Concept delta observed in exact production capture | Fix and accepted residual |
 | --- | --- | --- |
-| Copy | Concept uses terse task labels; implementation matches Today/Inbox/Library/Review/View, with no hero copy. | Kept approved wording; no residual. |
-| Layout | Desktop sidebar remains visible at 1280px; mobile replaces it below 768px. | Fixed atomic 768px switch; no horizontal overflow at 390px. |
-| Typography | Implementation uses system UI rather than the concept's rendered mock font. | Deliberate no-remote-font tradeoff; hierarchy and line lengths retained. |
-| Palette | Neutral light surfaces and image-led colour match; dark mode is a functional extension. | Tokenized palette; residual first semantic toggle label updates on hydration. |
-| Icons | Lucide lines are slightly sharper than concept mock icons. | Shared 1.75 stroke treatment and local maskable icon; accepted. |
-| Images | Diagram previews must not crop; measured review thumbnail is 64×48. | `object-fit: contain` in rail/detail previews; accepted. |
-| Spacing | Concept is airy rather than card-grid dense. | 4/8 rhythm and restrained borders; accepted. |
-| Desktop | Public evidence preserves the narrow navigation/image-first gallery at 1280×720. Owner reference has a different viewport and three review rows rather than the concept's six. | Public accepted; recapture owner from a production artifact with representative loaded media before external release. |
-| Mobile | Public evidence keeps navigation and gallery inside the 390px viewport. Owner reference is 853px wide and cannot prove mobile parity. | Public accepted; recapture owner at 390×844 before external release. |
-| Interaction | Public screenshot contains no owner mutation/navigation control. | Only `/api/public/*` is requested in View; owner actions remain private. |
+| Copy | Concept and implementation share terse Today/Inbox/Library/Review/View labels; implementation adds “Return to what matters” and explicit public “View only.” | Kept the approved product copy. Public labeling makes the anonymous boundary clearer; accepted. |
+| Layout | Owner concept uses the same desktop rail/mobile bottom-nav split. Production desktop keeps actions and metrics on one baseline; mobile stacks actions and preserves the three equal metrics. | Atomic 768px switch; exact captures show no overflow. One seeded card replaces the concept's denser illustrative data set, matching the truthful local count. |
+| Typography | Concept mock uses a rendered design font; production uses the local system UI stack. | Preserved scale, weight, line length, and hierarchy without a remote-font dependency; family difference accepted. |
+| Palette | Both use neutral surfaces, blue active/action emphasis, and dark ink. | Tokenized production palette matches the concept hierarchy. Dark mode remains a functional extension outside these light evidence captures. |
+| Icons | Production Lucide outlines are slightly sharper than the concept glyphs. | Unified 1.75-stroke treatment and deterministic PWA icons; accepted. |
+| Images | Concepts show multiple varied infographics. Earlier evidence showed a solid navy test fixture that looked like a placeholder. | Replaced it with a loaded, legible Systems Thinking Map through the real capture/thumbnail API. Production evidence intentionally contains one deterministic item, not nine illustrative concept images. |
+| Spacing | Concept is airy with restrained borders; production has the same large section gaps and compact card metadata. | 4/8 rhythm retained. Exact mobile capture keeps the card, title, date, and fixed nav separated without clipping. |
+| Desktop | Concept was 1536×1024; required release evidence is 1280×720. | Owner/public evidence is now exactly 1280×720 from static `out/`, with loaded media, correct counts, footer/rail placement, and no dev badge. |
+| Mobile | Concept was 853×1844; required release evidence is 390×844. | Owner/public evidence is now exactly 390×844. Action buttons, metrics, image, title/date, and fixed navigation fit without horizontal overflow. |
+| Interaction | A screenshot cannot demonstrate mutation behavior; concept implies navigation and review actions. | Real route/E2E validation covers owner actions and public read-only isolation. Public capture contains no owner mutation/navigation control; accepted. |
 
-Known visual limitation: the theme-toggle server markup initially uses the default semantic state until hydration restores a saved preference. The pre-paint theme attribute prevents a visible flash; semantic button text follows on hydration.
-
-The owner reference also contains local placeholder media rather than all nine concept images. This is an intentional evidence gap, not a claim of visual parity; it remains a release-gate recapture item while Drive content is not yet provisioned.
+Known semantic limitation: the theme-toggle server markup starts from the default label until hydration restores a saved preference. The pre-paint theme attribute prevents a visible color flash; semantic button text follows on hydration.

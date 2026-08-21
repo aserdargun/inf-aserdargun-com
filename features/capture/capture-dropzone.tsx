@@ -21,7 +21,7 @@ export function CaptureDropzone({ disabled = false, onChooseClipboard, onFile }:
     <ImagePlus aria-hidden="true" className="capture-dropzone__icon" size={64} strokeWidth={1.5} />
     <div className="capture-dropzone__actions">
       <Button disabled={disabled} onClick={(event) => { event.stopPropagation(); void onChooseClipboard(); }}><Upload aria-hidden="true" size={20} strokeWidth={1.75} />Paste from clipboard <kbd>⌘ V</kbd></Button>
-      <label aria-disabled={disabled} className={`button button--secondary capture-dropzone__chooser${disabled ? " is-disabled" : ""}`}><span>Choose image</span><input accept="image/png,image/jpeg,image/webp,image/gif,image/avif" aria-label="Choose infographic" className="capture-dropzone__input" disabled={disabled} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) onFile(file); event.currentTarget.value = ""; }} type="file" /></label>
+      <label aria-disabled={disabled} className={`button button--secondary capture-dropzone__chooser${disabled ? " is-disabled" : ""}`}><span>Choose image</span><input accept="image/png,image/jpeg,image/webp,image/gif,image/avif" aria-label="Choose infographic" className="capture-dropzone__input" disabled={disabled} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) onFile(file); event.currentTarget.value = ""; }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} type="file" /></label>
     </div>
   </section>;
 }

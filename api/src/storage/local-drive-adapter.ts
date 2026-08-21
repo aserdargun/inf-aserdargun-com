@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { link, lstat, mkdir, readdir, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import type { CreateFileInput, StoragePort, StoredFile } from "./storage-port.js";
 import { withKeyedLock } from "./keyed-lock.js";
@@ -229,41 +229,56 @@ export class LocalDriveAdapter implements StoragePort {
     const sourceMeta = `${sourceData}${sidecarSuffix}`;
     const destinationMeta = `${destination}${sidecarSuffix}`;
     const next: LocalMetadata = { ...metadata, parentIds: [...update.parentIds], dataPath: update.dataPath, trashed: update.trashed, appProperties: { ...metadata.appProperties } };
-    const originalSidecar = await readFile(sourceMeta);
-    let sourceMetaRemoved = false;
-    let sourceDataRemoved = false;
+    const operationsRoot = resolve(this.rootPath, ".operations");
+    await this.ensureSafeDirectory(operationsRoot);
+    const operation = resolve(operationsRoot, randomUUID());
+    await mkdir(operation, { mode: 0o700 });
+    const stagedData = resolve(operation, "data");
+    const stagedMeta = resolve(operation, "metadata.json");
+    // Claim the exact source objects before publication. From this point on every
+    // cleanup pathname is unpredictable and operation-owned; a new writer may
+    // reuse the caller-visible source names without ever being unlinked by us.
+    await rename(sourceData, stagedData);
+    try { await rename(sourceMeta, stagedMeta); }
+    catch (error) { await rename(stagedData, sourceData).catch(() => undefined); await rm(operation, { recursive: true, force: true }); throw error; }
     try {
       this.fault?.("beforeDataPublish");
       try {
-        await link(sourceData, destination); // atomic EEXIST refusal: never replaces a destination.
+        await link(stagedData, destination); // atomic EEXIST refusal: never replaces a destination.
       } catch (linkError) {
         if ((linkError as NodeJS.ErrnoException).code !== "EEXIST") throw linkError;
         // A prior interrupted attempt leaves only our hardlink and no commit
         // marker. Resume that exact inode; contested names are never removed.
         const [sourceInfo, destinationInfo, destinationSidecar] = await Promise.all([
-          lstat(sourceData), lstat(destination), lstat(destinationMeta).catch((error) => (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : Promise.reject(error)),
+          lstat(stagedData), lstat(destination), lstat(destinationMeta).catch((error) => (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : Promise.reject(error)),
         ]);
         if (destinationSidecar || sourceInfo.dev !== destinationInfo.dev || sourceInfo.ino !== destinationInfo.ino) throw linkError;
       }
       this.fault?.("afterDataPublish");
       this.fault?.("beforeMetadataPublish");
-      // The final sidecar is the commit marker. Keep it absent until the source
-      // paths are gone, so rollback never has to delete a contested final name.
-      await unlink(sourceMeta);
-      sourceMetaRemoved = true;
       this.fault?.("afterSourceMetadataRemove");
-      await unlink(sourceData);
-      sourceDataRemoved = true;
       this.fault?.("afterSourceDataRemove");
       this.fault?.("afterMetadataPublish");
+      const [foreignData, foreignMeta] = await Promise.all([
+        lstat(sourceData).then(() => true, (error) => (error as NodeJS.ErrnoException).code === "ENOENT" ? false : Promise.reject(error)),
+        lstat(sourceMeta).then(() => true, (error) => (error as NodeJS.ErrnoException).code === "ENOENT" ? false : Promise.reject(error)),
+      ]);
+      if (foreignData || foreignMeta) throw new Error(`Foreign source replacement detected; original bytes retained in quarantine ${operation}`);
       await writeFile(destinationMeta, JSON.stringify(next), { flag: "wx", mode: 0o600 });
+      await rm(operation, { recursive: true, force: true });
     } catch (error) {
-      const rollback: unknown[] = [];
-      try { if (sourceDataRemoved) await link(destination, sourceData); } catch (cause) { rollback.push(cause); }
-      try { if (sourceMetaRemoved) await writeFile(sourceMeta, originalSidecar, { flag: "wx", mode: 0o600 }); } catch (cause) { rollback.push(cause); }
-      // Publication paths are never unlinked during rollback. The sidecar is only
-      // written after the irreversible commit, so ambiguous final claims are retained.
-      if (rollback.length > 0) throw new AggregateError([error, ...rollback], "Local storage integrity rollback failed; retained the last consistent copy.");
+      const [sourceDataExists, sourceMetaExists] = await Promise.all([
+        lstat(sourceData).then(() => true, () => false), lstat(sourceMeta).then(() => true, () => false),
+      ]);
+      if (!sourceDataExists && !sourceMetaExists) {
+        const rollback: unknown[] = [];
+        try { await rename(stagedData, sourceData); } catch (cause) { rollback.push(cause); }
+        try { await rename(stagedMeta, sourceMeta); } catch (cause) { rollback.push(cause); }
+        if (rollback.length === 0) await rm(operation, { recursive: true, force: true });
+        else throw new AggregateError([error, ...rollback], `Local storage integrity rollback failed; original bytes retained in quarantine ${operation}`);
+      } else {
+        throw new AggregateError([error], `Foreign source replacement detected; original bytes retained in quarantine ${operation}`);
+      }
       throw error;
     }
   }
