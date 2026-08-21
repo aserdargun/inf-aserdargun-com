@@ -59,11 +59,18 @@ test("uploads without metadata, then categorizes and tags in Inbox", async ({ pa
   }]);
 });
 
-test("uses one accessible picker, drop, and clipboard image path", async ({ page }) => {
+test("uses one 44px native picker with keyboard, drop, and clipboard image paths", async ({ page }) => {
+  await page.setViewportSize({ width: 427, height: 922 });
   await page.goto("/add/");
   const dropzone = page.getByTestId("capture-dropzone");
   const paste = page.getByRole("button", { name: /Paste from clipboard/ });
-  const choose = page.getByRole("button", { name: "Choose image" });
+  const choose = page.getByLabel("Choose infographic");
+  await expect(page.getByRole("button", { name: "Choose image" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Choose infographic" })).toHaveCount(1);
+  for (const control of [paste, choose, page.getByLabel("Title"), page.getByLabel("Source URL"), page.getByLabel("Platform"), page.getByLabel("Notes"), page.getByRole("button", { name: "Save to Inbox" })]) {
+    const box = await control.boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  }
   await paste.focus();
   await expect(paste).toBeFocused();
   await page.keyboard.press("Tab");
@@ -76,7 +83,7 @@ test("uses one accessible picker, drop, and clipboard image path", async ({ page
   await page.reload();
   await expect(dropzone).toBeVisible();
   const spaceChooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Choose image" }).focus();
+  await page.getByLabel("Choose infographic").focus();
   await page.keyboard.press("Space");
   await (await spaceChooser).setFiles(imageUpload);
   await expect(page.getByRole("img", { name: "Infographic preview" })).toBeVisible();
