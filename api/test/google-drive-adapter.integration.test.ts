@@ -117,11 +117,33 @@ describe("GoogleDriveAdapter mocked integration", () => {
       }
       throw new Error("unexpected");
     };
+    const get = fake.client.files.get;
+    fake.client.files.get = async (params: Record<string, unknown>) => params.alt === "media" && params.fileId === "generated-file" ? { data: Buffer.from("exact bytes") } : get(params);
     const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", jitter: () => 0, sleep: async () => {} });
     await expect(storage.createFile({ name: "x.png", mimeType: "image/png", parentId: "inbox", bytes: Buffer.from("exact bytes") })).resolves.toMatchObject({ id: "generated-file" });
     expect(requests).toHaveLength(2);
     expect(requests.map((request) => (request.requestBody as { id: string }).id)).toEqual(["generated-file", "generated-file"]);
     expect((requests[0].media as { body: unknown }).body).not.toBe((requests[1].media as { body: unknown }).body);
+  });
+
+  test("fails closed when a 409 recovery has mismatched metadata or bytes", async () => {
+    const fake = fakeDrive();
+    fake.client.files.create = async () => {
+      fake.files.set("generated-file", { id: "generated-file", name: "foreign.png", mimeType: "image/png", createdTime: "2026-01-03T00:00:00.000Z", parents: ["inbox"], appProperties: {} });
+      throw Object.assign(new Error("conflict"), { code: 409 });
+    };
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", jitter: () => 0 });
+    await expect(storage.createFile({ name: "wanted.png", mimeType: "image/png", parentId: "inbox", bytes: Buffer.from("wanted") })).rejects.toThrow(/integrity|confirm/i);
+
+    const bytes = fakeDrive();
+    bytes.client.files.create = async () => {
+      bytes.files.set("generated-file", { id: "generated-file", name: "wanted.png", mimeType: "image/png", createdTime: "2026-01-03T00:00:00.000Z", parents: ["inbox"], appProperties: { k: "v" } });
+      throw Object.assign(new Error("conflict"), { code: 409 });
+    };
+    const get = bytes.client.files.get;
+    bytes.client.files.get = async (params: Record<string, unknown>) => params.alt === "media" ? { data: Buffer.from("foreign") } : get(params);
+    const byteStorage = new GoogleDriveAdapter({ client: bytes.client, publicRootId: "public", privateRootId: "private", jitter: () => 0 });
+    await expect(byteStorage.createFile({ name: "wanted.png", mimeType: "image/png", parentId: "inbox", bytes: Buffer.from("wanted"), appProperties: { k: "v" } })).rejects.toThrow(/bytes|integrity/i);
   });
 });
 

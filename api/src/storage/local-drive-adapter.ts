@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import type { CreateFileInput, StoragePort, StoredFile } from "./storage-port.js";
+import { withKeyedLock } from "./keyed-lock.js";
 
 interface LocalMetadata extends StoredFile {
   trashed: boolean;
@@ -11,6 +12,7 @@ interface LocalMetadata extends StoredFile {
 export interface LocalDriveAdapterOptions {
   rootPath?: string;
   folderPaths: ReadonlyMap<string, string> | Readonly<Record<string, string>>;
+  fault?: (step: "afterDataPublish" | "afterMetadataPublish") => void;
 }
 
 const sidecarSuffix = ".inf-meta.json";
@@ -28,9 +30,11 @@ const copyFile = (file: StoredFile): StoredFile => ({
 export class LocalDriveAdapter implements StoragePort {
   private readonly rootPath: string;
   private readonly folderPaths: Map<string, string>;
+  private readonly fault: LocalDriveAdapterOptions["fault"];
 
   constructor(options: LocalDriveAdapterOptions) {
     this.rootPath = resolve(options.rootPath ?? process.env.INF_LOCAL_STORAGE_ROOT ?? ".inf-local-storage");
+    this.fault = options.fault;
     this.folderPaths = new Map(options.folderPaths instanceof Map ? options.folderPaths : Object.entries(options.folderPaths));
     for (const [id, path] of this.folderPaths) {
       if (!id || !path || resolve(this.rootPath, path) === this.rootPath && path !== ".") throw new Error("Configured folder IDs must map to paths below the local storage root.");
@@ -53,7 +57,6 @@ export class LocalDriveAdapter implements StoragePort {
     if (!validName(input.name)) throw new Error("File name must be a single safe name.");
     if (!Buffer.isBuffer(input.bytes)) throw new TypeError("File bytes must be a Buffer.");
     const parentPath = await this.folderPath(input.parentId);
-    await mkdir(parentPath, { recursive: true, mode: 0o700 });
     const id = input.fileId ?? randomUUID();
     if (!validName(id)) throw new Error("File ID must be a safe name.");
     const dataPath = resolve(parentPath, input.fileId ? input.name : `${id}.blob`);
@@ -79,6 +82,7 @@ export class LocalDriveAdapter implements StoragePort {
   }
 
   async moveFile(fileId: string, fromFolderId: string, toFolderId: string): Promise<void> {
+    await withKeyedLock(`local:${fileId}`, async () => {
     const metadata = await this.requireMetadata(fileId);
     if (metadata.trashed || metadata.parentIds.length !== 1 || metadata.parentIds[0] !== fromFolderId) {
       throw new Error("File does not have the requested current parent.");
@@ -86,32 +90,52 @@ export class LocalDriveAdapter implements StoragePort {
     const fromPath = await this.folderPath(fromFolderId);
     const toPath = await this.folderPath(toFolderId);
     this.assertInside(fromPath, metadata.dataPath);
-    await mkdir(toPath, { recursive: true, mode: 0o700 });
     const destination = resolve(toPath, `${fileId}.blob`);
     this.assertInside(toPath, destination);
     await this.assertAbsent(destination);
     await this.assertAbsent(`${destination}${sidecarSuffix}`);
-    await rename(metadata.dataPath, destination);
-    await rename(`${metadata.dataPath}${sidecarSuffix}`, `${destination}${sidecarSuffix}`);
-    metadata.parentIds = [toFolderId];
-    metadata.dataPath = destination;
-    await writeFile(`${destination}${sidecarSuffix}`, JSON.stringify(metadata), { mode: 0o600 });
+    const sourceData = metadata.dataPath;
+    const sourceMeta = `${sourceData}${sidecarSuffix}`;
+    const destinationMeta = `${destination}${sidecarSuffix}`;
+    try {
+      await rename(sourceData, destination);
+      this.fault?.("afterDataPublish");
+      await rename(sourceMeta, destinationMeta);
+      this.fault?.("afterMetadataPublish");
+      metadata.parentIds = [toFolderId]; metadata.dataPath = destination;
+      await writeFile(destinationMeta, JSON.stringify(metadata), { mode: 0o600 });
+    } catch (error) {
+      await this.rollbackMove(sourceData, sourceMeta, destination, destinationMeta);
+      throw error;
+    }
+    });
   }
 
   async trashFile(fileId: string): Promise<void> {
+    await withKeyedLock(`local:${fileId}`, async () => {
     const metadata = await this.requireMetadata(fileId);
     if (metadata.trashed) return;
     const trashPath = resolve(this.rootPath, ".trash");
     this.assertInside(this.rootPath, trashPath);
-    await mkdir(trashPath, { recursive: true, mode: 0o700 });
+    await this.ensureSafeDirectory(trashPath);
     const destination = resolve(trashPath, `${fileId}.blob`);
     await this.assertAbsent(destination);
     await this.assertAbsent(`${destination}${sidecarSuffix}`);
-    await rename(metadata.dataPath, destination);
-    await rename(`${metadata.dataPath}${sidecarSuffix}`, `${destination}${sidecarSuffix}`);
-    metadata.trashed = true;
-    metadata.dataPath = destination;
-    await writeFile(`${destination}${sidecarSuffix}`, JSON.stringify(metadata), { mode: 0o600 });
+    const sourceData = metadata.dataPath;
+    const sourceMeta = `${sourceData}${sidecarSuffix}`;
+    const destinationMeta = `${destination}${sidecarSuffix}`;
+    try {
+      await rename(sourceData, destination);
+      this.fault?.("afterDataPublish");
+      await rename(sourceMeta, destinationMeta);
+      this.fault?.("afterMetadataPublish");
+      metadata.trashed = true; metadata.dataPath = destination;
+      await writeFile(destinationMeta, JSON.stringify(metadata), { mode: 0o600 });
+    } catch (error) {
+      await this.rollbackMove(sourceData, sourceMeta, destination, destinationMeta);
+      throw error;
+    }
+    });
   }
 
   async findByAppProperty(rootId: string, key: string, value: string): Promise<StoredFile[]> {
@@ -133,9 +157,7 @@ export class LocalDriveAdapter implements StoragePort {
     const path = this.folderPaths.get(folderId);
     if (path === undefined) throw new Error("Folder ID is not a configured local storage root.");
     const resolved = this.safePath(path);
-    await mkdir(resolved, { recursive: true, mode: 0o700 });
-    await this.assertNoSymlink(resolved);
-    return resolved;
+    return this.ensureSafeDirectory(resolved);
   }
 
   private safePath(path: string): string {
@@ -160,6 +182,7 @@ export class LocalDriveAdapter implements StoragePort {
 
   private async metadataUnder(path: string): Promise<LocalMetadata[]> {
     const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+    if (entries.some((entry) => entry.isSymbolicLink())) throw new Error("Local storage directory contains a symlink.");
     const groups = await Promise.all(entries.map(async (entry) => entry.isDirectory()
       ? this.metadataUnder(resolve(path, entry.name))
       : entry.name.endsWith(sidecarSuffix) ? [await this.readMetadata(resolve(path, entry.name))] : []));
@@ -196,17 +219,25 @@ export class LocalDriveAdapter implements StoragePort {
     if (!key || !value || key.length > 128 || value.length > 512) throw new Error("App property key and value must be bounded non-empty strings.");
   }
 
-  private async assertNoSymlink(path: string): Promise<void> {
+  private async ensureSafeDirectory(path: string): Promise<string> {
     const root = resolve(this.rootPath);
     this.assertInside(root, path);
+    try { await mkdir(root, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+    const rootInfo = await lstat(root);
+    if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) throw new Error("Local storage root is unsafe.");
+    const realRoot = await realpath(root);
     let current = root;
-    await mkdir(root, { recursive: true, mode: 0o700 });
     for (const segment of relative(root, path).split(sep).filter(Boolean)) {
       current = resolve(current, segment);
+      try { await lstat(current); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        try { await mkdir(current, { mode: 0o700 }); } catch (mkdirError) { if ((mkdirError as NodeJS.ErrnoException).code !== "EEXIST") throw mkdirError; }
+      }
       const info = await lstat(current);
-      if (info.isSymbolicLink()) throw new Error("Local storage configured folder contains a symlink.");
-      if (!info.isDirectory()) throw new Error("Local storage configured folder is not a directory.");
+      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error("Local storage configured folder contains a symlink or non-directory.");
+      this.assertInside(realRoot, await realpath(current));
     }
+    return path;
   }
 
   private async assertAbsent(path: string): Promise<void> {
@@ -219,5 +250,10 @@ export class LocalDriveAdapter implements StoragePort {
 
   private folderIdForPath(path: string): string | undefined {
     return [...this.folderPaths.entries()].find(([, relativePath]) => resolve(this.rootPath, relativePath) === resolve(path))?.[0];
+  }
+
+  private async rollbackMove(sourceData: string, sourceMeta: string, destination: string, destinationMeta: string): Promise<void> {
+    try { await lstat(destinationMeta); await rename(destinationMeta, sourceMeta); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    try { await lstat(destination); await rename(destination, sourceData); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   }
 }

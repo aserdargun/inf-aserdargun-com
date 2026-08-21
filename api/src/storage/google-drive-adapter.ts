@@ -117,13 +117,14 @@ export class GoogleDriveAdapter implements StoragePort {
     try {
       const response = await this.retry(create);
       const created = this.requireDirectChild(response.data, input.parentId);
-      if (created.id !== generatedId || created.trashed) throw new Error("Drive create response did not confirm the generated live ID.");
+      this.assertCreateIntegrity(created, input, generatedId);
       return copied(created);
     } catch (error) {
       if (asErrorStatus(error) !== 409) throw error;
       const recovered = await this.metadata(generatedId);
       const created = this.requireStoredDirectChild(recovered, input.parentId);
-      if (created.id !== generatedId || created.trashed) throw new Error("Drive upload conflict did not resolve to the generated live ID.");
+      this.assertCreateIntegrity(created, input, generatedId);
+      if (!(await this.readFile(generatedId)).equals(input.bytes)) throw new Error("Drive upload integrity conflict: recovered media bytes differ.");
       return copied(created);
     }
   }
@@ -252,6 +253,13 @@ export class GoogleDriveAdapter implements StoragePort {
       throw new Error("Drive response has missing or ambiguous parent data.");
     }
     return file;
+  }
+
+  private assertCreateIntegrity(file: StoredFile, input: CreateFileInput, generatedId: string): void {
+    const expectedProperties = input.appProperties ?? {};
+    if (file.id !== generatedId || file.trashed || file.name !== input.name || file.mimeType !== input.mimeType || file.parentIds.length !== 1 || file.parentIds[0] !== input.parentId || Object.keys(file.appProperties).length !== Object.keys(expectedProperties).length || Object.entries(expectedProperties).some(([key, value]) => file.appProperties[key] !== value)) {
+      throw new Error("Drive upload integrity conflict: create response differs from the requested file.");
+    }
   }
 
   private toStored(raw: unknown): StoredFile {

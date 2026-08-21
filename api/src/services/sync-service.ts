@@ -58,6 +58,10 @@ export class SyncService {
   }
 
   private async importOne(file: StoredFile, state: SyncHistory, report: SyncReport): Promise<void> {
+    await withKeyedLock(`file:${file.id}`, async () => {
+    const refreshed = history(await this.options.events.readAll());
+    if (refreshed.originalIds.has(file.id) || refreshed.rejectedIds.has(file.id)) return;
+    state = refreshed;
     let image;
     try {
       image = await processImage({ bytes: await this.options.storage.readFile(file.id), declaredMime: file.mimeType });
@@ -73,6 +77,9 @@ export class SyncService {
     }
 
     await withKeyedLock(`sha:${image.sha256}`, async () => {
+    const current = history(await this.options.events.readAll());
+    if (current.originalIds.has(file.id) || current.rejectedIds.has(file.id)) return;
+    state = current;
     const matchingFiles = await this.options.storage.findByAppProperty(this.options.publicRootId, "infSha256", image.sha256);
     if (state.sha256.has(image.sha256) || matchingFiles.some((match) => match.id !== file.id)) {
       await this.options.storage.moveFile(file.id, this.options.inboxFolderId, this.options.duplicatesFolderId);
@@ -103,6 +110,7 @@ export class SyncService {
       if (thumbnail) try { await this.options.storage.trashFile(thumbnail.id); } catch { /* preserve primary error */ }
       throw error;
     }
+    });
     });
   }
 }

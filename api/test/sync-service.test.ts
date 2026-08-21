@@ -90,6 +90,21 @@ describe("capture and manual Inbox sync", () => {
     expect(await f.events.readAll()).toHaveLength(1);
   });
 
+  test("serializes concurrent sync of one manual file without duplicate moves or rejection events", async () => {
+    const f = await fixture();
+    const manual = await f.storage.createFile({ name: "manual.png", mimeType: "image/png", parentId: ids.inbox, bytes: await fixtureImage() });
+    await Promise.all([f.sync.syncInbox(), f.sync.syncInbox()]);
+    expect(await f.storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: manual.id })]);
+    expect(await f.storage.listChildren(ids.duplicates)).toEqual([]);
+    expect(await f.storage.listChildren(ids.thumbnails)).toHaveLength(1);
+    expect((await f.events.readAll()).filter((event) => (event as { type?: string }).type === "infographic.created")).toHaveLength(1);
+
+    const invalid = await fixture();
+    await invalid.storage.createFile({ name: "bad.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("bad") });
+    await Promise.all([invalid.sync.syncInbox(), invalid.sync.syncInbox()]);
+    expect((await invalid.events.readAll()).filter((event) => (event as { type?: string }).type === "sync.fileRejected")).toHaveLength(1);
+  });
+
   test("moves hash duplicates to Duplicates and records invalid manual files only once", async () => {
     const f = await fixture();
     const original = await f.storage.createFile({ name: "original.png", mimeType: "image/png", parentId: ids.inbox, bytes: await fixtureImage() });
