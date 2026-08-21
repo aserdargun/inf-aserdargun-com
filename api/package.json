@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@inf/contracts": "workspace:0.1.0",
+    "@inf/domain": "workspace:0.1.0",
     "@azure/functions": "4.16.2",
     "googleapis": "176.0.0",
     "sharp": "0.35.3",
