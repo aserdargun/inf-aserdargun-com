@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { Agent, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +11,28 @@ import { URL, URLSearchParams } from "node:url";
 import * as driveRelease from "../scripts/google-drive-release.mjs";
 
 const { assertPermissionBoundary, runtimeFolderEnvironment } = driveRelease;
+
+async function callbackRequest(url, agent) {
+  return new Promise((resolve, reject) => {
+    const clientRequest = request(url, { agent }, resolve);
+    clientRequest.once("error", reject);
+    clientRequest.end();
+  });
+}
+
+async function assertSettlesWithin(promise, timeoutMs) {
+  let timer;
+  try {
+    await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = globalThis.setTimeout(() => reject(new Error(`callback close exceeded ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
+}
 
 test("repository ignores the mode-0600 OAuth handoff and common credential artifacts", () => {
   for (const path of [".env.local", "client_secret.json", "credentials.json", "token.json"]) {
@@ -137,6 +160,34 @@ test("OAuth callback listens only on loopback, validates state, and times out wi
 
   const timedOut = await driveRelease.createOAuthCallbackSession(state, { timeoutMs: 20 });
   try { const timeout = assert.rejects(timedOut.code, /timed out/i); await timeout; } finally { await timedOut.close(); }
+});
+
+test("OAuth callback closes boundedly without retaining keep-alive connections", async () => {
+  const state = "k".repeat(43);
+  for (const callback of [
+    { query: `state=${state}&code=accepted-code`, status: 200, accepted: true },
+    { query: "state=wrong-state&code=rejected-code", status: 400, accepted: false },
+  ]) {
+    const session = await driveRelease.createOAuthCallbackSession(state, { timeoutMs: 1_000 });
+    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+    let response;
+    let closing;
+    try {
+      const codeResult = callback.accepted
+        ? session.code
+        : assert.rejects(session.code, /state\/code/i);
+      response = await callbackRequest(`${session.redirectUri}?${callback.query}`, agent);
+      assert.equal(response.statusCode, callback.status);
+      await codeResult;
+      closing = session.close();
+      await assertSettlesWithin(closing, 150);
+      assert.equal(response.headers.connection, "close");
+    } finally {
+      response?.destroy();
+      agent.destroy();
+      await (closing ?? session.close());
+    }
+  }
 });
 
 test("Drive provisioning accepts only exact owner plus public anyone-reader boundaries", () => {

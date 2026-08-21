@@ -164,12 +164,13 @@ export async function createOAuthCallbackSession(expectedState, { timeoutMs = 30
   });
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const responseHeaders = { "cache-control": "no-store", connection: "close", "content-type": "text/plain; charset=utf-8" };
     if (request.method !== "GET" || url.pathname !== "/oauth/callback" || url.searchParams.get("state") !== expectedState || !url.searchParams.get("code") || url.searchParams.has("error")) {
-      response.writeHead(400).end("Authorization rejected.");
+      response.writeHead(400, responseHeaders).end("Authorization rejected.");
       finish.rejectCode(new Error("OAuth state/code validation failed."));
       return;
     }
-    response.end("INF Drive authorization received. Return to the terminal.");
+    response.writeHead(200, responseHeaders).end("INF Drive authorization received. Return to the terminal.");
     finish.resolveCode(url.searchParams.get("code"));
   });
   const listening = new Promise((resolveListen, rejectListen) => {
@@ -185,10 +186,30 @@ export async function createOAuthCallbackSession(expectedState, { timeoutMs = 30
     throw new Error("OAuth callback did not bind to the required loopback address.");
   }
   const timer = globalThis.setTimeout(() => finish.rejectCode(new Error("OAuth callback timed out.")), timeoutMs);
-  const close = async () => {
+  let closePromise;
+  const close = () => {
     globalThis.clearTimeout(timer);
-    if (!server.listening) return;
-    await new Promise((resolveClose, rejectClose) => server.close((error) => error ? rejectClose(error) : resolveClose()));
+    if (closePromise) return closePromise;
+    closePromise = new Promise((resolveClose, rejectClose) => {
+      if (!server.listening) {
+        server.closeAllConnections();
+        resolveClose();
+        return;
+      }
+      const shutdownTimer = globalThis.setTimeout(() => {
+        server.closeAllConnections();
+        resolveClose();
+      }, 250);
+      shutdownTimer.unref?.();
+      server.close((error) => {
+        globalThis.clearTimeout(shutdownTimer);
+        if (error) rejectClose(error);
+        else resolveClose();
+      });
+      server.closeIdleConnections();
+      server.closeAllConnections();
+    });
+    return closePromise;
   };
   return { redirectUri: `http://127.0.0.1:${address.port}/oauth/callback`, code, close };
 }
