@@ -1,4 +1,4 @@
-import { foldEvents, searchCatalog, selectWeighted, sortDueItems } from "@inf/domain";
+import { compareUtcInstants, foldEvents, searchCatalog, selectWeighted, sortDueItems, utcInstantFrom } from "@inf/domain";
 import type { MaterializedCatalog, MaterializedInfographic } from "@inf/contracts";
 import type { EventStore } from "../storage/event-store.js";
 import { AppError } from "../http/errors.js";
@@ -25,12 +25,13 @@ export class CatalogService {
   }
 
   surprise(snapshot: CatalogSnapshot, owner: string, now: Date): MaterializedInfographic | null {
-    const counter = snapshot.infographics.reduce((total, item) => total + item.seenCount + item.reviewCount, 0);
+    const counter = snapshot.infographics.reduce((total, item) => total + item.seenCount, 0);
     return selectWeighted(snapshot.infographics, `${now.toISOString().slice(0, 10)}:${owner}:${counter}`, now);
   }
 
   due(snapshot: CatalogSnapshot, now: Date): MaterializedInfographic[] {
-    return sortDueItems(snapshot.infographics.filter((item) => !item.archived && item.reviewDueAt !== null && Date.parse(item.reviewDueAt) <= now.getTime()));
+    const current = utcInstantFrom(now);
+    return sortDueItems(snapshot.infographics.filter((item) => !item.archived && item.reviewDueAt !== null && compareUtcInstants(utcInstantFrom(item.reviewDueAt), current) <= 0));
   }
 
   stats(snapshot: CatalogSnapshot, now: Date) {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, ReviewRequestSchema, SyncRequestSchema } from "@inf/contracts";
+import { CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, ReviewRequestSchema, SyncRequestSchema, type Category } from "@inf/contracts";
 import { authorizeOwner } from "../auth/authorize.js";
 import { AppError, emptyResponse, errorResponse, jsonResponse, type HttpResponse } from "../http/errors.js";
 import { optionalFormString, parseJson, parseMultipart, uuidPath, type RequestLike } from "../http/parse.js";
@@ -18,6 +18,7 @@ export interface OwnerDependencies {
   privateRootId: string;
   eventsFolderId: string;
   inboxFolderId: string;
+  libraryFolderId: string;
   thumbnailsFolderId: string;
   duplicatesFolderId: string;
   allowedGithubUser: string | undefined;
@@ -52,13 +53,22 @@ function httpError(error: unknown): AppError | unknown {
   return new AppError(error.code, status, error.message);
 }
 
-async function owner(request: RequestLike, deps: OwnerDependencies, action: (snapshot: CatalogSnapshot, mode: "github" | "local-bypass") => Promise<HttpResponse>): Promise<HttpResponse> {
+async function authorized(
+  request: RequestLike,
+  deps: OwnerDependencies,
+  action: (mode: "github" | "local-bypass") => Promise<HttpResponse>,
+): Promise<HttpResponse> {
   try {
     const decision = authorize(request, deps);
-    // All catalog endpoint paths take one snapshot at most; mutation handlers use this single snapshot for existence/interval decisions.
-    const snapshot = await new CatalogService(deps.events).snapshot();
-    return await action(snapshot, decision.mode);
+    return await action(decision.mode);
   } catch (error) { return errorResponse(httpError(error)); }
+}
+
+async function owner(request: RequestLike, deps: OwnerDependencies, action: (snapshot: CatalogSnapshot, mode: "github" | "local-bypass") => Promise<HttpResponse>): Promise<HttpResponse> {
+  return authorized(request, deps, async (mode) => {
+    // All catalog endpoint paths take one snapshot at most; mutation handlers use this single snapshot for existence/interval decisions.
+    return action(await new CatalogService(deps.events).snapshot(), mode);
+  });
 }
 
 function event(deps: OwnerDependencies, type: string, infographicId: string, payload: unknown) {
@@ -90,7 +100,7 @@ export function ownerSync(request: RequestLike, deps: OwnerDependencies): Promis
 
 export function ownerPatch(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
   return owner(request, deps, async (snapshot) => {
-    const id = uuidPath(request, "/api/infographics/"); new CatalogService(deps.events).item(snapshot, id);
+    const id = uuidPath(request, "/api/infographics/"); const item = new CatalogService(deps.events).item(snapshot, id);
     const patch = await parseJson(request, InfographicPatchSchema);
     const metadata = Object.fromEntries(metadataKeys.filter((key) => patch[key] !== undefined).map((key) => [key, patch[key]]));
     if (Object.keys(metadata).length > 0) await deps.events.append(event(deps, "infographic.metadataUpdated", id, metadata));
@@ -99,7 +109,7 @@ export function ownerPatch(request: RequestLike, deps: OwnerDependencies): Promi
       if (!patch.archived) throw new AppError("INVALID_BODY", 400, "Archived infographics cannot be restored by this API");
       await deps.events.append(event(deps, "infographic.archived", id, {}));
     }
-    if (patch.categories !== undefined) await deps.events.append(event(deps, "infographic.categoriesAssigned", id, { categories: patch.categories }));
+    if (patch.categories !== undefined) await assignCategories(deps, item, patch.categories);
     if (patch.tags !== undefined) await deps.events.append(event(deps, "infographic.tagsAssigned", id, { tags: patch.tags }));
     return jsonResponse({ updated: true });
   });
@@ -130,7 +140,11 @@ export function ownerReview(request: RequestLike, deps: OwnerDependencies): Prom
 }
 
 export function ownerSurprise(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
-  return owner(request, deps, async (snapshot) => jsonResponse({ infographic: new CatalogService(deps.events).surprise(snapshot, deps.allowedGithubUser ?? "", now(deps)) }));
+  return owner(request, deps, async (snapshot) => {
+    const infographic = new CatalogService(deps.events).surprise(snapshot, deps.allowedGithubUser ?? "", now(deps));
+    if (infographic) await deps.events.append(event(deps, "infographic.seen", infographic.id, {}));
+    return jsonResponse({ infographic });
+  });
 }
 
 export function ownerDueReview(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
@@ -142,7 +156,8 @@ export function ownerStats(request: RequestLike, deps: OwnerDependencies): Promi
 }
 
 export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
-  return owner(request, deps, async () => {
+  // Parse the bounded request before EventStore/CaptureService work so rejected payloads have no storage/event side effects.
+  return authorized(request, deps, async () => {
     const form = await parseMultipart(request); const file = form.get("file");
     if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
     const metadataResult = CaptureMetadataSchema.safeParse({ title: optionalFormString(form, "title"), notes: optionalFormString(form, "notes"), sourceUrl: optionalFormString(form, "sourceUrl"), sourcePlatform: optionalFormString(form, "sourcePlatform"), sourceAuthor: optionalFormString(form, "sourceAuthor") });
@@ -151,4 +166,21 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
     const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata });
     return jsonResponse(captured, captured.kind === "created" ? 201 : 200);
   });
+}
+
+async function assignCategories(
+  deps: OwnerDependencies,
+  item: CatalogSnapshot["infographics"][number],
+  categories: Category[],
+): Promise<void> {
+  const assignment = () => deps.events.append(event(deps, "infographic.categoriesAssigned", item.id, { categories }));
+  if (categories.length === 0 || item.processedAt !== null) { await assignment(); return; }
+  await deps.storage.moveFile(item.originalDriveFileId, deps.inboxFolderId, deps.libraryFolderId);
+  try { await assignment(); } catch (primaryError) {
+    try { await deps.storage.moveFile(item.originalDriveFileId, deps.libraryFolderId, deps.inboxFolderId); }
+    catch (compensationError) {
+      throw new AppError("INTEGRITY", 500, `Category assignment failed and Drive rollback failed: ${String(compensationError)}`);
+    }
+    throw primaryError;
+  }
 }

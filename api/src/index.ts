@@ -20,7 +20,7 @@ function runtime() {
   const common = { storage, events, publicRootId: PUBLIC_ROOT_ID };
   dependencies = {
     public: common,
-    owner: { ...common, privateRootId, eventsFolderId: required("INF_EVENTS_FOLDER_ID"), inboxFolderId: required("INF_INBOX_FOLDER_ID"), thumbnailsFolderId: required("INF_THUMBNAILS_FOLDER_ID"), duplicatesFolderId: required("INF_DUPLICATES_FOLDER_ID"), allowedGithubUser: process.env.INF_ALLOWED_GITHUB_USER, localAuthBypass: process.env.INF_LOCAL_AUTH_BYPASS, azureSiteName: process.env.WEBSITE_SITE_NAME, localProxyMode: process.env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: process.env.INF_LOCAL_PROXY_TOKEN },
+    owner: { ...common, privateRootId, eventsFolderId: required("INF_EVENTS_FOLDER_ID"), inboxFolderId: required("INF_INBOX_FOLDER_ID"), libraryFolderId: required("INF_LIBRARY_FOLDER_ID"), thumbnailsFolderId: required("INF_THUMBNAILS_FOLDER_ID"), duplicatesFolderId: required("INF_DUPLICATES_FOLDER_ID"), allowedGithubUser: process.env.INF_ALLOWED_GITHUB_USER, localAuthBypass: process.env.INF_LOCAL_AUTH_BYPASS, azureSiteName: process.env.WEBSITE_SITE_NAME, localProxyMode: process.env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: process.env.INF_LOCAL_PROXY_TOKEN },
   };
   return dependencies;
 }
