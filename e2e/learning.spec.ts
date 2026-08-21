@@ -9,14 +9,15 @@ const item = {
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Jg1cAAAAASUVORK5CYII=", "base64");
 
-test("surprise makes one persisted selection per intent and ignores stale responses", async ({ page }) => {
+test("surprise makes one persisted selection per intent without seen posts or rerender duplicates", async ({ page }) => {
   let surpriseCalls = 0;
   let seenPosts = 0;
   let held: import("playwright/test").Route | undefined;
   await page.route("**/api/surprise", async (route) => {
     surpriseCalls += 1;
-    if (surpriseCalls === 2) { held = route; return; }
-    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: item }) });
+    if (surpriseCalls === 2 || surpriseCalls === 4) { held = route; return; }
+    const title = surpriseCalls === 3 ? "Third diagram" : surpriseCalls === 5 ? "Fresh diagram" : "Reviewable diagram";
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title } }) });
   });
   await page.route("**/api/infographics/**/seen", (route) => { seenPosts += 1; return route.fulfill({ status: 204 }); });
   await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: png }));
@@ -32,11 +33,21 @@ test("surprise makes one persisted selection per intent and ignores stale respon
   await expect.poll(() => held !== undefined).toBeTruthy();
   await expect(page.getByRole("button", { name: "Show another" })).toBeDisabled();
   expect(surpriseCalls).toBe(2);
+  await held!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Second diagram" } }) });
+  await expect(page.getByRole("img", { name: "Second diagram" })).toBeVisible();
+  await page.getByRole("button", { name: "Switch to light theme" }).dispatchEvent("click");
+  await page.getByRole("img", { name: "Second diagram" }).evaluate((image) => image.dispatchEvent(new Event("load")));
+  expect(surpriseCalls).toBe(2);
+  await page.getByRole("button", { name: "Show another" }).click();
+  await expect(page.getByRole("img", { name: "Third diagram" })).toBeVisible();
+  expect(surpriseCalls).toBe(3);
+  await page.getByRole("button", { name: "Show another" }).click();
+  await expect.poll(() => held !== undefined).toBeTruthy();
   await page.goto("/settings/");
   await page.goto("/surprise/");
-  await expect.poll(() => surpriseCalls).toBe(3);
+  await expect(page.getByRole("img", { name: "Fresh diagram" })).toBeVisible();
   await held!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Stale diagram" } }) }).catch(() => undefined);
-  await expect(page.getByRole("img", { name: "Reviewable diagram" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Fresh diagram" })).toBeVisible();
   expect(seenPosts).toBe(0);
 });
 
@@ -77,7 +88,10 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
     schemaVersion: 1, application: { name: "INF", version: "0.1.0", runtimeVersion: "v22.0.0", usesAi: false },
     connectionHealth: { publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [{ id: "inbox", label: "Inbox", healthy: true }] }, privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [{ id: "events", label: "Events", healthy: true }] } },
     data: { total: 1, inbox: 0, library: 1, archive: 0, due: 0, reviewed: 0, seen: 1 },
-    quarantine: { count: 2, reasons: [{ reason: "invalid-event", count: 1 }, { reason: "unsupported-image", count: 1 }], rejectedFiles: [{ eventId: "00000000-0000-4000-8000-000000000022", occurredAt: "2026-08-21T10:00:00.000Z", driveFileId: "rejected-file", fileName: "recoverable.png", reason: "unsupported-image", detectedMimeType: "image/png" }] },
+    quarantine: { count: 2, reasons: [{ reason: "invalid-event", count: 1 }, { reason: "unsupported-image", count: 1 }], rejectedFiles: [
+      { eventId: "00000000-0000-4000-8000-000000000024", occurredAt: "2026-08-21T10:00:00.000Z", driveFileId: "newer-file", fileName: "newer.png", reason: "unsupported-image", detectedMimeType: "image/png" },
+      { eventId: "00000000-0000-4000-8000-000000000023", occurredAt: "2026-08-20T10:00:00.000Z", driveFileId: "older-file", fileName: "older.webp", reason: "invalid-event", detectedMimeType: "image/webp" },
+    ] },
     recovery: { inventorySchemaVersion: 1, items: [{ id: item.id, title: item.title, originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900, folderState: "Library", createdAt: item.createdAt, capturedAt: item.capturedAt, processedAt: null, lastSeenAt: null }] },
   };
   await page.addInitScript(() => {
@@ -90,7 +104,18 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   await page.goto("/settings/");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await expect(page.getByText("INF does not use AI.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("list", { name: "Rejected files" })).toContainText("recoverable.png");
+  const rejectedFiles = page.getByRole("list", { name: "Rejected files" });
+  await expect(rejectedFiles).toHaveAccessibleName("Rejected files");
+  await expect(rejectedFiles.getByRole("listitem")).toHaveCount(2);
+  const rejectedText = await rejectedFiles.getByRole("listitem").allTextContents();
+  expect(rejectedText[0]).toContain("older.webp");
+  expect(rejectedText[0]).toContain("invalid-event");
+  expect(rejectedText[0]).toContain("image/webp");
+  expect(rejectedText[0]).toContain("older-file");
+  expect(rejectedText[1]).toContain("newer.png");
+  expect(rejectedText[1]).toContain("unsupported-image");
+  expect(rejectedText[1]).toContain("image/png");
+  expect(rejectedText[1]).toContain("newer-file");
   await expect(page.getByText("refresh_token=do-not-render", { exact: true })).toHaveCount(0);
   const button = page.getByRole("button", { name: "Export inventory JSON" });
   let downloadCount = 0;
@@ -136,6 +161,10 @@ test("review shortcuts preserve server order and ignore modifier, form, button, 
   await page.getByRole("button", { name: /Good/ }).focus(); await page.keyboard.press("3");
   await page.evaluate(() => { const input = document.createElement("input"); input.setAttribute("aria-label", "suppression input"); document.body.append(input); input.focus(); });
   await page.keyboard.press("3");
+  await page.evaluate(() => { const select = document.createElement("select"); select.setAttribute("aria-label", "suppression select"); select.append(new Option("One")); document.body.append(select); select.focus(); });
+  await page.keyboard.press("3");
+  await page.evaluate(() => { const textarea = document.createElement("textarea"); textarea.setAttribute("aria-label", "suppression textarea"); document.body.append(textarea); textarea.focus(); });
+  await page.keyboard.press("3");
   await page.evaluate(() => { const edit = document.createElement("div"); edit.contentEditable = "true"; edit.textContent = "editable"; document.body.append(edit); edit.focus(); });
   await page.keyboard.press("3");
   await page.evaluate(() => { const dialog = document.createElement("div"); dialog.setAttribute("role", "dialog"); dialog.tabIndex = 0; document.body.append(dialog); dialog.focus(); });
@@ -145,6 +174,38 @@ test("review shortcuts preserve server order and ignore modifier, form, button, 
   await page.keyboard.press("3");
   await expect.poll(() => calls).toBe(1);
   await expect(page.getByRole("heading", { name: "First due" })).toBeVisible();
+});
+
+test("review shortcuts 1, 2, and 4 persist their mapped ratings before advancing", async ({ page }) => {
+  const again = { ...item, id: "00000000-0000-4000-8000-000000000031", title: "Again due" };
+  const hard = { ...item, id: "00000000-0000-4000-8000-000000000032", title: "Hard due" };
+  const easy = { ...item, id: "00000000-0000-4000-8000-000000000033", title: "Easy due" };
+  const due = [again, hard, easy];
+  let queueCalls = 0;
+  const persisted: Array<{ id: string; rating: string }> = [];
+  await page.route("**/api/review", (route) => {
+    const next = due[queueCalls++] ?? null;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: next ? [next] : [] }) });
+  });
+  await page.route("**/api/infographics/**/reviews", (route) => {
+    const request = route.request();
+    persisted.push({ id: new URL(request.url()).pathname.split("/")[3], rating: JSON.parse(request.postData() ?? "{}").rating });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: `00000000-0000-4000-8000-00000000004${persisted.length}`, infographicId: persisted.at(-1)?.id, rating: persisted.at(-1)?.rating, reviewedAt: "2026-08-21T10:00:00.000Z", previousIntervalDays: null, intervalDays: 7, dueAt: "2026-08-28T10:00:00.000Z" }) });
+  });
+  await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: png }));
+  await page.goto("/review/");
+  await expect(page.getByRole("heading", { name: "Again due" })).toBeVisible();
+  await page.keyboard.press("1");
+  await expect(page.getByRole("heading", { name: "Hard due" })).toBeVisible();
+  await page.keyboard.press("2");
+  await expect(page.getByRole("heading", { name: "Easy due" })).toBeVisible();
+  await page.keyboard.press("4");
+  await expect(page.getByText("You are caught up.", { exact: true })).toBeVisible();
+  expect(persisted).toEqual([
+    { id: again.id, rating: "again" },
+    { id: hard.id, rating: "hard" },
+    { id: easy.id, rating: "easy" },
+  ]);
 });
 
 test("review renders separate genuine load and save error states", async ({ page }) => {
