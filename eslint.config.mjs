@@ -38,7 +38,7 @@ export default [
     }
   },
   {
-    files: ["app/login/**/*.tsx", "components/**/*.{ts,tsx}", "e2e/**/*.ts", "features/**/*.{ts,tsx}", "lib/**/*.ts", "tools/api-client.test.ts"],
+    files: ["app/login/**/*.tsx", "components/**/*.{ts,tsx}", "e2e/**/*.ts", "features/**/*.{ts,tsx}", "lib/**/*.ts", "tools/api-client.test.ts", "tools/pwa-contract.test.ts", "tools/service-worker-policy.test.ts", "public/sw.js"],
     rules: { "no-undef": "off" }
   },
   {

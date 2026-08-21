@@ -7,7 +7,7 @@ const config: NextConfig = {
   // Production SWA owns the equivalent rewrite. This development-only mirror lets
   // browser tests exercise static viewer shells at real deep-link URLs.
   ...(process.env.NODE_ENV === "development" ? {
-    async rewrites() { return [{ source: "/infographic/:path*", destination: "/infographic/" }]; },
+    async rewrites() { return [{ source: "/infographic/:path*", destination: "/infographic/" }, { source: "/view/:path*", destination: "/view/" }]; },
   } : {}),
 };
 

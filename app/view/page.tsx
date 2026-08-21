@@ -1,1 +1,4 @@
-export default function ViewPage() { return <main className="public-shell"><header><p className="wordmark">INF</p><h1>Infographics</h1><p>A public collection of visual notes.</p></header><p>Loading infographics…</p></main>; }
+import { PublicShell } from "../../components/public-shell";
+import { PublicViewRoute } from "../../features/public-view/public-view-route";
+
+export default function ViewPage() { return <PublicShell><PublicViewRoute /></PublicShell>; }
