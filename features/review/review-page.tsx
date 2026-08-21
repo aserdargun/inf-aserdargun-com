@@ -9,7 +9,8 @@ import { routes } from "../../lib/routes";
 import { RatingControls, ratingFromShortcut } from "./rating-controls";
 
 type State = "loading" | "empty" | "error" | "success";
-const isEditable = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input, textarea, select, [contenteditable='true']") || Boolean(target.closest("[role='dialog']")));
+const isEditable = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input, textarea, select, button, [contenteditable]") || Boolean(target.closest("[role='dialog']")));
+const isShortcutSuppressed = (event: KeyboardEvent) => event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || isEditable(event.target) || document.querySelector("[role='dialog']") !== null;
 
 export function ReviewPage() {
   const [state, setState] = useState<State>("loading");
@@ -58,7 +59,7 @@ export function ReviewPage() {
   }, [load]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || isEditable(event.target)) return;
+      if (isShortcutSuppressed(event)) return;
       const rating = ratingFromShortcut(event.key);
       if (!rating || savingRef.current || !item) return;
       event.preventDefault(); void rate(rating);
