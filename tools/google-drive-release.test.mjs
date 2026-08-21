@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { Agent, request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,26 +11,71 @@ import * as driveRelease from "../scripts/google-drive-release.mjs";
 
 const { assertPermissionBoundary, runtimeFolderEnvironment } = driveRelease;
 
-async function callbackRequest(url, agent) {
-  return new Promise((resolve, reject) => {
-    const clientRequest = request(url, { agent }, resolve);
-    clientRequest.once("error", reject);
-    clientRequest.end();
-  });
-}
+const callbackChildSource = String.raw`
+  import { once } from "node:events";
+  import { connect } from "node:net";
 
-async function assertSettlesWithin(promise, timeoutMs) {
-  let timer;
-  try {
-    await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timer = globalThis.setTimeout(() => reject(new Error(`callback close exceeded ${timeoutMs}ms`)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    globalThis.clearTimeout(timer);
-  }
+  const moduleUrl = process.argv[1];
+  const outcome = process.argv[2];
+  const { createOAuthCallbackSession } = await import(moduleUrl);
+  const state = "p".repeat(43);
+  const session = await createOAuthCallbackSession(state, { timeoutMs: 1_000 });
+  const redirect = new URL(session.redirectUri);
+  const firstPath = outcome === "success"
+    ? redirect.pathname + "?state=" + state + "&code=accepted-code"
+    : redirect.pathname + "?state=wrong-state&code=rejected-code";
+  const socket = connect({ host: "127.0.0.1", port: Number(redirect.port) });
+  let rawResponse = "";
+  let socketError = null;
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk) => { rawResponse += chunk; });
+  socket.on("error", (error) => { socketError = error.code ?? error.message; });
+  const socketClosed = once(socket, "close");
+  await once(socket, "connect");
+  const codeResult = session.code.then(
+    (code) => ({ status: "accepted", code }),
+    () => ({ status: "rejected" }),
+  );
+  socket.write(
+    "GET " + firstPath + " HTTP/1.1\r\n" +
+    "Host: 127.0.0.1:" + redirect.port + "\r\n" +
+    "Connection: keep-alive\r\n\r\n" +
+    "GET /held-open HTTP/1.1\r\n" +
+    "Host: 127.0.0.1:" + redirect.port + "\r\n" +
+    "Content-Length: 1\r\n" +
+    "Connection: keep-alive\r\n\r\n"
+  );
+  const callbackResult = await codeResult;
+  if (outcome === "success" && (callbackResult.status !== "accepted" || callbackResult.code !== "accepted-code")) throw new Error("success callback was not accepted");
+  if (outcome === "rejection" && callbackResult.status !== "rejected") throw new Error("rejected callback was accepted");
+  await session.close();
+  await socketClosed;
+  process.stdout.write(JSON.stringify({ callbackResult, rawResponse, socketError }));
+`;
+
+async function runPersistentCallbackChild(outcome, deadlineMs = 800) {
+  const moduleUrl = new URL("../scripts/google-drive-release.mjs", import.meta.url).href;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", callbackChildSource, moduleUrl, outcome], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", reject);
+    const deadline = globalThis.setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, deadlineMs);
+    child.once("close", (code, signal) => {
+      globalThis.clearTimeout(deadline);
+      resolve({ code, signal, stderr, stdout, timedOut });
+    });
+  });
 }
 
 test("repository ignores the mode-0600 OAuth handoff and common credential artifacts", () => {
@@ -162,30 +206,40 @@ test("OAuth callback listens only on loopback, validates state, and times out wi
   try { const timeout = assert.rejects(timedOut.code, /timed out/i); await timeout; } finally { await timedOut.close(); }
 });
 
-test("OAuth callback closes boundedly without retaining keep-alive connections", async () => {
-  const state = "k".repeat(43);
+test("OAuth callback child exits naturally after persistent raw success and rejection clients", async () => {
   for (const callback of [
-    { query: `state=${state}&code=accepted-code`, status: 200, accepted: true },
-    { query: "state=wrong-state&code=rejected-code", status: 400, accepted: false },
+    { outcome: "success", statusLine: "HTTP/1.1 200 OK", body: "INF Drive authorization received. Return to the terminal." },
+    { outcome: "rejection", statusLine: "HTTP/1.1 400 Bad Request", body: "Authorization rejected." },
+  ]) {
+    const result = await runPersistentCallbackChild(callback.outcome);
+    assert.equal(result.timedOut, false, `${callback.outcome} callback child did not exit naturally within 800ms`);
+    assert.equal(result.signal, null, `${callback.outcome} callback child required ${result.signal}`);
+    assert.equal(result.code, 0, result.stderr);
+    const childResult = JSON.parse(result.stdout);
+    assert.equal(childResult.socketError, null);
+    assert.match(childResult.rawResponse, new RegExp(`^${callback.statusLine}`));
+    assert.ok(childResult.rawResponse.includes(callback.body), `${callback.outcome} callback response body was incomplete`);
+  }
+});
+
+test("OAuth callback returns complete non-cacheable close responses", async () => {
+  const state = "h".repeat(43);
+  for (const callback of [
+    { query: `state=${state}&code=accepted-code`, status: 200, body: "INF Drive authorization received. Return to the terminal.", accepted: true },
+    { query: "state=wrong-state&code=rejected-code", status: 400, body: "Authorization rejected.", accepted: false },
   ]) {
     const session = await driveRelease.createOAuthCallbackSession(state, { timeoutMs: 1_000 });
-    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
-    let response;
-    let closing;
     try {
-      const codeResult = callback.accepted
-        ? session.code
-        : assert.rejects(session.code, /state\/code/i);
-      response = await callbackRequest(`${session.redirectUri}?${callback.query}`, agent);
-      assert.equal(response.statusCode, callback.status);
+      const codeResult = callback.accepted ? session.code : assert.rejects(session.code, /state\/code/i);
+      const response = await fetch(`${session.redirectUri}?${callback.query}`);
+      assert.equal(response.status, callback.status);
+      assert.equal(await response.text(), callback.body);
+      assert.equal(response.headers.get("connection"), "close");
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.equal(response.headers.get("content-type"), "text/plain; charset=utf-8");
       await codeResult;
-      closing = session.close();
-      await assertSettlesWithin(closing, 150);
-      assert.equal(response.headers.connection, "close");
     } finally {
-      response?.destroy();
-      agent.destroy();
-      await (closing ?? session.close());
+      await session.close();
     }
   }
 });
