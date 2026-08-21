@@ -1,5 +1,9 @@
 .worktrees/
 .superpowers/
+.codex/run/
+packages/*/dist/
+AGENTS.md
+CLAUDE.md
 node_modules/
 .next/
 out/

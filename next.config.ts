@@ -4,6 +4,7 @@ const config: NextConfig = {
   output: "export",
   trailingSlash: true,
   images: { unoptimized: true },
+  agentRules: false,
   // Production SWA owns the equivalent rewrite. This development-only mirror lets
   // browser tests exercise static viewer shells at real deep-link URLs.
   ...(process.env.NODE_ENV === "development" ? {

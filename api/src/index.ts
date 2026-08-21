@@ -1,29 +1,41 @@
 import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
 import { EventStore } from "./storage/event-store.js";
 import { GoogleDriveAdapter } from "./storage/google-drive-adapter.js";
+import { LocalDriveAdapter } from "./storage/local-drive-adapter.js";
 import { publicGet, publicImage, publicList, type PublicDependencies } from "./functions/public.js";
 import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSurprise, ownerSync, type OwnerDependencies } from "./functions/owner.js";
 import type { HttpResponse } from "./http/errors.js";
 
 const PUBLIC_ROOT_ID = "1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK";
 
-function required(name: string): string {
-  const value = process.env[name]; if (!value) throw new Error(`${name} must be configured`); return value;
+type Environment = NodeJS.ProcessEnv;
+const LOCAL = { privateRootId: "inf-local-private", eventsFolderId: "inf-local-events", inboxFolderId: "inf-local-inbox", libraryFolderId: "inf-local-library", thumbnailsFolderId: "inf-local-thumbnails", duplicatesFolderId: "inf-local-duplicates" } as const;
+
+function required(name: string, env: Environment): string {
+  const value = env[name]; if (!value) throw new Error(`${name} must be configured`); return value;
 }
 
-let dependencies: { public: PublicDependencies; owner: OwnerDependencies } | undefined;
-function runtime() {
-  if (dependencies) return dependencies;
-  const privateRootId = required("INF_PRIVATE_DRIVE_FOLDER_ID");
-  const storage = new GoogleDriveAdapter({ publicRootId: PUBLIC_ROOT_ID, privateRootId, credentials: { clientId: required("GOOGLE_CLIENT_ID"), clientSecret: required("GOOGLE_CLIENT_SECRET"), refreshToken: required("GOOGLE_REFRESH_TOKEN") } });
-  const events = new EventStore(storage, required("INF_EVENTS_FOLDER_ID"), privateRootId);
-  const common = { storage, events, publicRootId: PUBLIC_ROOT_ID };
-  dependencies = {
-    public: common,
-    owner: { ...common, privateRootId, eventsFolderId: required("INF_EVENTS_FOLDER_ID"), inboxFolderId: required("INF_INBOX_FOLDER_ID"), libraryFolderId: required("INF_LIBRARY_FOLDER_ID"), thumbnailsFolderId: required("INF_THUMBNAILS_FOLDER_ID"), duplicatesFolderId: required("INF_DUPLICATES_FOLDER_ID"), allowedGithubUser: process.env.INF_ALLOWED_GITHUB_USER, localAuthBypass: process.env.INF_LOCAL_AUTH_BYPASS, azureSiteName: process.env.WEBSITE_SITE_NAME, localProxyMode: process.env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: process.env.INF_LOCAL_PROXY_TOKEN },
-  };
-  return dependencies;
+function localRuntimeEnabled(env: Environment): boolean {
+  return env.INF_LOCAL_STORAGE_MODE === "true" && env.INF_LOCAL_AUTH_BYPASS === "true" && env.INF_LOCAL_PROXY_MODE === "bypass" && env.WEBSITE_SITE_NAME === undefined && typeof env.INF_LOCAL_PROXY_TOKEN === "string" && env.INF_LOCAL_PROXY_TOKEN.length >= 32;
 }
+
+export function createRuntime(env: Environment = process.env) {
+  const local = localRuntimeEnabled(env);
+  const privateRootId = local ? LOCAL.privateRootId : required("INF_PRIVATE_DRIVE_FOLDER_ID", env);
+  const storage = local
+    ? new LocalDriveAdapter({ rootPath: required("INF_LOCAL_STORAGE_ROOT", env), folderPaths: { [PUBLIC_ROOT_ID]: "public", [LOCAL.privateRootId]: "private", [LOCAL.eventsFolderId]: "private/events", [LOCAL.inboxFolderId]: "public/Inbox", [LOCAL.libraryFolderId]: "public/Library", [LOCAL.thumbnailsFolderId]: "public/Thumbnails", [LOCAL.duplicatesFolderId]: "public/Duplicates" } })
+    : new GoogleDriveAdapter({ publicRootId: PUBLIC_ROOT_ID, privateRootId, credentials: { clientId: required("GOOGLE_CLIENT_ID", env), clientSecret: required("GOOGLE_CLIENT_SECRET", env), refreshToken: required("GOOGLE_REFRESH_TOKEN", env) } });
+  const eventsFolderId = local ? LOCAL.eventsFolderId : required("INF_EVENTS_FOLDER_ID", env);
+  const events = new EventStore(storage, eventsFolderId, privateRootId);
+  const common = { storage, events, publicRootId: PUBLIC_ROOT_ID };
+  return {
+    public: common,
+    owner: { ...common, privateRootId, eventsFolderId, inboxFolderId: local ? LOCAL.inboxFolderId : required("INF_INBOX_FOLDER_ID", env), libraryFolderId: local ? LOCAL.libraryFolderId : required("INF_LIBRARY_FOLDER_ID", env), thumbnailsFolderId: local ? LOCAL.thumbnailsFolderId : required("INF_THUMBNAILS_FOLDER_ID", env), duplicatesFolderId: local ? LOCAL.duplicatesFolderId : required("INF_DUPLICATES_FOLDER_ID", env), allowedGithubUser: env.INF_ALLOWED_GITHUB_USER, localAuthBypass: env.INF_LOCAL_AUTH_BYPASS, azureSiteName: env.WEBSITE_SITE_NAME, localProxyMode: env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: env.INF_LOCAL_PROXY_TOKEN },
+  };
+}
+
+let dependencies: ReturnType<typeof createRuntime> | undefined;
+function runtime() { dependencies ??= createRuntime(); return dependencies; }
 
 function response(value: HttpResponse): HttpResponseInit { return value; }
 const publicDeps = () => runtime().public;

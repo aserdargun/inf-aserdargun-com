@@ -52,8 +52,16 @@ export default [
     languageOptions: {
       globals: {
         console: "readonly",
-        process: "readonly"
+        process: "readonly",
+        Buffer: "readonly",
+        Headers: "readonly",
+        Request: "readonly",
+        URL: "readonly"
       }
     }
+  },
+  {
+    files: ["tools/**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", fetch: "readonly" } }
   }
 ];

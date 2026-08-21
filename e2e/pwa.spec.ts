@@ -5,7 +5,7 @@ const image = readFileSync("api/test/fixtures/valid-infographic.png");
 
 test("View Mode exposes a local manifest, icons, and non-blocking service-worker registration", async ({ page, request }) => {
   const external: string[] = [];
-  page.on("request", (entry) => { if (new URL(entry.url()).origin !== "http://127.0.0.1:3000") external.push(entry.url()); });
+  page.on("request", (entry) => { if (new URL(entry.url()).origin !== "http://127.0.0.1:4280") external.push(entry.url()); });
   await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
   await page.goto("/view/");
   const manifest = await (await request.get("/manifest.webmanifest")).json();
@@ -19,7 +19,7 @@ test("View Mode exposes a local manifest, icons, and non-blocking service-worker
   const workerResponse = await request.get("/view/sw.js");
   expect(workerResponse.headers()["content-type"]).toContain("javascript");
   expect(await workerResponse.text()).toContain("self.addEventListener");
-  await expect.poll(() => page.evaluate(() => navigator.serviceWorker?.getRegistration("/view/").then((value) => value?.scope) ?? "")).toBe("http://127.0.0.1:3000/view/");
+  await expect.poll(() => page.evaluate(() => navigator.serviceWorker?.getRegistration("/view/").then((value) => value?.scope) ?? "")).toBe("http://127.0.0.1:4280/view/");
   await page.goto("/");
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker?.controller))).toBeFalsy();
   expect(external).toEqual([]);
