@@ -27,42 +27,148 @@ product.
 
 Desktop sidebar: `INF`, `Today`, `Inbox`, `Library`, `Add`, `Review`,
 `Surprise`, `Settings`. The compact theme control is icon-only. Mobile bottom
-navigation: `Today`, `Inbox`, `Add`, `Library`, `Review`.
+navigation is exactly five items: `Today`, `Inbox`, `Add`, `Library`, `Review`.
+Settings remains owner-only on mobile through the persistent top bar: place a
+24px `Settings` icon button at the far right, horizontally aligned with the
+`INF` wordmark and above the route heading; its exact accessible name and
+tooltip are `Settings`, and it links to `/settings`. It is present on every
+owner mobile route, not in the bottom navigation, and is never rendered on
+`/view` or `/view/[id]`.
 
-### Today (`/`)
+### Route copy contract
 
-- `Today`
-- `Return to what matters.`
-- `Inbox 3`, `Library 24`, `Due today 4`
-- `Start review`, `Surprise me`
-- `Recently added`, `Review next`
+All strings below are implementation-binding. `{{title}}`, `{{date}}`, and
+`{{count}}` are data substitutions, not freely authored UI copy. Use sentence
+case and the exact punctuation shown. A route must render its listed loading,
+empty, and error state when that state applies; omit only a state that is
+structurally impossible (for example, a file picker has no collection-empty
+state).
+
+#### Login (`/login`)
+
+- Default: `INF`, `Sign in`, `This private notebook is available to its owner.`,
+  `Continue with GitHub`.
+- Loading: `Signing in…`.
+- Error: `We could not sign you in. Try again.`, `Try again`.
+
+#### Today (`/`)
+
+- Default: `Today`, `Return to what matters.`, `Inbox {{count}}`,
+  `Library {{count}}`, `Due today {{count}}`, `Start review`, `Surprise me`,
+  `Recently added`, `Review next`.
 - Safe image titles: `GPU memory hierarchy`, `Transformer map`,
   `Kubernetes control plane`, `Retrieval patterns`, `TCP connection lifecycle`,
   `Git branching model`, `Operating system layers`, `Attention mechanism`,
-  `B-tree fundamentals`, `HTTP request/response`
-- Dates and due timing are quiet supporting text, for example `May 20, 2024`,
-  `Due in 2 hours`, `Due tomorrow`, `Due in 2 days`, `Due in 3 days`.
+  `B-tree fundamentals`, `HTTP request/response`. Dates and due timing use
+  `{{date}}`, `Due in 2 hours`, `Due tomorrow`, `Due in 2 days`, or
+  `Due in 3 days`.
+- Loading: `Loading Today…`.
+- Empty: `Nothing needs your attention right now.`, `Add infographic`.
+- Error: `Today could not be loaded. Try again.`, `Try again`.
 
-### Add (`/add`)
+#### Add (`/add`)
 
-- `Add infographic`
-- `Paste, drop, or choose an image.`
-- `Paste from clipboard`, `Choose image`, `⌘ V`
-- `Optional details`, `Title`, `Source URL`, `Platform`, `Notes`
-- `Save to Inbox`
+- Default: `Add infographic`, `Paste, drop, or choose an image.`,
+  `Paste from clipboard`, `Choose image`, `⌘ V`, `Optional details`, `Title`,
+  `Source URL`, `Platform`, `Notes`, `Save to Inbox`.
+- Accessible names: file input `Choose infographic`; preview image
+  `Infographic preview`.
+- Loading: `Saving to Inbox…`.
+- Empty: `No image selected.`, `Paste from clipboard`, `Choose image`.
+- Errors: `Choose an image file.`, `This image is too large. Choose an image up to 20 MB.`,
+  `This image could not be used. Choose a different image.`,
+  `The infographic could not be saved. Try again.`, `Try again`.
 
-### Public View (`/view`)
+#### Inbox (`/inbox`)
 
-- `INF`
-- `Infographics`
-- `A public collection of visual notes.`
-- Public media titles may use the safe titles listed for Today; each item shows
-  only title and date.
-- Footer: `INF`, `View only`.
+- Default: `Inbox`, `Captured infographics waiting to be organized.`,
+  `Sync Drive`, `Edit title`, `Title`, `Category`, `Tags`, `Apply`,
+  `Add to favorites`, `Remove from favorites`, `Archive`.
+- Success: `Moved to Library` after a first category assignment.
+- Loading: `Loading Inbox…`, `Syncing Drive…`.
+- Empty: `Inbox is empty.`, `Paste an image or sync Drive to begin.`,
+  `Add infographic`, `Sync Drive`.
+- Error: `Inbox could not be loaded. Try again.`, `Drive could not be synced. Try again.`,
+  `Changes could not be saved. Try again.`, `Try again`.
 
-Do not add login, account, owner navigation, edit/add/review controls, private
-counts, source/platform/note fields, categories, tags, favorite/seen state,
-social controls, owner prompts, or theme controls to `/view`.
+#### Library (`/library`)
+
+- Default: `Library`, `Your organized infographics.`, `Search library`,
+  `Category`, `Tag`, `Favorite`, `Source`, `Recently added`,
+  `Least recently seen`, `Clear filters`, `Open {{title}}`.
+- Loading: `Loading Library…`.
+- Empty without filters: `Library is empty.`, `Organize an item from Inbox to add it here.`,
+  `Go to Inbox`.
+- Empty with filters: `No infographics match these filters.`, `Clear filters`.
+- Error: `Library could not be loaded. Try again.`, `Try again`.
+
+#### Owner infographic detail (`/infographic/[id]`)
+
+- Default: `Back to Library`, `{{title}}`, `Edit details`, `Save changes`,
+  `Cancel`, `Category`, `Tags`, `Source URL`, `Platform`, `Notes`,
+  `Captured {{date}}`, `Review history`, `Seen {{count}} times`,
+  `Add to favorites`, `Remove from favorites`, `Archive`, `Start review`,
+  `Delete`.
+- Delete confirmation: `Delete infographic?`, `{{title}} will be moved to Trash.`,
+  `Cancel`, `Delete infographic`.
+- Loading: `Loading infographic…`.
+- Empty/not found: `This infographic is no longer available.`, `Back to Library`.
+- Error: `This infographic could not be loaded. Try again.`,
+  `Changes could not be saved. Try again.`, `The infographic could not be deleted. Try again.`,
+  `Try again`.
+
+#### Surprise (`/surprise`)
+
+- Default: `Surprise`, `A different infographic for your attention.`,
+  `{{title}}`, `Show another`, `Open infographic`.
+- Loading: `Finding an infographic…`.
+- Empty: `No active infographics are available.`, `Go to Library`.
+- Error: `A surprise could not be loaded. Try again.`, `Try again`.
+
+#### Review (`/review`)
+
+- Default: `Review`, `Next review`, `{{title}}`,
+  `Do you remember the main idea of this infographic?`, `Again`, `Hard`,
+  `Good`, `Easy`. Button shortcuts are `1`, `2`, `3`, and `4` respectively.
+- Loading: `Loading next review…`, `Saving review…`.
+- Success: `Review saved.`, `Next review`.
+- Empty: `You are caught up.`, `No reviews are due right now.`, `Back to Today`.
+- Error: `The review could not be loaded. Try again.`,
+  `The review could not be saved. Try again.`, `Try again`.
+
+#### Settings (`/settings`)
+
+- Default: `Settings`, `Application`, `Connection health`, `Public Drive`,
+  `Private Drive`, `Data`, `Quarantine`, `Backup and export`, `PWA`,
+  `INF does not use AI.`, `Export inventory JSON`, `Open public image folder`,
+  `Open private backup folder`, `Install INF`.
+- Loading: `Loading Settings…`.
+- Empty: `No quarantine records.`, `No action is needed.`
+- Error: `Settings could not be loaded. Try again.`,
+  `The inventory could not be exported. Try again.`, `Try again`.
+
+#### Public gallery (`/view`)
+
+- Default: `INF`, `Infographics`, `A public collection of visual notes.`,
+  `Open {{title}}`, `View only`. Each item exposes only safe `{{title}}` and
+  `{{date}}`.
+- Loading: `Loading infographics…`.
+- Empty: `No infographics are available.`
+- Error: `This collection is unavailable right now.`, `Try again`.
+
+#### Public infographic (`/view/[id]`)
+
+- Default: `INF`, `Back to Infographics`, `{{title}}`, `{{date}}`,
+  `View only`.
+- Loading: `Loading infographic…`.
+- Empty/not found: `This infographic is not available.`, `Back to Infographics`.
+- Error: `This infographic is unavailable right now.`, `Try again`.
+
+Public `/view` and `/view/[id]` never add login/account prompts, owner
+navigation, write controls, private counts, source/platform/note fields,
+categories, tags, favorite/seen state, review state, or theme controls. Public
+errors stay intentionally generic and do not reveal authorization or storage
+details.
 
 ## Color tokens and flat-fill rule
 
@@ -81,8 +187,9 @@ reference-only exception; it is prohibited in production implementation.
 | `--surface-hover` | `#F3F6FA` | `#191F28` | Hovered quiet surface |
 | `--surface-selected` | `#EAF3FF` | `#13233D` | Selected nav/row; flat fill |
 | `--text-primary` | `#111318` | `#F5F7FA` | Headings and body |
-| `--text-secondary` | `#667085` | `#A7B0BF` | Helper text, dates, disabled labels |
-| `--text-tertiary` | `#98A2B3` | `#778191` | Placeholder and subdued metadata |
+| `--text-secondary` | `#667085` | `#A7B0BF` | Helper text and meaningful metadata |
+| `--text-tertiary` | `#667085` | `#A7B0BF` | Meaningful placeholder and subdued metadata |
+| `--text-disabled` | `#98A2B3` | `#778191` | Truly disabled or decorative-only content; never meaningful text |
 | `--border` | `#D8DEE8` | `#2B333E` | 1px hairlines and controls |
 | `--border-strong` | `#B8C2D0` | `#465161` | Hovered outlines |
 | `--accent` | `#2864DC` | `#2864DC` | Primary actions, selected icon/text |
@@ -95,7 +202,12 @@ reference-only exception; it is prohibited in production implementation.
 | `--danger` | `#C83333` | `#FF7474` | Destructive/error only |
 | `--info` | `#2864DC` | `#5B8EFF` | Informational state |
 
-Semantic colors communicate state only; they are not decorative accents.
+Semantic colors communicate state only; they are not decorative accents. The
+meaningful light-mode muted/metadata/placeholder color is `#667085` on
+`#FFFFFF`: relative luminance inputs are `0.161066` and `1.000000`, yielding
+`(1.000000 + 0.05) / (0.161066 + 0.05) = 4.97:1`. This meets WCAG AA's 4.5:1
+requirement for the 14px metadata/label role. `#98A2B3` on `#FFFFFF` is 2.58:1
+and is reserved solely for truly disabled or decorative content.
 
 ## Typography
 
@@ -156,6 +268,11 @@ area for basic route content.
 - **Bottom nav:** flat surface with 1px top border, five equal targets, each
   minimum 44×44px touch target. Use 24px icon over 12px label. Active Add is
   centered but remains part of the bar—never a floating action bubble.
+- **Mobile owner top bar:** fixed-in-flow 56px route header above page content;
+  `INF` is left aligned and the 44×44px `Settings` icon-link is right aligned.
+  The control is owner-only, uses the exact accessible label `Settings`, and
+  links to `/settings`; it supplements rather than changes the five-item bottom
+  nav. It is absent from all public View routes.
 
 ### Buttons
 
@@ -176,9 +293,11 @@ button width; it must not use shimmer animation.
 ### Fields and capture area
 
 - **Field:** 44px input minimum; textarea 104–120px; 8px radius; 1px border;
-  12px inline padding; flat `--surface`. Label sits 8px above. Placeholder uses
-  tertiary text. Hover strengthens border; focus changes only to 2px focus ring
-  and accent border; invalid adds semantic error text and `--danger` border.
+  12px inline padding; flat `--surface`. Label sits 8px above. Meaningful
+  placeholder and metadata text use AA-safe `--text-tertiary`; only disabled
+  or decorative content may use `--text-disabled`. Hover strengthens border;
+  focus changes only to 2px focus ring and accent border; invalid adds semantic
+  error text and `--danger` border.
 - **Capture region:** 2px dashed accent border, 12px radius, 24px padding,
   centered image icon and controls. It supports paste, drop, and file chooser;
   drag-over is a flat selected surface, not a glow.
