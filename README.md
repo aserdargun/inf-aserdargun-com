@@ -15,7 +15,7 @@ pnpm validate:codex
 pnpm stop:codex
 ```
 
-Run uses loopback-only ports: Next 3000, Functions 7071, a private local API capability hop 7072, and the Static Web Apps emulator 4280. A random capability is kept only in ignored `.codex/run/`; it is injected server-to-server by the local API proxy and is never shipped to browser JavaScript. The local emulator relaxes only SWA route roles while API owner authorization still requires that capability, exact local bypass flags, loopback, and no Azure production signal. Local storage uses an ignored checkout-private `LocalDriveAdapter` tree. `pnpm stop:codex` identifies listener cwd values, stops only this checkout's processes, and refuses foreign listeners.
+Run uses loopback-only ports: Next 3000, Functions 7071, a private local API capability hop 7072, and the Static Web Apps emulator 4280. A random capability is kept only in ignored `.codex/run/`; it is injected server-to-server by the local API proxy and is never shipped to browser JavaScript. The local emulator relaxes only SWA route roles while API owner authorization still requires that capability, exact local bypass flags, loopback, and no Azure production signal. Local storage uses ignored checkout-private atomic `.inf-bundle` objects. Legacy split local data is intentionally not migrated: Stop, run `node scripts/clean-output.mjs .codex/run/storage`, then Run. `pnpm stop:codex` identifies listener cwd values, stops only this checkout's processes, and refuses foreign listeners.
 
 ## Drive and recovery
 
@@ -44,7 +44,8 @@ BACKUP=/safe/inf-backup-$(date -u +%Y%m%dT%H%M%SZ)
 SCRATCH=/scratch/inf-restore-$(date -u +%Y%m%dT%H%M%SZ)
 node scripts/google-drive-release.mjs backup --env-file .env.local --output "$BACKUP"
 node scripts/google-drive-release.mjs verify-backup --backup "$BACKUP" --scratch "$SCRATCH" --inventory /safe/inf-inventory.json
-# Expected: manifest hashes match, events fold, and inventory identity fields match.
+# The verifier safely builds its ignored contracts/domain runtime if Setup left
+# every dist/ absent. Expected: hashes match, events fold, inventory fields match.
 ```
 
 ## PWA and deployment

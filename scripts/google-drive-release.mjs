@@ -1,8 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
+import { execFile as execFileCallback } from "node:child_process";
 import { createServer } from "node:http";
 import { chmod, cp, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
 
 export const PUBLIC_ROOT_ID = "1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK";
 const scope = "https://www.googleapis.com/auth/drive";
@@ -142,6 +146,10 @@ async function verifyBackup(backupPath, scratchPath, inventoryPath) {
   for (const entry of manifest.files) { const bytes = await readFile(join(scratch, entry.relativePath)); if (createHash("sha256").update(bytes).digest("hex") !== entry.sha256) throw new Error(`Scratch restore hash mismatch: ${entry.relativePath}`); }
   const events = [];
   for (const entry of manifest.files.filter((file) => file.root === "private" && file.mimeType === "application/json")) { try { const value = JSON.parse(await readFile(join(scratch, entry.relativePath), "utf8")); if (value?.schemaVersion === 1 && value?.eventId) events.push(value); } catch { /* non-event JSON is not folded */ } }
+  // The documented command is valid immediately after Setup. Build only the
+  // exact ignored runtime prerequisites before importing the workspace export.
+  await execFile(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["--filter", "@inf/contracts", "build"], { maxBuffer: 10 * 1024 * 1024 });
+  await execFile(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["--filter", "@inf/domain", "build"], { maxBuffer: 10 * 1024 * 1024 });
   const { foldEvents } = await import("@inf/domain"); const folded = foldEvents(events); const recovered = folded.catalog.infographics.map((item) => ({ id: item.id, title: item.title, originalDriveFileId: item.originalDriveFileId, thumbnailDriveFileId: item.thumbnailDriveFileId, sha256: item.sha256, folderState: item.folderState })).sort((a, b) => a.id.localeCompare(b.id));
   if (inventoryPath) {
     const exported = JSON.parse(await readFile(resolve(inventoryPath), "utf8")); const expected = (exported.recovery?.items ?? exported.items ?? []).map(({ id, title, originalDriveFileId, thumbnailDriveFileId, sha256, folderState }) => ({ id, title, originalDriveFileId, thumbnailDriveFileId, sha256, folderState })).sort((a, b) => a.id.localeCompare(b.id));
