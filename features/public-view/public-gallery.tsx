@@ -1,6 +1,6 @@
 "use client";
 
-import { PublicCatalogResponseSchema, type PublicInfographic } from "@inf/contracts";
+import { PublicCatalogResponseSchema, type PublicInfographic } from "@inf/contracts/public";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../lib/api-client";
 

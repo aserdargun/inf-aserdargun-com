@@ -14,7 +14,7 @@
     { "route": "/login", "allowedRoles": ["anonymous"] },
     { "route": "/_next/*", "allowedRoles": ["anonymous"] },
     { "route": "/manifest.webmanifest", "allowedRoles": ["anonymous"] },
-    { "route": "/sw.js", "allowedRoles": ["anonymous"] },
+    { "route": "/icons/*", "allowedRoles": ["anonymous"] },
     { "route": "/favicon.ico", "allowedRoles": ["anonymous"] },
     { "route": "/.auth/login/aad", "statusCode": 404 },
     {

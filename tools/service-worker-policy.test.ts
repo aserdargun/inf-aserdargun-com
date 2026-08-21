@@ -18,7 +18,7 @@ function workerHarness() {
     }, keys: async () => [...stores.keys()], delete: async (name: string) => stores.delete(name),
   };
   const self = { location: { origin: "http://inf.test" }, addEventListener: (name: string, callback: (event: any) => void) => handlers.set(name, callback), skipWaiting: async () => undefined, clients: { claim: async () => undefined } };
-  vm.runInNewContext(readFileSync("public/sw.js", "utf8"), { self, caches, fetch: (request: Request) => network(request), URL, Request, Response, Error, Promise });
+  vm.runInNewContext(readFileSync("public/view/sw.js", "utf8"), { self, caches, fetch: (request: Request) => network(request), URL, Request, Response, Error, Promise });
   return {
     setNetwork(value: typeof network) { network = value; }, caches: stores,
     async fetch(url: string, method = "GET") { let response: Promise<Response> | undefined; handlers.get("fetch")!({ request: new Request(url, { method }), respondWith(value: Promise<Response>) { response = value; } }); return response; },
@@ -42,5 +42,19 @@ describe("public service-worker cache policy", () => {
     harness.setNetwork(async () => new Response("unauthorized", { status: 401 })); await (await harness.fetch("http://inf.test/api/public/infographics"))?.text();
     harness.setNetwork(async () => new Response("failure", { status: 500 })); await (await harness.fetch("http://inf.test/api/public/infographics/00000000-0000-4000-8000-000000000001"))?.text();
     expect([...harness.caches.values()].flat()).toHaveLength(0);
+  });
+
+  test("rejects redirected and opaque responses, and serializes concurrent bounded writes", async () => {
+    const harness = workerHarness();
+    const redirected = new Response("redirected", { status: 200 }); Object.defineProperty(redirected, "redirected", { value: true });
+    harness.setNetwork(async () => redirected); await (await harness.fetch("http://inf.test/api/public/infographics"))?.text();
+    const opaque = new Response("opaque", { status: 200 }); Object.defineProperty(opaque, "type", { value: "opaque" });
+    harness.setNetwork(async () => opaque); await (await harness.fetch("http://inf.test/api/public/infographics/00000000-0000-4000-8000-000000000001"))?.text();
+    expect([...harness.caches.values()].flat()).toHaveLength(0);
+    harness.setNetwork(async () => new Response("public", { status: 200 }));
+    const requests = Array.from({ length: 100 }, (_, index) => `http://inf.test/api/public/infographics/00000000-0000-4000-8000-${String(index).padStart(12, "0")}`);
+    await Promise.all((await Promise.all(requests.map((url) => harness.fetch(url)))).map((response) => response?.text()));
+    expect([...harness.caches.values()].flat()).toHaveLength(40);
+    expect(await harness.fetch("http://inf.test/api/infographics")).toBeUndefined();
   });
 });

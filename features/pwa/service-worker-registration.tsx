@@ -8,7 +8,7 @@ export function ServiceWorkerRegistration() {
     const loopback = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "[::1]";
     const worker = navigator.serviceWorker;
     if (!worker || (!loopback && !window.isSecureContext)) return;
-    void worker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+    void worker.register("/view/sw.js", { scope: "/view/" }).catch(() => undefined);
   }, []);
   return null;
 }

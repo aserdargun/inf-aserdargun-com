@@ -5,8 +5,9 @@ const DATA_CACHE = `${VERSION}-data`;
 const IMAGE_CACHE = `${VERSION}-images`;
 const MAX_ENTRIES = 40;
 const STATIC_ASSETS = ["/view/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png"];
+let cacheWrites = Promise.resolve();
 function isSafeResponse(response) { return response.ok && !response.redirected && (response.type === "basic" || response.type === "default"); }
-async function writeBounded(cacheName, request, response) { if (!isSafeResponse(response)) return; const cache = await caches.open(cacheName); await cache.put(request, response.clone()); const keys = await cache.keys(); await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_ENTRIES)).map((key) => cache.delete(key))); }
+function writeBounded(cacheName, request, response) { if (!isSafeResponse(response)) return Promise.resolve(); const work = async () => { const cache = await caches.open(cacheName); await cache.put(request, response.clone()); const keys = await cache.keys(); await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_ENTRIES)).map((key) => cache.delete(key))); }; const next = cacheWrites.then(work, work); cacheWrites = next.catch(() => undefined); return next; }
 function publicCatalog(pathname) { return pathname === "/api/public/infographics" || /^\/api\/public\/infographics\/[0-9a-f-]+$/i.test(pathname); }
 function publicImage(pathname) { return pathname.startsWith("/api/public/images/"); }
 function staticAsset(pathname) { return pathname === "/view" || pathname === "/view/" || pathname === "/manifest.webmanifest" || pathname.startsWith("/icons/") || pathname.startsWith("/_next/static/"); }

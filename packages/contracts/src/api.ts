@@ -10,16 +10,8 @@ import {
   UtcDateTimeSchema,
   UuidSchema,
 } from "./entities";
-
-export const PublicInfographicSchema = z.strictObject({
-  id: UuidSchema,
-  title: PublicSafeTitleSchema,
-  publishedAt: UtcDateTimeSchema,
-  thumbnailUrl: z.string().startsWith("/api/public/images/"),
-  imageUrl: z.string().startsWith("/api/public/images/"),
-});
-
-export const PublicCatalogResponseSchema = z.array(PublicInfographicSchema);
+export { PublicCatalogResponseSchema, PublicInfographicSchema } from "./public";
+export type { PublicCatalogResponse, PublicInfographic } from "./public";
 
 export const ApiErrorSchema = z.strictObject({
   code: z.string().min(1),
@@ -130,8 +122,6 @@ export const SettingsHealthResponseSchema = z.strictObject({
   recovery: z.strictObject({ inventorySchemaVersion: z.literal(1), items: z.array(SettingsInventoryItemSchema) }),
 });
 
-export type PublicInfographic = z.infer<typeof PublicInfographicSchema>;
-export type PublicCatalogResponse = z.infer<typeof PublicCatalogResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type SyncRequest = z.infer<typeof SyncRequestSchema>;
 export type CaptureMetadata = z.infer<typeof CaptureMetadataSchema>;
