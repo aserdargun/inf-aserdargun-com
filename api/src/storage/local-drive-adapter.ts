@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, readdir, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import type { CreateFileInput, StoragePort, StoredFile } from "./storage-port.js";
 import { withKeyedLock } from "./keyed-lock.js";
@@ -94,20 +94,7 @@ export class LocalDriveAdapter implements StoragePort {
     this.assertInside(toPath, destination);
     await this.assertAbsent(destination);
     await this.assertAbsent(`${destination}${sidecarSuffix}`);
-    const sourceData = metadata.dataPath;
-    const sourceMeta = `${sourceData}${sidecarSuffix}`;
-    const destinationMeta = `${destination}${sidecarSuffix}`;
-    try {
-      await rename(sourceData, destination);
-      this.fault?.("afterDataPublish");
-      await rename(sourceMeta, destinationMeta);
-      this.fault?.("afterMetadataPublish");
-      metadata.parentIds = [toFolderId]; metadata.dataPath = destination;
-      await writeFile(destinationMeta, JSON.stringify(metadata), { mode: 0o600 });
-    } catch (error) {
-      await this.rollbackMove(sourceData, sourceMeta, destination, destinationMeta);
-      throw error;
-    }
+    await this.publish(metadata, destination, { parentIds: [toFolderId], dataPath: destination, trashed: false });
     });
   }
 
@@ -121,20 +108,7 @@ export class LocalDriveAdapter implements StoragePort {
     const destination = resolve(trashPath, `${fileId}.blob`);
     await this.assertAbsent(destination);
     await this.assertAbsent(`${destination}${sidecarSuffix}`);
-    const sourceData = metadata.dataPath;
-    const sourceMeta = `${sourceData}${sidecarSuffix}`;
-    const destinationMeta = `${destination}${sidecarSuffix}`;
-    try {
-      await rename(sourceData, destination);
-      this.fault?.("afterDataPublish");
-      await rename(sourceMeta, destinationMeta);
-      this.fault?.("afterMetadataPublish");
-      metadata.trashed = true; metadata.dataPath = destination;
-      await writeFile(destinationMeta, JSON.stringify(metadata), { mode: 0o600 });
-    } catch (error) {
-      await this.rollbackMove(sourceData, sourceMeta, destination, destinationMeta);
-      throw error;
-    }
+    await this.publish(metadata, destination, { parentIds: metadata.parentIds, dataPath: destination, trashed: true });
     });
   }
 
@@ -252,8 +226,26 @@ export class LocalDriveAdapter implements StoragePort {
     return [...this.folderPaths.entries()].find(([, relativePath]) => resolve(this.rootPath, relativePath) === resolve(path))?.[0];
   }
 
-  private async rollbackMove(sourceData: string, sourceMeta: string, destination: string, destinationMeta: string): Promise<void> {
-    try { await lstat(destinationMeta); await rename(destinationMeta, sourceMeta); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-    try { await lstat(destination); await rename(destination, sourceData); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  private async publish(metadata: LocalMetadata, destination: string, update: Pick<LocalMetadata, "parentIds" | "dataPath" | "trashed">): Promise<void> {
+    const sourceData = metadata.dataPath;
+    const sourceMeta = `${sourceData}${sidecarSuffix}`;
+    const destinationMeta = `${destination}${sidecarSuffix}`;
+    const next: LocalMetadata = { ...metadata, parentIds: [...update.parentIds], dataPath: update.dataPath, trashed: update.trashed, appProperties: { ...metadata.appProperties } };
+    let linked = false;
+    let metaPublished = false;
+    try {
+      await link(sourceData, destination); // atomic EEXIST refusal: never replaces a destination.
+      linked = true;
+      this.fault?.("afterDataPublish");
+      await writeFile(destinationMeta, JSON.stringify(next), { flag: "wx", mode: 0o600 });
+      metaPublished = true;
+      this.fault?.("afterMetadataPublish");
+      await unlink(sourceMeta);
+      await unlink(sourceData);
+    } catch (error) {
+      if (metaPublished) await unlink(destinationMeta).catch(() => undefined);
+      if (linked) await unlink(destination).catch(() => undefined);
+      throw error;
+    }
   }
 }

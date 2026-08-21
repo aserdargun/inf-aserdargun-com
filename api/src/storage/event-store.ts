@@ -29,11 +29,9 @@ export class EventStore {
       const claims = (await this.storage.findByAppProperty(this.eventsFolderId, "infEventId", event.eventId)).sort((left, right) => left.id.localeCompare(right.id));
       if (claims.length > 1) {
         const winner = claims[0];
-        for (const duplicate of claims.slice(1)) {
-          const duplicateBytes = await this.storage.readFile(duplicate.id);
-          if (!duplicateBytes.equals(bytes)) throw new Error(`Duplicate immutable event ID claim; retained deterministic winner ${winner.id}.`);
-          await this.storage.trashFile(duplicate.id);
-        }
+        const claimBytes = await Promise.all(claims.map(async (claim) => ({ claim, bytes: await this.storage.readFile(claim.id) })));
+        if (claimBytes.some((claim) => !claim.bytes.equals(bytes))) throw new Error(`Immutable-event integrity conflict; retained all claims including deterministic winner ${winner.id}.`);
+        for (const duplicate of claimBytes.slice(1)) await this.storage.trashFile(duplicate.claim.id);
       }
       if ((await this.storage.findByAppProperty(this.eventsFolderId, "infEventId", event.eventId)).length !== 1) throw new Error("Duplicate immutable event ID claim could not be reconciled.");
     });
