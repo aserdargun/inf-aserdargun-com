@@ -1,9 +1,11 @@
 import http from "node:http";
+import { Readable, Transform } from "node:stream";
 import { createRuntime } from "../api-dist/dist/index.js";
 import { publicGet, publicImage, publicList } from "../api-dist/dist/functions/public.js";
 import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSurprise, ownerSync } from "../api-dist/dist/functions/owner.js";
 
 const port = Number.parseInt(process.env.INF_LOCAL_FUNCTIONS_PORT ?? "7071", 10);
+const MAX_REQUEST_BYTES = 20 * 1024 * 1024;
 if (!Number.isInteger(port)) throw new Error("The local Functions port is invalid.");
 const dependencies = createRuntime();
 
@@ -30,10 +32,22 @@ function route(method, path) {
 async function toRequest(request) {
   const headers = new Headers();
   for (const [name, value] of Object.entries(request.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
-  const chunks = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  const body = chunks.length === 0 ? undefined : Buffer.concat(chunks);
-  return new Request(`http://127.0.0.1:${port}${request.url}`, { method: request.method, headers, body });
+  const declared = headers.get("content-length");
+  if (declared && /^\d+$/.test(declared) && Number(declared) > MAX_REQUEST_BYTES) {
+    // Drain rather than buffer the rejected upload so the keep-alive connection
+    // cannot hold shutdown hostage after its 413 response is written.
+    request.resume();
+    const error = new Error("REQUEST_TOO_LARGE"); error.code = "REQUEST_TOO_LARGE"; throw error;
+  }
+  if (["GET", "HEAD"].includes(request.method ?? "GET")) return new Request(`http://127.0.0.1:${port}${request.url}`, { method: request.method, headers });
+  let total = 0;
+  const capped = new Transform({ transform(chunk, _encoding, callback) {
+    total += chunk.length;
+    if (total > MAX_REQUEST_BYTES) { const error = new Error("REQUEST_TOO_LARGE"); error.code = "REQUEST_TOO_LARGE"; request.destroy(error); callback(error); return; }
+    callback(null, chunk);
+  } });
+  request.pipe(capped);
+  return new Request(`http://127.0.0.1:${port}${request.url}`, { method: request.method, headers, body: Readable.toWeb(capped), duplex: "half" });
 }
 
 const server = http.createServer(async (request, response) => {
@@ -43,7 +57,8 @@ const server = http.createServer(async (request, response) => {
   try {
     const result = await handler(await toRequest(request), path.startsWith("/api/public/") ? dependencies.public : dependencies.owner);
     response.writeHead(result.status, result.headers).end(result.body);
-  } catch {
+  } catch (error) {
+    if (error?.code === "REQUEST_TOO_LARGE") { response.writeHead(413, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }).end('{"code":"MULTIPART_TOO_LARGE","message":"Request exceeds 20 MiB"}'); return; }
     response.writeHead(500, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }).end('{"code":"INTERNAL","message":"Internal server error"}');
   }
 });

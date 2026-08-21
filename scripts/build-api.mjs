@@ -1,10 +1,10 @@
-import { rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
-const output = resolve(process.cwd(), "api-dist");
-await rm(output, { recursive: true, force: true });
 const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const clean = spawn(process.execPath, [resolve("scripts/clean-output.mjs"), "api-dist"], { stdio: "inherit" });
+const cleanCode = await new Promise((resolveExit) => clean.once("exit", resolveExit));
+if (cleanCode !== 0) process.exit(cleanCode ?? 1);
 const packages = spawn(command, ["--filter", "@inf/contracts", "build"], { stdio: "inherit" });
 const packagesCode = await new Promise((resolveExit) => packages.once("exit", resolveExit));
 if (packagesCode !== 0) process.exit(packagesCode ?? 1);

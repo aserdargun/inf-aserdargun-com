@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,6 +64,27 @@ test("safe stop terminates an owned listener and refuses a foreign checkout list
     assert.match(output, /already stopped/);
     assert.equal(foreign.exitCode, null);
   } finally {
+    await terminate(foreign);
+    await rm(foreignDirectory, { recursive: true, force: true });
+  }
+});
+
+test("safe stop refuses a reused recorded PID identity", async () => {
+  const foreignDirectory = await mkdtemp(join(tmpdir(), "inf-reused-pid-"));
+  const foreign = listener(foreignDirectory);
+  try {
+    await listenerReady();
+    await mkdir(".codex/run", { recursive: true });
+    await writeFile(".codex/run/inf-local.json", JSON.stringify({
+      version: 2,
+      checkout: process.cwd(),
+      pids: [{ pid: foreign.pid, startIdentity: "Thu Jan  1 00:00:00 1970" }],
+    }));
+    const output = await stop();
+    assert.match(output, /already stopped/);
+    assert.equal(foreign.exitCode, null);
+  } finally {
+    await rm(".codex/run/inf-local.json", { force: true });
     await terminate(foreign);
     await rm(foreignDirectory, { recursive: true, force: true });
   }

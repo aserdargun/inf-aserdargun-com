@@ -31,3 +31,12 @@ test("the browser bundle never receives the local proxy capability", async () =>
   assert.doesNotMatch(source, /NEXT_PUBLIC_INF_LOCAL_PROXY_TOKEN/);
   assert.doesNotMatch(source, /localStorage.*INF_LOCAL_PROXY_TOKEN/);
 });
+
+test("Playwright cleanup delegates to the bounded checkout Stop path", async () => {
+  const config = await readFile("playwright.config.ts", "utf8");
+  const wrapper = await readFile("scripts/playwright-local-server.mjs", "utf8");
+  assert.match(config, /playwright-local-server/);
+  assert.match(config, /gracefulShutdown/);
+  assert.match(wrapper, /stop-local\.mjs/);
+  assert.match(wrapper, /SIGTERM/);
+});

@@ -82,7 +82,7 @@ describe("public PWA contract", () => {
     expect(publicFeatures).not.toContain('from "@inf/contracts"');
     expect(publicFeatures).not.toMatch(/features\/(library|inbox|detail|review|settings)|OwnerCatalog|MaterializedInfographic|sourceUrl|categoryIds|tagIds|favorite|seenCount|reviewCount|folderState|sha256/i);
     expect(publicContract).not.toMatch(/from "\.\/entities"|from "\.\/api"|sourceUrl|originalDriveFileId|categoryIds|folderState/);
-    expect(manifest.exports["./public"]).toBe("./src/public.ts");
+    expect(manifest.exports["./public"]).toEqual({ types: "./src/public.ts", default: "./dist/public.js" });
   });
 
   test("keeps owner schema tokens out of the production View chunk graph", () => {

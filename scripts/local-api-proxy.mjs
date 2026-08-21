@@ -14,7 +14,6 @@ const server = http.createServer((request, response) => {
     return;
   }
   const headers = { ...request.headers, host: `127.0.0.1:${targetPort}`, "x-inf-local-proxy-token": token };
-  delete headers["content-length"];
   const upstream = http.request({ host: "127.0.0.1", port: targetPort, method: request.method, path: request.url, headers }, (upstreamResponse) => {
     response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
     upstreamResponse.pipe(response);

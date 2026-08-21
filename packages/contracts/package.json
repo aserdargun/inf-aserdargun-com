@@ -4,14 +4,14 @@
   "type": "module",
   "version": "0.1.0",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "src/index.ts",
   "files": ["dist"],
   "exports": {
-    ".": "./dist/index.js",
-    "./public": "./src/public.ts"
+    ".": { "types": "./src/index.ts", "default": "./dist/index.js" },
+    "./public": { "types": "./src/public.ts", "default": "./dist/public.js" }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node ../../scripts/fix-esm-imports.mjs dist",
+    "build": "node ../../scripts/clean-output.mjs dist && tsc -p tsconfig.json && node ../../scripts/fix-esm-imports.mjs dist",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

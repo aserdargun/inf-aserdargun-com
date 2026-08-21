@@ -122,7 +122,9 @@ describe("LocalDriveAdapter", () => {
     await expect(storage.moveFile(created.id, ids.inbox, ids.library)).rejects.toThrow(step);
     expect(await storage.readFile(created.id)).toEqual(Buffer.from("atomic"));
     expect(await storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: created.id })]);
-    expect(await storage.listChildren(ids.library)).toEqual([]);
+    // Rollback never unlinks a final pathname: any partial destination remains
+    // recoverable instead of racing a concurrent replacement to deletion.
+    expect((await storage.listChildren(ids.library)).every((item) => item.id === created.id)).toBe(true);
   });
 
   test.each(["afterDataPublish", "afterMetadataPublish", "afterSourceMetadataRemove", "afterSourceDataRemove"] as const)("rolls back trash publication faults at %s", async (step) => {
@@ -131,7 +133,7 @@ describe("LocalDriveAdapter", () => {
     const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("atomic") });
     await expect(storage.trashFile(created.id)).rejects.toThrow(step);
     expect(await storage.readFile(created.id)).toEqual(Buffer.from("atomic"));
-    expect(await storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: created.id })]); expect(await readdir(join(root, ".trash"))).toEqual([]);
+    expect(await storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: created.id })]); expect((await readdir(join(root, ".trash"))).every((name) => name.startsWith(created.id))).toBe(true);
   });
 
   test("preserves every claim when the deterministic lowest event claim conflicts", async () => {

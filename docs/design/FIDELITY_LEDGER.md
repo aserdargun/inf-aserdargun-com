@@ -1,18 +1,18 @@
 # Fidelity ledger
 
-Compared accepted concepts `inf-owner-desktop.png`, `inf-owner-mobile.png`, and `inf-public-view.png` against the implemented route shells and Task 9–13 browser evidence.
+Evidence: accepted [owner desktop](inf-owner-desktop.png), [owner mobile](inf-owner-mobile.png), and [public View](inf-public-view.png); implementation [owner desktop](evidence/owner-desktop.png), [owner mobile](evidence/owner-mobile.png), [public desktop](evidence/public-desktop.png), and [public mobile](evidence/public-mobile.png). Measurements were taken at 1280×720 desktop and 390×844 mobile.
 
-| Area | Concept expectation | Implementation result / fix |
+| Area | Observed delta | Fix and residual |
 | --- | --- | --- |
-| Copy | Calm, task-oriented labels; no marketing language | Today, Inbox, Library, Review, Surprise, and View use the approved concise copy. |
-| Layout | Narrow desktop sidebar; mobile bottom navigation | CSS switches at 768px and keeps Settings reachable on mobile. |
-| Typography | Precise neutral UI type hierarchy | Local system type scale, restrained headings, and readable image captions; no remote fonts. |
-| Palette | Neutral light/dark surfaces with image-led colour | Theme tokens and persisted light/dark preference; no gradients or decorative colour blocks. |
-| Icons | Thin, consistent utility icons | Lucide line icons with shared stroke treatment; PWA icons are local and distinct maskable safe-zone artwork. |
-| Images | Image-first rails/grids and contained diagrams | 64×48 review previews and media frames use `object-fit: contain`; detail retains originals. |
-| Spacing | Airy 4/8 rhythm, not card-grid marketing chrome | Shared page/row/media spacing and restrained borders. |
-| Desktop | Today actions and library scanning remain primary | Desktop screenshots cover Today, Library, detail, and public gallery. |
-| Mobile | No horizontal overflow; touch controls are usable | 390–427px checks cover navigation, capture, Library/detail, and public View. Controls are at least 44px. |
-| Interaction | Owner actions separated from public observation | Public routes only use `/api/public/*`; View has no owner navigation or mutation controls. |
+| Copy | Concept uses terse task labels; implementation matches Today/Inbox/Library/Review/View, with no hero copy. | Kept approved wording; no residual. |
+| Layout | Desktop sidebar remains visible at 1280px; mobile replaces it below 768px. | Fixed atomic 768px switch; no horizontal overflow at 390px. |
+| Typography | Implementation uses system UI rather than the concept's rendered mock font. | Deliberate no-remote-font tradeoff; hierarchy and line lengths retained. |
+| Palette | Neutral light surfaces and image-led colour match; dark mode is a functional extension. | Tokenized palette; residual first semantic toggle label updates on hydration. |
+| Icons | Lucide lines are slightly sharper than concept mock icons. | Shared 1.75 stroke treatment and local maskable icon; accepted. |
+| Images | Diagram previews must not crop; measured review thumbnail is 64×48. | `object-fit: contain` in rail/detail previews; accepted. |
+| Spacing | Concept is airy rather than card-grid dense. | 4/8 rhythm and restrained borders; accepted. |
+| Desktop | Owner and public evidence preserve narrow navigation/image-first gallery. | Screenshots above provide auditable reference; accepted. |
+| Mobile | 390px evidence keeps navigation and public gallery inside viewport. | 44px controls and bottom navigation; accepted. |
+| Interaction | Public screenshot contains no owner mutation/navigation control. | Only `/api/public/*` is requested in View; owner actions remain private. |
 
 Known visual limitation: the theme-toggle server markup initially uses the default semantic state until hydration restores a saved preference. The pre-paint theme attribute prevents a visible flash; semantic button text follows on hydration.

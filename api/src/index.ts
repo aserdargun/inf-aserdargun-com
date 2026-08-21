@@ -16,7 +16,14 @@ function required(name: string, env: Environment): string {
 }
 
 function localRuntimeEnabled(env: Environment): boolean {
-  return env.INF_LOCAL_STORAGE_MODE === "true" && env.INF_LOCAL_AUTH_BYPASS === "true" && env.INF_LOCAL_PROXY_MODE === "bypass" && env.WEBSITE_SITE_NAME === undefined && typeof env.INF_LOCAL_PROXY_TOKEN === "string" && env.INF_LOCAL_PROXY_TOKEN.length >= 32;
+  return env.INF_LOCAL_RUNTIME === "development"
+    && env.NODE_ENV !== "production"
+    && env.INF_LOCAL_STORAGE_MODE === "true"
+    && env.INF_LOCAL_AUTH_BYPASS === "true"
+    && env.INF_LOCAL_PROXY_MODE === "bypass"
+    && env.WEBSITE_SITE_NAME === undefined
+    && typeof env.INF_LOCAL_PROXY_TOKEN === "string"
+    && env.INF_LOCAL_PROXY_TOKEN.length >= 32;
 }
 
 export function createRuntime(env: Environment = process.env) {

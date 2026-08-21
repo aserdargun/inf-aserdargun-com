@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, readdir, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
-import type { Stats } from "node:fs";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import type { CreateFileInput, StoragePort, StoredFile } from "./storage-port.js";
 import { withKeyedLock } from "./keyed-lock.js";
@@ -223,14 +222,6 @@ export class LocalDriveAdapter implements StoragePort {
     throw new Error("Local storage destination already exists; refusing to overwrite it.");
   }
 
-  /** Cleanup is conditional on the exact inode we created; never unlink a pathname that another writer has since claimed. */
-  private async unlinkIfSame(path: string, expected: Stats): Promise<void> {
-    const current = await lstat(path).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? undefined : Promise.reject(error));
-    if (!current) return;
-    if (current.dev !== expected.dev || current.ino !== expected.ino) throw new Error("Local storage rollback refused to unlink a pathname whose inode changed.");
-    await unlink(path);
-  }
-
   private folderIdForPath(path: string): string | undefined {
     return [...this.folderPaths.entries()].find(([, relativePath]) => resolve(this.rootPath, relativePath) === resolve(path))?.[0];
   }
@@ -241,37 +232,29 @@ export class LocalDriveAdapter implements StoragePort {
     const destinationMeta = `${destination}${sidecarSuffix}`;
     const next: LocalMetadata = { ...metadata, parentIds: [...update.parentIds], dataPath: update.dataPath, trashed: update.trashed, appProperties: { ...metadata.appProperties } };
     const originalSidecar = await readFile(sourceMeta);
-    let destinationDataOwned = false;
-    let destinationMetaOwned = false;
-    let destinationDataIdentity: Stats | undefined;
-    let destinationMetaIdentity: Stats | undefined;
     let sourceMetaRemoved = false;
     let sourceDataRemoved = false;
     try {
       this.fault?.("beforeDataPublish");
       await link(sourceData, destination); // atomic EEXIST refusal: never replaces a destination.
-      destinationDataOwned = true;
-      destinationDataIdentity = await lstat(destination);
       this.fault?.("afterDataPublish");
       this.fault?.("beforeMetadataPublish");
-      await writeFile(destinationMeta, JSON.stringify(next), { flag: "wx", mode: 0o600 });
-      destinationMetaOwned = true;
-      destinationMetaIdentity = await lstat(destinationMeta);
-      this.fault?.("afterMetadataPublish");
+      // The final sidecar is the commit marker. Keep it absent until the source
+      // paths are gone, so rollback never has to delete a contested final name.
       await unlink(sourceMeta);
       sourceMetaRemoved = true;
       this.fault?.("afterSourceMetadataRemove");
       await unlink(sourceData);
       sourceDataRemoved = true;
       this.fault?.("afterSourceDataRemove");
+      this.fault?.("afterMetadataPublish");
+      await writeFile(destinationMeta, JSON.stringify(next), { flag: "wx", mode: 0o600 });
     } catch (error) {
       const rollback: unknown[] = [];
       try { if (sourceDataRemoved) await link(destination, sourceData); } catch (cause) { rollback.push(cause); }
       try { if (sourceMetaRemoved) await writeFile(sourceMeta, originalSidecar, { flag: "wx", mode: 0o600 }); } catch (cause) { rollback.push(cause); }
-      if (rollback.length === 0) {
-        try { if (destinationMetaOwned && destinationMetaIdentity) await this.unlinkIfSame(destinationMeta, destinationMetaIdentity); } catch (cause) { rollback.push(cause); }
-        try { if (destinationDataOwned && destinationDataIdentity) await this.unlinkIfSame(destination, destinationDataIdentity); } catch (cause) { rollback.push(cause); }
-      }
+      // Publication paths are never unlinked during rollback. The sidecar is only
+      // written after the irreversible commit, so ambiguous final claims are retained.
       if (rollback.length > 0) throw new AggregateError([error, ...rollback], "Local storage integrity rollback failed; retained the last consistent copy.");
       throw error;
     }
