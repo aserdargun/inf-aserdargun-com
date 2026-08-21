@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { MaterializedInfographic, ReviewRating } from "@inf/contracts";
+import { UtcDateTimeSchema, type MaterializedInfographic, type ReviewRating } from "@inf/contracts";
 import { scheduleReview, sortDueItems } from "../src/review-schedule";
 
 const REVIEWED_AT = "2026-08-20T10:30:00.000Z";
@@ -61,6 +61,20 @@ describe("scheduleReview", () => {
       intervalDays: 1,
       dueAt: "2026-08-21T10:30:00.123456Z",
     });
+  });
+
+  test("does not return a dueAt outside the UTC timestamp contract when year 9999 overflows", () => {
+    const reviewedAt = "9999-12-31T23:59:59.999999Z";
+    expect(UtcDateTimeSchema.safeParse(reviewedAt).success).toBe(true);
+
+    expect(() => scheduleReview("easy", null, reviewedAt)).toThrow(RangeError);
+  });
+
+  test("keeps an in-range year-9999 dueAt schema-valid", () => {
+    const scheduled = scheduleReview("easy", null, "9999-12-17T23:59:59.999999Z");
+
+    expect(scheduled.dueAt).toBe("9999-12-31T23:59:59.999999Z");
+    expect(UtcDateTimeSchema.safeParse(scheduled.dueAt).success).toBe(true);
   });
 });
 

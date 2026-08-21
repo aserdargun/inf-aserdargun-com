@@ -1,3 +1,5 @@
+import { UtcDateTimeSchema } from "@inf/contracts";
+
 const MILLISECONDS_PER_DAY = 86_400_000;
 const MILLISECONDS_PER_SECOND = 1_000;
 const SECONDS_PER_DAY = 86_400n;
@@ -77,6 +79,11 @@ export function addWholeUtcDays(timestamp: string, days: number): string {
   if (!Number.isFinite(dueMilliseconds)) throw new RangeError("Scheduled UTC instant is out of range");
 
   const wholeSecondIso = new Date(dueMilliseconds).toISOString();
-  if (instant.fractionalSecond === "") return wholeSecondIso;
-  return `${wholeSecondIso.slice(0, -5)}.${instant.fractionalSecond}Z`;
+  const dueAt = instant.fractionalSecond === ""
+    ? wholeSecondIso
+    : `${wholeSecondIso.slice(0, -5)}.${instant.fractionalSecond}Z`;
+  if (!UtcDateTimeSchema.safeParse(dueAt).success) {
+    throw new RangeError("Scheduled UTC instant is outside the timestamp contract");
+  }
+  return dueAt;
 }
