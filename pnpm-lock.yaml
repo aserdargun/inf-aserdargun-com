@@ -70,6 +70,9 @@ importers:
       vitest:
         specifier: 4.1.11
         version: 4.1.11(@types/node@24.10.1)(vite@8.2.1(@types/node@24.10.1)(jiti@2.7.0)(yaml@2.9.0))
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   api:
     dependencies:
