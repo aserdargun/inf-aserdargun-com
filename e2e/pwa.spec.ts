@@ -1,6 +1,8 @@
 import { expect, test } from "playwright/test";
 import { readFileSync } from "node:fs";
 
+const image = readFileSync("api/test/fixtures/valid-infographic.png");
+
 test("View Mode exposes a local manifest, icons, and non-blocking service-worker registration", async ({ page, request }) => {
   const external: string[] = [];
   page.on("request", (entry) => { if (new URL(entry.url()).origin !== "http://127.0.0.1:3000") external.push(entry.url()); });
@@ -14,21 +16,30 @@ test("View Mode exposes a local manifest, icons, and non-blocking service-worker
     expect(response.headers()["content-type"]).toContain("image/png");
     expect((await response.body()).subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   }
+  const workerResponse = await request.get("/view/sw.js");
+  expect(workerResponse.headers()["content-type"]).toContain("javascript");
+  expect(await workerResponse.text()).toContain("self.addEventListener");
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker?.getRegistration("/view/").then((value) => value?.scope) ?? "")).toBe("http://127.0.0.1:3000/view/");
   await page.goto("/");
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker?.controller))).toBeFalsy();
   expect(external).toEqual([]);
 });
 
-test("sparse public states keep the footer at the viewport edge", async ({ page }) => {
-  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
-  await page.setViewportSize({ width: 1280, height: 720 }); await page.goto("/view/");
-  await expect(page.getByText("No infographics are available.")).toBeVisible();
-  await expect.poll(() => page.locator(".public-view__footer").evaluate((element) => Math.round(element.getBoundingClientRect().bottom))).toBe(720);
-  await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-13-round1-footer-desktop.png" });
-  await page.setViewportSize({ width: 390, height: 844 }); await page.reload();
-  await expect.poll(() => page.locator(".public-view__footer").evaluate((element) => Math.round(element.getBoundingClientRect().bottom))).toBe(844);
-  await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-13-round1-footer-mobile.png" });
+test("loading, empty, error, and sparse success public states keep the footer at the viewport edge", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "serviceWorker", { configurable: true, value: undefined }));
+  const item = { id: "00000000-0000-4000-8000-000000000301", title: "One public item", publishedAt: "2024-05-12T00:00:00.000Z", thumbnailUrl: "/api/public/images/thumb-301", imageUrl: "/api/public/images/original-301" };
+  const states = [
+    { name: "loading", text: "Loading infographics…", respond: () => new Promise<void>(() => undefined) },
+    { name: "empty", text: "No infographics are available.", respond: (route: import("playwright/test").Route) => route.fulfill({ contentType: "application/json", body: "[]" }) },
+    { name: "error", text: "This collection is unavailable right now.", respond: (route: import("playwright/test").Route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }) },
+    { name: "success", text: "One public item", respond: (route: import("playwright/test").Route) => route.fulfill({ contentType: "application/json", body: JSON.stringify([item]) }) },
+  ] as const;
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) for (const state of states) {
+    await page.unrouteAll(); await page.route("**/api/public/infographics", state.respond); await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: image })); await page.setViewportSize(viewport); await page.goto(`/view/?state=${state.name}`);
+    await expect(page.getByText(state.text, { exact: true })).toBeVisible();
+    await expect.poll(() => page.locator(".public-view__footer").evaluate((element) => Math.round(element.getBoundingClientRect().bottom))).toBe(viewport.height);
+    if (state.name === "success") await page.screenshot({ fullPage: true, path: `.superpowers/sdd/2026-08-20-inf-mvp-implementation/task-13-round2-footer-${viewport.width}.png` });
+  }
 });
 
 test("service worker policy does not cache private, mutation, error, or cross-origin requests", async () => {

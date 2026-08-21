@@ -1,6 +1,10 @@
 {
   "routes": [
     {
+      "route": "/view/sw.js",
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/view/*",
       "rewrite": "/view/index.html",
       "allowedRoles": ["anonymous"]

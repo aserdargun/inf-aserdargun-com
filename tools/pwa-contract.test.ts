@@ -33,6 +33,7 @@ describe("public PWA contract", () => {
     expect([at(0, 0), at(511, 0), at(0, 511), at(511, 511)]).toEqual([40, 40, 40, 40]);
     for (let y = 0; y < 512; y += 1) for (let x = 0; x < 512; x += 1) {
       const offset = (y * 512 + x) * 4;
+      expect(data[offset + 3]).toBe(255);
       if (data[offset] !== 40 || data[offset + 1] !== 100 || data[offset + 2] !== 220) expect(x).toBeGreaterThanOrEqual(52), expect(x).toBeLessThanOrEqual(460), expect(y).toBeGreaterThanOrEqual(52), expect(y).toBeLessThanOrEqual(460);
     }
   });
@@ -59,6 +60,17 @@ describe("public PWA contract", () => {
     expect(registration).toContain("serviceWorker");
     expect(registration).toContain("localhost");
     expect(registration).toContain('register("/view/sw.js", { scope: "/view/" })');
+  });
+
+  test("publishes a non-rewritten anonymous View worker before the View shell rewrite", () => {
+    const swa = JSON.parse(readFileSync(resolve(root, "public/staticwebapp.config.json"), "utf8"));
+    const workerIndex = swa.routes.findIndex((route: { route: string }) => route.route === "/view/sw.js");
+    const shellIndex = swa.routes.findIndex((route: { route: string }) => route.route === "/view/*");
+    expect(workerIndex).toBeGreaterThanOrEqual(0); expect(workerIndex).toBeLessThan(shellIndex);
+    expect(swa.routes[workerIndex]).toEqual({ route: "/view/sw.js", allowedRoles: ["anonymous"] });
+    const worker = readFileSync(resolve(root, "out/view/sw.js"), "utf8");
+    expect(worker).toContain("self.addEventListener");
+    expect(worker).not.toContain("<html");
   });
 
   test("public features stay inside the public contract boundary", () => {
