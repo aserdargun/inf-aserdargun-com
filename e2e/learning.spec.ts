@@ -47,7 +47,7 @@ test("surprise makes one persisted selection per intent without seen posts or re
   await page.goto("/settings/");
   await page.goto("/surprise/");
   await expect(page.getByRole("img", { name: "Fresh diagram" })).toBeVisible();
-  await staleHeld.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Stale diagram" } }) }).catch(() => undefined);
+  await staleHeld.fulfill({ contentType: "application/json", body: JSON.stringify({ infographic: { ...item, title: "Stale diagram" } }) });
   await expect(page.getByRole("img", { name: "Fresh diagram" })).toBeVisible();
   expect(seenPosts).toBe(0);
 });
@@ -77,6 +77,8 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   await page.keyboard.press("3");
   expect(reviewCalls).toBe(1);
   expect(persisted).toEqual([{ id: item.id, rating: "good" }]);
+  expect(dueCalls).toBe(1);
+  await expect(page.getByRole("heading", { name: "Next review" })).toBeVisible();
   releaseReview!();
   await expect(page.getByText("Review saved.", { exact: true })).toBeVisible();
   await expect(page.getByText("You are caught up.", { exact: true })).toBeVisible();
