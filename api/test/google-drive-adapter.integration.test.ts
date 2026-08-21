@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
+import { google } from "googleapis";
 import { GoogleDriveAdapter } from "../src/storage/google-drive-adapter.js";
 
 type DriveFile = { id: string; name: string; mimeType: string; createdTime: string; parents?: string[]; appProperties?: Record<string, string>; trashed?: boolean };
 const folderMime = "application/vnd.google-apps.folder";
+const driveReleasePublicRootId = "1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK";
 
 function fakeDrive() {
   const files = new Map<string, DriveFile>([
@@ -154,9 +156,72 @@ const task15LiveReady = process.env.INF_DRIVE_INTEGRATION === "1"
   && Boolean(process.env.GOOGLE_REFRESH_TOKEN);
 
 (task15LiveReady ? test : test.skip)(
-  "live Drive contract is skipped until Task 15 provides credentials and a dedicated test root",
+  "live Drive adapter isolates create/read/property-search/move/ancestry/trash in the restricted test root",
   async () => {
-    // Task 15 replaces this guarded placeholder with isolated live fixtures; it must never use production folders.
-    expect(process.env.INF_DRIVE_TEST_ROOT_ID).toBeTruthy();
+    const testRootId = process.env.INF_DRIVE_TEST_ROOT_ID!;
+    const credentials = {
+      clientId: process.env.GOOGLE_CLIENT_ID!, clientSecret: process.env.GOOGLE_CLIENT_SECRET!, refreshToken: process.env.GOOGLE_REFRESH_TOKEN!,
+    };
+    const auth = new google.auth.OAuth2(credentials.clientId, credentials.clientSecret);
+    auth.setCredentials({ refresh_token: credentials.refreshToken });
+    const drive = google.drive({ version: "v3", auth });
+    const [about, publicRoot, testRoot, testPermissions] = await Promise.all([
+      drive.about.get({ fields: "user(displayName,emailAddress)" }),
+      drive.files.get({ fileId: driveReleasePublicRootId, fields: "id,name,mimeType,trashed" }),
+      drive.files.get({ fileId: testRootId, fields: "id,name,mimeType,trashed,parents" }),
+      drive.permissions.list({ fileId: testRootId, fields: "permissions(id,type,role,emailAddress)" }),
+    ]);
+    expect(about.data.user?.emailAddress).toBe("aserdargun@gmail.com");
+    expect(publicRoot.data).toMatchObject({ id: driveReleasePublicRootId, name: "INF-ASERDARGUN-COM", mimeType: folderMime, trashed: false });
+    expect(testRoot.data).toMatchObject({ id: testRootId, name: "integration-test", mimeType: folderMime, trashed: false });
+    expect(testRoot.data.parents).toHaveLength(1);
+    expect(testPermissions.data.permissions).toEqual([expect.objectContaining({ type: "user", role: "owner", emailAddress: "aserdargun@gmail.com" })]);
+    const markerKey = "infIntegrationFixture";
+    const markerValue = "task15";
+    const folderIds: string[] = [];
+
+    async function cleanupFixtures() {
+      const response = await drive.files.list({
+        q: `'${testRootId}' in parents and trashed = false and appProperties has { key='${markerKey}' and value='${markerValue}' }`,
+        fields: "files(id)", spaces: "drive", pageSize: 1000,
+      });
+      for (const file of response.data.files ?? []) if (file.id) await drive.files.update({ fileId: file.id, requestBody: { trashed: true }, fields: "id,trashed" });
+    }
+
+    await cleanupFixtures();
+    try {
+      for (const name of ["source", "destination"]) {
+        const response = await drive.files.create({
+          requestBody: { name: `INF integration ${name}`, mimeType: folderMime, parents: [testRootId], appProperties: { [markerKey]: markerValue } },
+          fields: "id",
+        });
+        if (!response.data.id) throw new Error("Drive did not return an integration fixture folder ID.");
+        folderIds.push(response.data.id);
+      }
+      const storage = new GoogleDriveAdapter({
+        publicRootId: driveReleasePublicRootId,
+        privateRootId: testRootId,
+        credentials,
+      });
+      const bytes = Buffer.from("INF isolated Drive adapter contract");
+      const created = await storage.createFile({
+        name: "adapter-contract.bin", mimeType: "application/octet-stream", parentId: folderIds[0], bytes,
+        appProperties: { [markerKey]: markerValue },
+      });
+      await expect(storage.readFile(created.id)).resolves.toEqual(bytes);
+      await expect(storage.findByAppProperty(testRootId, markerKey, markerValue)).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: created.id })]));
+      await expect(storage.isDescendant(created.id, testRootId)).resolves.toBe(true);
+      await storage.moveFile(created.id, folderIds[0], folderIds[1]);
+      await expect(storage.isDescendant(created.id, testRootId)).resolves.toBe(true);
+      await storage.trashFile(created.id);
+      await expect(storage.readFile(created.id)).rejects.toThrow(/trashed/i);
+    } finally {
+      await cleanupFixtures();
+      const leftovers = await drive.files.list({
+        q: `'${testRootId}' in parents and trashed = false and appProperties has { key='${markerKey}' and value='${markerValue}' }`,
+        fields: "files(id)", spaces: "drive", pageSize: 1000,
+      });
+      expect(leftovers.data.files ?? []).toHaveLength(0);
+    }
   },
 );

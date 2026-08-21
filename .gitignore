@@ -11,3 +11,8 @@ playwright-report/
 test-results/
 coverage/
 *.tsbuildinfo
+.env.local
+.env.*.local
+client_secret*.json
+credentials*.json
+token*.json
