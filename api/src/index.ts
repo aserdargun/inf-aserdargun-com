@@ -2,7 +2,7 @@ import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
 import { EventStore } from "./storage/event-store.js";
 import { GoogleDriveAdapter } from "./storage/google-drive-adapter.js";
 import { publicGet, publicImage, publicList, type PublicDependencies } from "./functions/public.js";
-import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerStats, ownerSurprise, ownerSync, type OwnerDependencies } from "./functions/owner.js";
+import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSurprise, ownerSync, type OwnerDependencies } from "./functions/owner.js";
 import type { HttpResponse } from "./http/errors.js";
 
 const PUBLIC_ROOT_ID = "1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK";
@@ -45,3 +45,4 @@ app.http("review-infographic", { methods: ["POST"], authLevel: "anonymous", rout
 app.http("surprise", { methods: ["GET"], authLevel: "anonymous", route: "surprise", handler: async (request: HttpRequest) => response(await ownerSurprise(request, ownerDeps())) });
 app.http("due-review", { methods: ["GET"], authLevel: "anonymous", route: "review", handler: async (request: HttpRequest) => response(await ownerDueReview(request, ownerDeps())) });
 app.http("settings-stats", { methods: ["GET"], authLevel: "anonymous", route: "settings/stats", handler: async (request: HttpRequest) => response(await ownerStats(request, ownerDeps())) });
+app.http("settings-health", { methods: ["GET"], authLevel: "anonymous", route: "settings/health", handler: async (request: HttpRequest) => response(await ownerSettingsHealth(request, ownerDeps())) });

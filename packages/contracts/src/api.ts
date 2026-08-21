@@ -3,6 +3,7 @@ import {
   CategorySchema,
   MaterializedInfographicSchema,
   PublicSafeTitleSchema,
+  RejectedFileSchema,
   ReviewRatingSchema,
   ReviewRecordSchema,
   TagSchema,
@@ -87,6 +88,48 @@ export const SettingsStatsResponseSchema = z.strictObject({
   seen: z.number().int().nonnegative(),
 });
 
+export const FolderHealthSchema = z.strictObject({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  healthy: z.boolean(),
+});
+
+export const DriveHealthSchema = z.strictObject({
+  rootId: z.string().min(1),
+  folderUrl: z.url(),
+  healthy: z.boolean(),
+  folders: z.array(FolderHealthSchema),
+});
+
+export const SettingsInventoryItemSchema = z.strictObject({
+  id: UuidSchema,
+  title: PublicSafeTitleSchema,
+  originalDriveFileId: z.string().min(1),
+  thumbnailDriveFileId: z.string().min(1),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  detectedMimeType: z.string().startsWith("image/"),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  folderState: z.enum(["Inbox", "Library", "Archive"]),
+  createdAt: UtcDateTimeSchema,
+  capturedAt: UtcDateTimeSchema,
+  processedAt: UtcDateTimeSchema.nullable(),
+  lastSeenAt: UtcDateTimeSchema.nullable(),
+});
+
+export const SettingsHealthResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  application: z.strictObject({ name: z.literal("INF"), version: z.string().min(1), runtimeVersion: z.string().min(1), usesAi: z.literal(false) }),
+  connectionHealth: z.strictObject({ publicDrive: DriveHealthSchema, privateDrive: DriveHealthSchema }),
+  data: SettingsStatsResponseSchema,
+  quarantine: z.strictObject({
+    count: z.number().int().nonnegative(),
+    reasons: z.array(z.strictObject({ reason: z.string().min(1), count: z.number().int().positive() })),
+    rejectedFiles: z.array(RejectedFileSchema),
+  }),
+  recovery: z.strictObject({ inventorySchemaVersion: z.literal(1), items: z.array(SettingsInventoryItemSchema) }),
+});
+
 export type PublicInfographic = z.infer<typeof PublicInfographicSchema>;
 export type PublicCatalogResponse = z.infer<typeof PublicCatalogResponseSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
@@ -97,4 +140,7 @@ export type ReviewRequest = z.infer<typeof ReviewRequestSchema>;
 export type OwnerCatalogResponse = z.infer<typeof OwnerCatalogResponseSchema>;
 export type OwnerCatalogQuery = z.infer<typeof OwnerCatalogQuerySchema>;
 export type DueReviewResponse = z.infer<typeof DueReviewResponseSchema>;
+export type SurpriseResponse = z.infer<typeof SurpriseResponseSchema>;
 export type SettingsStatsResponse = z.infer<typeof SettingsStatsResponseSchema>;
+export type SettingsHealthResponse = z.infer<typeof SettingsHealthResponseSchema>;
+export type SettingsInventoryItem = z.infer<typeof SettingsInventoryItemSchema>;

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, OwnerCatalogQuerySchema, ReviewRequestSchema, SyncRequestSchema, type Category, type OwnerCatalogQuery } from "@inf/contracts";
+import { CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, OwnerCatalogQuerySchema, ReviewRequestSchema, SettingsHealthResponseSchema, SyncRequestSchema, type Category, type OwnerCatalogQuery } from "@inf/contracts";
+import { foldEvents } from "@inf/domain";
 import { authorizeOwner } from "../auth/authorize.js";
 import { AppError, emptyResponse, errorResponse, jsonResponse, type HttpResponse } from "../http/errors.js";
 import { optionalFormString, parseJson, parseMultipart, uuidPath, type RequestLike } from "../http/parse.js";
@@ -170,6 +171,56 @@ export function ownerDueReview(request: RequestLike, deps: OwnerDependencies): P
 
 export function ownerStats(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
   return owner(request, deps, async (snapshot) => jsonResponse(new CatalogService(deps.events).stats(snapshot, now(deps))));
+}
+
+/** Projects operational recovery data through an explicit owner-only allowlist. */
+export function ownerSettingsHealth(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
+  return owner(request, deps, async (snapshot) => {
+    const catalog = new CatalogService(deps.events);
+    const [publicDrive, privateDrive] = await Promise.all([
+      driveHealth(deps, deps.publicRootId, [
+        [deps.inboxFolderId, "Inbox"], [deps.libraryFolderId, "Library"], [deps.thumbnailsFolderId, "Thumbnails"], [deps.duplicatesFolderId, "Duplicates"],
+      ]),
+      driveHealth(deps, deps.privateRootId, [[deps.eventsFolderId, "Events"]]),
+    ]);
+    const reasonCounts = new Map<string, number>();
+    for (const entry of snapshot.catalog.rejectedFiles) reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
+    const rawEvents = await deps.events.readAll();
+    // The separate fold keeps an invalid event count without returning the raw malformed event body.
+    const { quarantine } = foldEvents(rawEvents);
+    for (const entry of quarantine) reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
+    const response = {
+      schemaVersion: 1 as const,
+      application: { name: "INF" as const, version: "0.1.0", runtimeVersion: process.version, usesAi: false as const },
+      connectionHealth: { publicDrive, privateDrive },
+      data: catalog.stats(snapshot, now(deps)),
+      quarantine: {
+        count: snapshot.catalog.rejectedFiles.length + quarantine.length,
+        reasons: [...reasonCounts.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => a.reason.localeCompare(b.reason)),
+        rejectedFiles: snapshot.catalog.rejectedFiles.map((entry) => ({ ...entry })).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.eventId.localeCompare(b.eventId)),
+      },
+      recovery: {
+        inventorySchemaVersion: 1 as const,
+        items: [...snapshot.infographics].sort((a, b) => a.id.localeCompare(b.id)).map((item) => ({
+          id: item.id, title: item.title, originalDriveFileId: item.originalDriveFileId, thumbnailDriveFileId: item.thumbnailDriveFileId,
+          sha256: item.sha256, detectedMimeType: item.detectedMimeType, width: item.width, height: item.height, folderState: item.folderState,
+          createdAt: item.createdAt, capturedAt: item.capturedAt, processedAt: item.processedAt, lastSeenAt: item.lastSeenAt,
+        })),
+      },
+    };
+    return jsonResponse(SettingsHealthResponseSchema.parse(response));
+  });
+}
+
+async function driveHealth(deps: OwnerDependencies, rootId: string, configuredFolders: readonly (readonly [string, string])[]) {
+  const rootHealthy = await folderHealthy(deps.storage, rootId, rootId);
+  const folders = await Promise.all(configuredFolders.map(async ([id, label]) => ({ id, label, healthy: await folderHealthy(deps.storage, id, rootId) })));
+  return { rootId, folderUrl: `https://drive.google.com/drive/folders/${encodeURIComponent(rootId)}`, healthy: rootHealthy && folders.every((folder) => folder.healthy), folders };
+}
+
+async function folderHealthy(storage: StoragePort, folderId: string, rootId: string): Promise<boolean> {
+  try { return await storage.isDescendant(folderId, rootId) && (await storage.listChildren(folderId), true); }
+  catch { return false; }
 }
 
 export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
