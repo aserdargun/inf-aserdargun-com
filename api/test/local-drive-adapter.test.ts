@@ -101,7 +101,21 @@ describe("LocalDriveAdapter", () => {
     await expect(safe.listChildren(ids.publicRoot)).rejects.toThrow(/malformed|path/i);
   });
 
-  test.each(["afterDataPublish", "afterMetadataPublish"] as const)("rolls back move and trash publication faults at %s", async (step) => {
+  test.each([
+    ["root symlink", "root"], ["ancestor symlink", "public"], ["terminal folder symlink", "Inbox"], [".trash symlink", ".trash"],
+  ])("refuses %s before writing outside sentinel", async (_label, segment) => {
+    const root = await mkdtemp(join(tmpdir(), "inf-symlink-matrix-")); temporaryRoots.push(root);
+    const outside = await mkdtemp(join(tmpdir(), "inf-outside-matrix-")); temporaryRoots.push(outside); await writeFile(join(outside, "sentinel"), "safe");
+    if (segment === "root") { await rm(root, { recursive: true }); await symlink(outside, root); const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots }); await expect(storage.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i); }
+    else {
+      const setup = new LocalDriveAdapter({ rootPath: root, folderPaths: roots }); const source = await setup.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("x") });
+      const target = segment === ".trash" ? join(root, ".trash") : segment === "public" ? join(root, "public") : join(root, "public", "Inbox");
+      if (segment !== ".trash") await rm(target, { recursive: true }); await symlink(outside, target);
+      await expect(segment === ".trash" ? setup.trashFile(source.id) : setup.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i); expect(await readdir(outside)).toEqual(["sentinel"]);
+    }
+  });
+
+  test.each(["afterDataPublish", "afterMetadataPublish", "afterSourceMetadataRemove", "afterSourceDataRemove"] as const)("rolls back move publication faults at %s", async (step) => {
     const root = await mkdtemp(join(tmpdir(), "inf-atomic-")); temporaryRoots.push(root);
     const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots, fault: (at) => { if (at === step) throw new Error(step); } });
     const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("atomic") });
@@ -109,9 +123,15 @@ describe("LocalDriveAdapter", () => {
     expect(await storage.readFile(created.id)).toEqual(Buffer.from("atomic"));
     expect(await storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: created.id })]);
     expect(await storage.listChildren(ids.library)).toEqual([]);
+  });
+
+  test.each(["afterDataPublish", "afterMetadataPublish", "afterSourceMetadataRemove", "afterSourceDataRemove"] as const)("rolls back trash publication faults at %s", async (step) => {
+    const root = await mkdtemp(join(tmpdir(), "inf-atomic-trash-")); temporaryRoots.push(root);
+    const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots, fault: (at) => { if (at === step) throw new Error(step); } });
+    const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("atomic") });
     await expect(storage.trashFile(created.id)).rejects.toThrow(step);
     expect(await storage.readFile(created.id)).toEqual(Buffer.from("atomic"));
-    expect(await readdir(join(root, ".trash"))).toEqual([]);
+    expect(await storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: created.id })]); expect(await readdir(join(root, ".trash"))).toEqual([]);
   });
 
   test("preserves every claim when the deterministic lowest event claim conflicts", async () => {

@@ -12,7 +12,7 @@ interface LocalMetadata extends StoredFile {
 export interface LocalDriveAdapterOptions {
   rootPath?: string;
   folderPaths: ReadonlyMap<string, string> | Readonly<Record<string, string>>;
-  fault?: (step: "afterDataPublish" | "afterMetadataPublish") => void;
+  fault?: (step: "beforeDataPublish" | "afterDataPublish" | "beforeMetadataPublish" | "afterMetadataPublish" | "afterSourceMetadataRemove" | "afterSourceDataRemove") => void;
 }
 
 const sidecarSuffix = ".inf-meta.json";
@@ -231,20 +231,35 @@ export class LocalDriveAdapter implements StoragePort {
     const sourceMeta = `${sourceData}${sidecarSuffix}`;
     const destinationMeta = `${destination}${sidecarSuffix}`;
     const next: LocalMetadata = { ...metadata, parentIds: [...update.parentIds], dataPath: update.dataPath, trashed: update.trashed, appProperties: { ...metadata.appProperties } };
-    let linked = false;
-    let metaPublished = false;
+    const originalSidecar = await readFile(sourceMeta);
+    let destinationDataOwned = false;
+    let destinationMetaOwned = false;
+    let sourceMetaRemoved = false;
+    let sourceDataRemoved = false;
     try {
+      this.fault?.("beforeDataPublish");
       await link(sourceData, destination); // atomic EEXIST refusal: never replaces a destination.
-      linked = true;
+      destinationDataOwned = true;
       this.fault?.("afterDataPublish");
+      this.fault?.("beforeMetadataPublish");
       await writeFile(destinationMeta, JSON.stringify(next), { flag: "wx", mode: 0o600 });
-      metaPublished = true;
+      destinationMetaOwned = true;
       this.fault?.("afterMetadataPublish");
       await unlink(sourceMeta);
+      sourceMetaRemoved = true;
+      this.fault?.("afterSourceMetadataRemove");
       await unlink(sourceData);
+      sourceDataRemoved = true;
+      this.fault?.("afterSourceDataRemove");
     } catch (error) {
-      if (metaPublished) await unlink(destinationMeta).catch(() => undefined);
-      if (linked) await unlink(destination).catch(() => undefined);
+      const rollback: unknown[] = [];
+      try { if (sourceDataRemoved) await link(destination, sourceData); } catch (cause) { rollback.push(cause); }
+      try { if (sourceMetaRemoved) await writeFile(sourceMeta, originalSidecar, { flag: "wx", mode: 0o600 }); } catch (cause) { rollback.push(cause); }
+      if (rollback.length === 0) {
+        try { if (destinationMetaOwned) await unlink(destinationMeta); } catch (cause) { rollback.push(cause); }
+        try { if (destinationDataOwned) await unlink(destination); } catch (cause) { rollback.push(cause); }
+      }
+      if (rollback.length > 0) throw new AggregateError([error, ...rollback], "Local storage integrity rollback failed; retained the last consistent copy.");
       throw error;
     }
   }
