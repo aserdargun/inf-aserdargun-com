@@ -37,8 +37,8 @@ function fakeDrive() {
         return { data: { files: children, nextPageToken: undefined } };
       },
       async create(params: Record<string, unknown>) {
-        const resource = params.requestBody as { name: string; mimeType: string; parents: string[]; appProperties: Record<string, string> };
-        const file: DriveFile = { id: "new-file", name: resource.name, mimeType: resource.mimeType, createdTime: "2026-01-03T00:00:00.000Z", parents: resource.parents, appProperties: resource.appProperties };
+        const resource = params.requestBody as { id: string; name: string; mimeType: string; parents: string[]; appProperties: Record<string, string> };
+        const file: DriveFile = { id: resource.id, name: resource.name, mimeType: resource.mimeType, createdTime: "2026-01-03T00:00:00.000Z", parents: resource.parents, appProperties: resource.appProperties };
         files.set(file.id, file);
         return { data: file };
       },
@@ -49,9 +49,10 @@ function fakeDrive() {
         if (typeof params.addParents === "string") file.parents = [params.addParents];
         return { data: file };
       },
+      async generateIds() { return { data: { ids: ["generated-file"] } }; },
     },
   };
-  return { client, listCalls, getCalls };
+  return { client, listCalls, getCalls, files };
 }
 
 describe("GoogleDriveAdapter mocked integration", () => {
@@ -97,6 +98,30 @@ describe("GoogleDriveAdapter mocked integration", () => {
     fake.client.files.get = async () => { throw Object.assign(new Error("forbidden"), { code: 403 }); };
     await expect(storage.listChildren("inbox")).rejects.toThrow("forbidden");
     expect(delays).toEqual([250, 500, 1000]);
+  });
+
+  test("uploads fresh readable byte streams under one generated ID and recovers a 409 indeterminate success", async () => {
+    const fake = fakeDrive();
+    const requests: Array<Record<string, unknown>> = [];
+    let attempt = 0;
+    fake.client.files.create = async (request: Record<string, unknown>) => {
+      requests.push(request);
+      const media = request.media as { body: NodeJS.ReadableStream };
+      const chunks: Buffer[] = [];
+      for await (const chunk of media.body) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks)).toEqual(Buffer.from("exact bytes"));
+      if (++attempt === 1) throw Object.assign(new Error("retry"), { code: 503 });
+      if (attempt === 2) {
+        fake.files.set("generated-file", { id: "generated-file", name: "x.png", mimeType: "image/png", createdTime: "2026-01-03T00:00:00.000Z", parents: ["inbox"], appProperties: {} });
+        throw Object.assign(new Error("conflict"), { code: 409 });
+      }
+      throw new Error("unexpected");
+    };
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", jitter: () => 0, sleep: async () => {} });
+    await expect(storage.createFile({ name: "x.png", mimeType: "image/png", parentId: "inbox", bytes: Buffer.from("exact bytes") })).resolves.toMatchObject({ id: "generated-file" });
+    expect(requests).toHaveLength(2);
+    expect(requests.map((request) => (request.requestBody as { id: string }).id)).toEqual(["generated-file", "generated-file"]);
+    expect((requests[0].media as { body: unknown }).body).not.toBe((requests[1].media as { body: unknown }).body);
   });
 });
 

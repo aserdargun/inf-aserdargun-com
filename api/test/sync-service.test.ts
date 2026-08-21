@@ -39,7 +39,7 @@ async function fixture(failOnCreate?: number) {
   temporaryRoots.push(root);
   const local = new LocalDriveAdapter({ rootPath: root, folderPaths: folders });
   const storage = failOnCreate === undefined ? local : new FailingStorage(local, failOnCreate);
-  const events = new EventStore(storage, ids.events);
+  const events = new EventStore(storage, ids.events, ids.private);
   const common = { storage, events, publicRootId: ids.public, inboxFolderId: ids.inbox, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates,
     now: () => new Date("2026-08-21T10:00:00.000Z"),
     uuid: (() => { let serial = 0; return () => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}`; })(),
@@ -58,12 +58,36 @@ describe("capture and manual Inbox sync", () => {
     await expect(f.capture.capture({ bytes, declaredMime: "image/png", name: "again.png" })).resolves.toMatchObject({ kind: "duplicate" });
   });
 
+  test("validates complete optional capture metadata before writes and persists explicit nulls", async () => {
+    const f = await fixture();
+    const bytes = await fixtureImage();
+    await expect(f.capture.capture({ bytes, declaredMime: "image/png", name: "file.png", title: "A separate title", notes: null, sourceUrl: null, sourcePlatform: undefined, sourceAuthor: null }))
+      .resolves.toMatchObject({ kind: "created", title: "A separate title" });
+    expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ title: "A separate title", notes: null, sourceUrl: null, sourceAuthor: null }) }));
+
+    const invalid = await fixture();
+    await expect(invalid.capture.capture({ bytes, declaredMime: "image/png", name: "file.png", sourceUrl: "not-a-url" }))
+      .rejects.toThrow();
+    expect(await invalid.storage.listChildren(ids.inbox)).toEqual([]);
+    expect(await invalid.storage.listChildren(ids.thumbnails)).toEqual([]);
+  });
+
   test("discovers a manual Inbox image and creates a thumbnail plus event", async () => {
     const f = await fixture();
     const manual = await f.storage.createFile({ name: "diagram.png", mimeType: "image/png", parentId: ids.inbox, bytes: await fixtureImage() });
     await expect(f.sync.syncInbox()).resolves.toEqual({ imported: 1, duplicates: 0, rejected: 0 });
     expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ type: "infographic.created", payload: expect.objectContaining({ originalDriveFileId: manual.id }) }));
+    expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ capturedAt: manual.createdTime, createdAt: "2026-08-21T10:00:00.000Z" }) }));
     expect(await f.storage.listChildren(ids.thumbnails)).toHaveLength(1);
+  });
+
+  test("serializes concurrent same-process captures so only one original and event win", async () => {
+    const f = await fixture();
+    const bytes = await fixtureImage();
+    const results = await Promise.all([f.capture.capture({ bytes, declaredMime: "image/png", name: "one.png" }), f.capture.capture({ bytes, declaredMime: "image/png", name: "two.png" })]);
+    expect(results.map((result) => result.kind).sort()).toEqual(["created", "duplicate"]);
+    expect(await f.storage.listChildren(ids.inbox)).toHaveLength(1);
+    expect(await f.events.readAll()).toHaveLength(1);
   });
 
   test("moves hash duplicates to Duplicates and records invalid manual files only once", async () => {

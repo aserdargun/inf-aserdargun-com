@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { Readable } from "node:stream";
 import type { CreateFileInput, StoragePort, StoredFile } from "./storage-port.js";
 
 const folderMimeType = "application/vnd.google-apps.folder";
@@ -12,6 +13,7 @@ interface DriveClient {
     list(params: Record<string, unknown>): Promise<{ data: unknown }>;
     create(params: Record<string, unknown>): Promise<{ data: unknown }>;
     update(params: Record<string, unknown>): Promise<{ data: unknown }>;
+    generateIds(params: Record<string, unknown>): Promise<{ data: unknown }>;
   };
 }
 
@@ -64,6 +66,7 @@ function copied(file: StoredFile): StoredFile {
     createdTime: file.createdTime,
     parentIds: [...file.parentIds],
     appProperties: { ...file.appProperties },
+    trashed: file.trashed,
   };
 }
 
@@ -90,7 +93,7 @@ export class GoogleDriveAdapter implements StoragePort {
 
   async readFile(fileId: string): Promise<Buffer> {
     const metadata = await this.requireFile(fileId);
-    if (metadata.mimeType === folderMimeType) throw new Error("Drive target must be a file, not a folder.");
+    if (metadata.mimeType === folderMimeType || metadata.mimeType === "application/vnd.google-apps.shortcut") throw new Error("Drive target must be a readable non-shortcut file.");
     const response = await this.retry(() => this.client.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" }));
     const data = response.data;
     if (Buffer.isBuffer(data)) return Buffer.from(data);
@@ -104,12 +107,25 @@ export class GoogleDriveAdapter implements StoragePort {
     if (!input.name || input.name.length > 240 || !input.mimeType || !Buffer.isBuffer(input.bytes)) throw new Error("Invalid Drive file input.");
     const properties = { ...(input.appProperties ?? {}) };
     for (const [key, value] of Object.entries(properties)) this.validateProperty(key, value);
-    const response = await this.retry(() => this.client.files.create({
-      requestBody: { name: input.name, mimeType: input.mimeType, parents: [input.parentId], appProperties: properties },
-      media: { mimeType: input.mimeType, body: Buffer.from(input.bytes) },
-      fields: metadataFields,
-    }));
-    return copied(this.requireDirectChild(response.data, input.parentId));
+    const idResponse = await this.retry(() => this.client.files.generateIds({ count: 1, space: "drive" }));
+    const generatedId = (idResponse.data as { ids?: unknown[] }).ids?.[0];
+    if (typeof generatedId !== "string" || !generatedId) throw new Error("Drive did not generate an upload file ID.");
+    const create = () => this.client.files.create({
+      requestBody: { id: generatedId, name: input.name, mimeType: input.mimeType, parents: [input.parentId], appProperties: properties },
+      media: { mimeType: input.mimeType, body: Readable.from([Buffer.from(input.bytes)]) }, fields: metadataFields,
+    });
+    try {
+      const response = await this.retry(create);
+      const created = this.requireDirectChild(response.data, input.parentId);
+      if (created.id !== generatedId || created.trashed) throw new Error("Drive create response did not confirm the generated live ID.");
+      return copied(created);
+    } catch (error) {
+      if (asErrorStatus(error) !== 409) throw error;
+      const recovered = await this.metadata(generatedId);
+      const created = this.requireStoredDirectChild(recovered, input.parentId);
+      if (created.id !== generatedId || created.trashed) throw new Error("Drive upload conflict did not resolve to the generated live ID.");
+      return copied(created);
+    }
   }
 
   async moveFile(fileId: string, fromFolderId: string, toFolderId: string): Promise<void> {
@@ -120,12 +136,15 @@ export class GoogleDriveAdapter implements StoragePort {
     const response = await this.retry(() => this.client.files.update({
       fileId, addParents: toFolderId, removeParents: fromFolderId, fields: metadataFields,
     }));
-    this.requireDirectChild(response.data, toFolderId);
+    const moved = this.requireDirectChild(response.data, toFolderId);
+    if (moved.id !== fileId || moved.trashed) throw new Error("Drive move response did not confirm a live target file.");
   }
 
   async trashFile(fileId: string): Promise<void> {
     await this.requireFile(fileId);
-    await this.retry(() => this.client.files.update({ fileId, requestBody: { trashed: true }, fields: metadataFields }));
+    const response = await this.retry(() => this.client.files.update({ fileId, requestBody: { trashed: true }, fields: metadataFields }));
+    const trashed = this.toStored(response.data);
+    if (trashed.id !== fileId || !trashed.trashed) throw new Error("Drive trash response did not confirm the requested trashed file.");
   }
 
   async findByAppProperty(rootId: string, key: string, value: string): Promise<StoredFile[]> {
@@ -156,6 +175,7 @@ export class GoogleDriveAdapter implements StoragePort {
       visited.add(current);
       if (this.roots.has(current)) return false;
       const metadata = await this.metadata(current);
+      if (metadata.trashed) throw new Error("Drive file is trashed and cannot be used.");
       if (metadata.parentIds.length !== 1) throw new Error("Drive file ancestry is missing or ambiguous.");
       current = metadata.parentIds[0];
     }
@@ -174,11 +194,14 @@ export class GoogleDriveAdapter implements StoragePort {
   private async requireFolder(folderId: string): Promise<StoredFile> {
     const metadata = await this.requireAllowed(fileIdOrFolderId(folderId));
     if (metadata.mimeType !== folderMimeType) throw new Error("Drive target must be a folder.");
+    if (metadata.trashed) throw new Error("Drive folder is trashed and cannot be used.");
     return metadata;
   }
 
   private async requireFile(fileId: string): Promise<StoredFile> {
-    return this.requireAllowed(fileIdOrFolderId(fileId));
+    const file = await this.requireAllowed(fileIdOrFolderId(fileId));
+    if (file.trashed) throw new Error("Drive file is trashed and cannot be used.");
+    return file;
   }
 
   private async requireAllowed(fileId: string): Promise<StoredFile> {
@@ -221,7 +244,10 @@ export class GoogleDriveAdapter implements StoragePort {
   }
 
   private requireDirectChild(raw: unknown, parentId: string): StoredFile {
-    const file = this.toStored(raw);
+    return this.requireStoredDirectChild(this.toStored(raw), parentId);
+  }
+
+  private requireStoredDirectChild(file: StoredFile, parentId: string): StoredFile {
     if (file.parentIds.length !== 1 || file.parentIds[0] !== parentId || this.roots.has(file.id) || !file.id) {
       throw new Error("Drive response has missing or ambiguous parent data.");
     }
@@ -237,7 +263,7 @@ export class GoogleDriveAdapter implements StoragePort {
     if (source.appProperties !== null && source.appProperties !== undefined) {
       for (const [key, value] of Object.entries(source.appProperties)) if (typeof value === "string") appProperties[key] = value;
     }
-    return { id: assertString(source.id, "id"), name: assertString(source.name, "name"), mimeType: assertString(source.mimeType, "mimeType"), createdTime: assertString(source.createdTime, "createdTime"), parentIds: parents, appProperties };
+    return { id: assertString(source.id, "id"), name: assertString(source.name, "name"), mimeType: assertString(source.mimeType, "mimeType"), createdTime: assertString(source.createdTime, "createdTime"), parentIds: parents, appProperties, trashed: source.trashed === true };
   }
 
   private validateProperty(key: string, value: string): void {

@@ -5,6 +5,7 @@ export interface StoredFile {
   createdTime: string;
   parentIds: string[];
   appProperties: Record<string, string>;
+  trashed: boolean;
 }
 
 export interface CreateFileInput {

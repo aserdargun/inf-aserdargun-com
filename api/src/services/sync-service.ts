@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { InfEventSchema, type InfEvent } from "@inf/contracts";
 import { ImageProcessingError, processImage } from "../images/process-image.js";
 import { EventStore } from "../storage/event-store.js";
+import { withKeyedLock } from "../storage/keyed-lock.js";
 import type { StoragePort, StoredFile } from "../storage/storage-port.js";
 import { publicSafeTitle } from "./capture-service.js";
 
@@ -71,6 +72,7 @@ export class SyncService {
       return;
     }
 
+    await withKeyedLock(`sha:${image.sha256}`, async () => {
     const matchingFiles = await this.options.storage.findByAppProperty(this.options.publicRootId, "infSha256", image.sha256);
     if (state.sha256.has(image.sha256) || matchingFiles.some((match) => match.id !== file.id)) {
       await this.options.storage.moveFile(file.id, this.options.inboxFolderId, this.options.duplicatesFolderId);
@@ -91,7 +93,7 @@ export class SyncService {
         payload: {
           originalDriveFileId: file.id, thumbnailDriveFileId: thumbnail.id, sha256: image.sha256,
           detectedMimeType: image.detectedMime, width: image.width, height: image.height, title: publicSafeTitle(file.name),
-          capturedAt: timestamp, createdAt: timestamp, folderState: "Inbox",
+          capturedAt: file.createdTime, createdAt: timestamp, folderState: "Inbox",
         },
       }) as InfEvent);
       state.originalIds.add(file.id);
@@ -101,5 +103,6 @@ export class SyncService {
       if (thumbnail) try { await this.options.storage.trashFile(thumbnail.id); } catch { /* preserve primary error */ }
       throw error;
     }
+    });
   }
 }

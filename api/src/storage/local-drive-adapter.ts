@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import type { CreateFileInput, StoragePort, StoredFile } from "./storage-port.js";
 
@@ -22,6 +22,7 @@ const copyFile = (file: StoredFile): StoredFile => ({
   createdTime: file.createdTime,
   parentIds: [...file.parentIds],
   appProperties: { ...file.appProperties },
+  trashed: (file as LocalMetadata).trashed ?? false,
 });
 
 export class LocalDriveAdapter implements StoragePort {
@@ -70,7 +71,10 @@ export class LocalDriveAdapter implements StoragePort {
     };
     // Exclusive creation never replaces a pre-existing object.
     await writeFile(dataPath, Buffer.from(input.bytes), { flag: "wx", mode: 0o600 });
-    await writeFile(metadataPath, JSON.stringify(metadata), { flag: "wx", mode: 0o600 });
+    try { await writeFile(metadataPath, JSON.stringify(metadata), { flag: "wx", mode: 0o600 }); } catch (error) {
+      await unlink(dataPath).catch(() => undefined);
+      throw error;
+    }
     return copyFile(metadata);
   }
 
@@ -85,6 +89,8 @@ export class LocalDriveAdapter implements StoragePort {
     await mkdir(toPath, { recursive: true, mode: 0o700 });
     const destination = resolve(toPath, `${fileId}.blob`);
     this.assertInside(toPath, destination);
+    await this.assertAbsent(destination);
+    await this.assertAbsent(`${destination}${sidecarSuffix}`);
     await rename(metadata.dataPath, destination);
     await rename(`${metadata.dataPath}${sidecarSuffix}`, `${destination}${sidecarSuffix}`);
     metadata.parentIds = [toFolderId];
@@ -99,6 +105,8 @@ export class LocalDriveAdapter implements StoragePort {
     this.assertInside(this.rootPath, trashPath);
     await mkdir(trashPath, { recursive: true, mode: 0o700 });
     const destination = resolve(trashPath, `${fileId}.blob`);
+    await this.assertAbsent(destination);
+    await this.assertAbsent(`${destination}${sidecarSuffix}`);
     await rename(metadata.dataPath, destination);
     await rename(`${metadata.dataPath}${sidecarSuffix}`, `${destination}${sidecarSuffix}`);
     metadata.trashed = true;
@@ -126,6 +134,7 @@ export class LocalDriveAdapter implements StoragePort {
     if (path === undefined) throw new Error("Folder ID is not a configured local storage root.");
     const resolved = this.safePath(path);
     await mkdir(resolved, { recursive: true, mode: 0o700 });
+    await this.assertNoSymlink(resolved);
     return resolved;
   }
 
@@ -158,13 +167,19 @@ export class LocalDriveAdapter implements StoragePort {
   }
 
   private async readMetadata(path: string): Promise<LocalMetadata> {
+    const sidecarStat = await lstat(path);
+    if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) throw new Error("Local storage metadata sidecar is unsafe.");
     const raw: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!raw || typeof raw !== "object") throw new Error("Local storage metadata is malformed.");
     const item = raw as LocalMetadata;
-    if (!validName(item.id) || !validName(item.name) || !Array.isArray(item.parentIds) || typeof item.dataPath !== "string") {
+    if (!validName(item.id) || !validName(item.name) || typeof item.mimeType !== "string" || !Number.isFinite(Date.parse(item.createdTime)) || !Array.isArray(item.parentIds) || item.parentIds.length !== 1 || !item.parentIds.every((parent) => typeof parent === "string" && parent.length > 0) || !item.appProperties || typeof item.appProperties !== "object" || !Object.values(item.appProperties).every((value) => typeof value === "string") || typeof item.trashed !== "boolean" || typeof item.dataPath !== "string") {
       throw new Error("Local storage metadata is malformed.");
     }
     this.assertInside(this.rootPath, item.dataPath);
+    const dataStat = await lstat(item.dataPath);
+    if (dataStat.isSymbolicLink() || !dataStat.isFile()) throw new Error("Local storage data file is unsafe.");
+    if (path !== `${item.dataPath}${sidecarSuffix}`) throw new Error("Local storage metadata does not match its data path.");
+    if (!item.trashed && this.folderIdForPath(dirname(item.dataPath)) !== item.parentIds[0]) throw new Error("Local storage metadata parent does not match its directory.");
     return item;
   }
 
@@ -172,11 +187,37 @@ export class LocalDriveAdapter implements StoragePort {
     if (!validName(fileId)) throw new Error("File ID must be a safe name.");
     const found = (await this.metadataUnder(this.rootPath)).filter((item) => item.id === fileId);
     if (found.length !== 1) throw new Error("File was not found in local storage.");
+    if (found[0].trashed) throw new Error("Local storage file is trashed and recoverable, not readable.");
     await stat(found[0].dataPath);
     return found[0];
   }
 
   private validateProperty(key: string, value: string): void {
     if (!key || !value || key.length > 128 || value.length > 512) throw new Error("App property key and value must be bounded non-empty strings.");
+  }
+
+  private async assertNoSymlink(path: string): Promise<void> {
+    const root = resolve(this.rootPath);
+    this.assertInside(root, path);
+    let current = root;
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    for (const segment of relative(root, path).split(sep).filter(Boolean)) {
+      current = resolve(current, segment);
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new Error("Local storage configured folder contains a symlink.");
+      if (!info.isDirectory()) throw new Error("Local storage configured folder is not a directory.");
+    }
+  }
+
+  private async assertAbsent(path: string): Promise<void> {
+    try { await lstat(path); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    throw new Error("Local storage destination already exists; refusing to overwrite it.");
+  }
+
+  private folderIdForPath(path: string): string | undefined {
+    return [...this.folderPaths.entries()].find(([, relativePath]) => resolve(this.rootPath, relativePath) === resolve(path))?.[0];
   }
 }
