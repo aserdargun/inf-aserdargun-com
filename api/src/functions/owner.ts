@@ -174,7 +174,7 @@ async function assignCategories(
   categories: Category[],
 ): Promise<void> {
   const assignment = () => deps.events.append(event(deps, "infographic.categoriesAssigned", item.id, { categories }));
-  if (categories.length === 0 || item.processedAt !== null) { await assignment(); return; }
+  if (categories.length === 0 || item.processedAt !== null || item.folderState !== "Inbox") { await assignment(); return; }
   await deps.storage.moveFile(item.originalDriveFileId, deps.inboxFolderId, deps.libraryFolderId);
   try { await assignment(); } catch (primaryError) {
     try { await deps.storage.moveFile(item.originalDriveFileId, deps.libraryFolderId, deps.inboxFolderId); }

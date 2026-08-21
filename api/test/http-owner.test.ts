@@ -8,7 +8,7 @@ import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPa
 import { MAX_MULTIPART_BYTES } from "../src/http/parse.js";
 import type { StoragePort, StoredFile, CreateFileInput } from "../src/storage/storage-port.js";
 
-const ids = { public: "public", private: "private", events: "events", inbox: "inbox", library: "library", thumbnails: "thumbnails", duplicates: "duplicates" };
+const ids = { public: "public", private: "private", events: "events", inbox: "inbox", library: "library", archive: "archive", thumbnails: "thumbnails", duplicates: "duplicates" };
 const infographicId = "00000000-0000-4000-8000-000000000001";
 const authorizingHeader = { "x-ms-client-principal": Buffer.from(JSON.stringify({ identityProvider: "github", userDetails: "aserdargun" })).toString("base64") };
 const apiRoot = process.cwd().endsWith("/api") ? process.cwd() : resolve(process.cwd(), "api");
@@ -157,6 +157,15 @@ describe("owner HTTP API", () => {
     await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
     await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
     expect(storage.moves).toEqual([["original", ids.inbox, ids.library]]);
+  });
+
+  test("records first categories for an unprocessed Archive item without attempting an Inbox-to-Library move", async () => {
+    const { deps, events, storage } = fixture();
+    events.push({ eventId: "00000000-0000-4000-8000-000000000060", schemaVersion: 1, type: "infographic.archived", occurredAt: "2026-08-20T11:00:00.000Z", infographicId, payload: {} });
+    storage.files.get("original")!.file.parentIds = [ids.archive];
+    const response = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
+    expect(response.status).toBe(200); expect(storage.moves).toEqual([]);
+    expect(events.at(-1)).toMatchObject({ type: "infographic.categoriesAssigned", infographicId, payload: { categories: [category] } });
   });
 
   test("rolls a Library move back on category event append failure and emits no categories event when move fails", async () => {
