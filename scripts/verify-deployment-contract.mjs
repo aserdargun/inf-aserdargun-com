@@ -12,7 +12,7 @@ const contract = Object.freeze({
   deploy: "Azure/static-web-apps-deploy@4d27395796ac319302594769cfe812bd207490b1",
 });
 
-const validationCommands = [
+const localValidationCommands = [
   "pnpm lint",
   "pnpm typecheck",
   "pnpm api:build",
@@ -23,6 +23,7 @@ const validationCommands = [
   "pnpm e2e",
   "git diff --check",
 ];
+const ciValidationCommands = localValidationCommands.map((command) => command === "pnpm lifecycle:test" ? "INF_LOCAL_WEB_ARTIFACT=out pnpm lifecycle:test" : command);
 
 function requireContract(condition, message) {
   if (!condition) throw new Error(`Deployment contract invalid: ${message}`);
@@ -79,9 +80,11 @@ function requireManifest(manifest) {
   requireContract(manifest.engines?.node === ">=22.0.0 <23", "Node contract must require Node 22");
   requireContract(manifest.scripts?.["deployment:verify"] === "node scripts/verify-deployment-contract.mjs", "deployment:verify script is missing or changed");
   requireContract(typeof manifest.scripts?.["validate:ci"] === "string", "validate:ci script is missing");
-  requireContract(manifest.scripts["validate:ci"] === manifest.scripts["validate:codex"], "validate:codex must remain the complete local contract and validate:ci must match it");
-  const actualCommands = manifest.scripts["validate:ci"].split("&&").map((command) => command.trim());
-  requireContract(JSON.stringify(actualCommands) === JSON.stringify(validationCommands), "validate:ci must retain the complete CI-safe validation sequence");
+  requireContract(typeof manifest.scripts?.["validate:codex"] === "string", "validate:codex script is missing");
+  const actualLocalCommands = manifest.scripts["validate:codex"].split("&&").map((command) => command.trim());
+  requireContract(JSON.stringify(actualLocalCommands) === JSON.stringify(localValidationCommands), "validate:codex must remain the complete local validation sequence");
+  const actualCiCommands = manifest.scripts["validate:ci"].split("&&").map((command) => command.trim());
+  requireContract(JSON.stringify(actualCiCommands) === JSON.stringify(ciValidationCommands), "validate:ci must retain the complete release-artifact validation sequence");
 }
 
 function requireTriggers(workflow) {

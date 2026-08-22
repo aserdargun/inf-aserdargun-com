@@ -6,6 +6,7 @@ import test from "node:test";
 
 const workflowPath = ".github/workflows/deploy-swa-inf-aserdargun-com.yml";
 const validateCommand = "pnpm lint && pnpm typecheck && pnpm api:build && pnpm web:build && pnpm artifact:verify && pnpm lifecycle:test && pnpm test && pnpm e2e && git diff --check";
+const validateCiCommand = "pnpm lint && pnpm typecheck && pnpm api:build && pnpm web:build && pnpm artifact:verify && INF_LOCAL_WEB_ARTIFACT=out pnpm lifecycle:test && pnpm test && pnpm e2e && git diff --check";
 const tokenExpression = "$" + "{{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SWA_INF_ASERDARGUN_COM }}";
 
 const validWorkflow = `name: Deploy INF to Azure Static Web Apps
@@ -70,7 +71,7 @@ const manifest = {
   scripts: {
     "artifact:verify": "node scripts/verify-artifacts.mjs",
     "deployment:verify": "node scripts/verify-deployment-contract.mjs",
-    "validate:ci": validateCommand,
+    "validate:ci": validateCiCommand,
     "validate:codex": validateCommand,
   },
 };
@@ -148,6 +149,7 @@ test("deployment contract parser accepts only the pinned non-domain production w
     ["wrong locked pnpm", { ...manifest, packageManager: "pnpm@11.21.0" }, /pnpm/i],
     ["wrong Node contract", { ...manifest, engines: { node: ">=20 <23" } }, /Node/i],
     ["incomplete CI validation", { ...manifest, scripts: { ...manifest.scripts, "validate:ci": "pnpm lint" } }, /validate:ci/i],
+    ["CI validation uses the development server", { ...manifest, scripts: { ...manifest.scripts, "validate:ci": validateCommand } }, /validate:ci|release artifact/i],
     ["changed local validation", { ...manifest, scripts: { ...manifest.scripts, "validate:codex": "pnpm lint" } }, /validate:codex/i],
     ["missing verifier script", { ...manifest, scripts: { ...manifest.scripts, "deployment:verify": undefined } }, /deployment:verify/i],
   ]) {
