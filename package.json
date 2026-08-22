@@ -24,7 +24,7 @@
     "preview:codex": "INF_LOCAL_WEB_ARTIFACT=out node scripts/local-dev.mjs",
     "stop:codex": "node scripts/stop-local.mjs",
     "validate:codex": "pnpm lint && pnpm typecheck && pnpm api:build && pnpm web:build && pnpm artifact:verify && pnpm lifecycle:test && pnpm test && pnpm e2e && git diff --check",
-    "validate:ci": "pnpm lint && pnpm typecheck && pnpm api:build && pnpm web:build && pnpm artifact:verify && pnpm lifecycle:test && pnpm test && pnpm e2e && git diff --check",
+    "validate:ci": "pnpm lint && pnpm typecheck && pnpm api:build && pnpm web:build && pnpm artifact:verify && INF_LOCAL_WEB_ARTIFACT=out pnpm lifecycle:test && pnpm test && pnpm e2e && git diff --check",
     "validate": "pnpm lint && pnpm typecheck && pnpm test && pnpm api:build && pnpm web:build && pnpm artifact:verify && git diff --check"
   },
   "dependencies": {

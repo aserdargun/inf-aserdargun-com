@@ -13,6 +13,7 @@ test("Codex exposes the ordered local lifecycle and delegates through package sc
   assert.match(environment, /command = "pnpm stop:codex"/);
   assert.equal(manifest.scripts["dev:codex"], "node scripts/local-dev.mjs");
   assert.match(manifest.scripts["validate:codex"], /pnpm lifecycle:test/);
+  assert.match(manifest.scripts["validate:ci"], /INF_LOCAL_WEB_ARTIFACT=out pnpm lifecycle:test/);
   assert.match(manifest.scripts["lifecycle:test"], /tools\/codex-environment\.test\.mjs/);
   assert.equal(manifest.scripts["stop:codex"], "node scripts/stop-local.mjs");
   assert.equal(manifest.scripts["api:build"], "node scripts/build-api.mjs");
