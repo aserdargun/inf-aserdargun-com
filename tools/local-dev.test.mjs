@@ -11,7 +11,9 @@ test("local development keeps the proxy capability in ignored checkout-private s
   assert.match(source, /127\.0\.0\.1/);
   assert.match(proxy, /x-inf-local-proxy-token/);
   assert.match(source, /local-functions-host\.mjs/);
-  assert.match(source, /"swa", "start"/);
+  assert.match(source, /@azure[/]static-web-apps-cli[/]dist[/]cli[/]bin\.js/);
+  assert.match(source, /node_modules[/]next[/]dist[/]bin[/]next/);
+  assert.doesNotMatch(source, /child\("pnpm", \["exec"/);
   assert.match(source, /"4280"/);
   assert.match(ignore, /^\.codex\/run\/$/m);
 });

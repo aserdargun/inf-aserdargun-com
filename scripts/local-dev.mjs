@@ -44,7 +44,7 @@ async function prepare() {
 
 function child(command, args, options = {}) {
   // Each service gets its own process group. This lets local Stop terminate the
-  // actual server descendants (Next/SWA), rather than merely their pnpm shim.
+  // actual server descendants (Next/SWA), rather than a package-manager shim.
   const processChild = spawn(command, args, { cwd: checkout, detached: true, env, stdio: "inherit", ...options });
   processChild.on("exit", (code, signal) => {
     if (!stopping && code !== 0) { console.error(`${command} exited (${signal ?? code}).`); void shutdown(1); }
@@ -88,10 +88,10 @@ if (env.INF_LOCAL_SKIP_API_BUILD !== "true") {
 }
 const next = env.INF_LOCAL_WEB_ARTIFACT === "out"
   ? child("node", ["scripts/local-static-host.mjs"])
-  : child("pnpm", ["exec", "next", "dev", "--hostname", "127.0.0.1", "--port", "3000"]);
+  : child(process.execPath, [resolve(checkout, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", "3000"]);
 const functions = child("node", ["scripts/local-functions-host.mjs"]);
 const proxy = child("node", ["scripts/local-api-proxy.mjs"]);
-const swa = child("pnpm", ["exec", "swa", "start", "http://127.0.0.1:3000", "--api-devserver-url", "http://127.0.0.1:7072", "--host", "127.0.0.1", "--port", "4280", "--swa-config-location", runDirectory]);
+const swa = child(process.execPath, [resolve(checkout, "node_modules/@azure/static-web-apps-cli/dist/cli/bin.js"), "start", "http://127.0.0.1:3000", "--api-devserver-url", "http://127.0.0.1:7072", "--host", "127.0.0.1", "--port", "4280", "--swa-config-location", runDirectory]);
 children.push(next, functions, proxy, swa);
 const pids = [{
   pid: process.pid,
