@@ -71,9 +71,11 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: png }));
   await page.goto("/review/");
   await expect(page.getByRole("heading", { name: "Next review" })).toBeVisible();
-  await page.keyboard.press("3");
+  const goodButton = page.getByRole("button", { name: /Good/ });
+  await goodButton.click();
+  await expect.poll(() => reviewCalls).toBe(1);
   await expect(page.getByText("Saving review…", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Good/ })).toBeDisabled();
+  await expect(goodButton).toBeDisabled();
   await page.keyboard.press("3");
   expect(reviewCalls).toBe(1);
   expect(persisted).toEqual([{ id: item.id, rating: "good" }]);
