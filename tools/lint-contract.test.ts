@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
@@ -22,6 +22,28 @@ describe("lint contract", () => {
       expect(result.stdout).toContain("undefined.ts");
       expect(result.stdout).toContain("undefined.tsx");
       expect(result.stdout.match(/no-undef/g)).toHaveLength(2);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  test("excludes checkout-contained worktrees from project linting", () => {
+    const worktreesDirectory = join(process.cwd(), ".worktrees");
+    mkdirSync(worktreesDirectory, { recursive: true });
+    const directory = mkdtempSync(join(worktreesDirectory, ".lint-contract-"));
+    const invalidFile = join(directory, "undefined.js");
+
+    writeFileSync(invalidFile, "missingRuntimeValue();\n");
+
+    try {
+      const result = spawnSync("pnpm", ["exec", "eslint", "--no-warn-ignored", invalidFile], {
+        cwd: process.cwd(),
+        encoding: "utf8"
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe("");
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

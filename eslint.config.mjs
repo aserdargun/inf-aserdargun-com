@@ -5,6 +5,7 @@ export default [
   {
     ignores: [
       ".next/",
+      ".worktrees/",
       "api-dist/",
       "api/dist/",
       "out/",
