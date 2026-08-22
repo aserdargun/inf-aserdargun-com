@@ -31,11 +31,16 @@ describe("public PWA contract", () => {
     expect(info).toMatchObject({ width: 512, height: 512, channels: 4 });
     const at = (x: number, y: number) => data[(y * 512 + x) * 4];
     expect([at(0, 0), at(511, 0), at(0, 511), at(511, 511)]).toEqual([40, 40, 40, 40]);
+    let transparentPixel: { x: number; y: number; alpha: number } | undefined;
+    let unsafeArtworkPixel: { x: number; y: number } | undefined;
     for (let y = 0; y < 512; y += 1) for (let x = 0; x < 512; x += 1) {
       const offset = (y * 512 + x) * 4;
-      expect(data[offset + 3]).toBe(255);
-      if (data[offset] !== 40 || data[offset + 1] !== 100 || data[offset + 2] !== 220) expect(x).toBeGreaterThanOrEqual(52), expect(x).toBeLessThanOrEqual(460), expect(y).toBeGreaterThanOrEqual(52), expect(y).toBeLessThanOrEqual(460);
+      if (!transparentPixel && data[offset + 3] !== 255) transparentPixel = { x, y, alpha: data[offset + 3] };
+      const isBackground = data[offset] === 40 && data[offset + 1] === 100 && data[offset + 2] === 220;
+      if (!unsafeArtworkPixel && !isBackground && (x < 52 || x > 460 || y < 52 || y > 460)) unsafeArtworkPixel = { x, y };
     }
+    expect(transparentPixel).toBeUndefined();
+    expect(unsafeArtworkPixel).toBeUndefined();
   });
 
   test("has a bounded public-only service worker policy", () => {
