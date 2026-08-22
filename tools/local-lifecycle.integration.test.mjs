@@ -44,6 +44,19 @@ async function noListeners() {
   return true;
 }
 
+async function allListenersReady() {
+  for (const port of ports) {
+    try {
+      const { stdout } = await execFile("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"]);
+      if (!stdout.trim()) return false;
+    } catch (error) {
+      if (error.code === 1) return false;
+      throw error;
+    }
+  }
+  return true;
+}
+
 async function chunkedOverLimit(port) {
   return new Promise((resolveResult, rejectResult) => {
     let responseStarted = false;
@@ -153,6 +166,7 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
     const deleted = await fetch(`http://127.0.0.1:4280/api/infographics/${id}`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) });
     assert.equal(deleted.status, 204); assert.equal((await fetch(`http://127.0.0.1:4280/api/infographics/${id}`)).status, 404);
     assert.equal((await fetch("http://127.0.0.1:4280/api/session")).status, 200);
+    await waitFor(allListenersReady, "all four loopback listeners");
     for (const port of ports) {
       const { stdout } = await execFile("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-F", "n"]);
       assert.match(stdout, /n127\.0\.0\.1:/, `port ${port} must be loopback-only`);
