@@ -24,12 +24,12 @@ async function az(args) { return (await execFile("az", args, { maxBuffer: 10 * 1
 
 async function settings(options) {
   const subscription = required(options, "subscription"); const resourceGroup = required(options, "resource-group"); const name = required(options, "name");
-  const uri = `https://management.azure.com/subscriptions/${encodeURIComponent(subscription)}/resourceGroups/${encodeURIComponent(resourceGroup)}/providers/Microsoft.Web/staticSites/${encodeURIComponent(name)}/config/appsettings?api-version=2023-12-01`;
-  const current = JSON.parse(await az(["rest", "--method", "get", "--uri", uri, "--output", "json"]));
+  const siteUri = `https://management.azure.com/subscriptions/${encodeURIComponent(subscription)}/resourceGroups/${encodeURIComponent(resourceGroup)}/providers/Microsoft.Web/staticSites/${encodeURIComponent(name)}`;
+  const current = JSON.parse(await az(["rest", "--method", "post", "--uri", `${siteUri}/listAppSettings?api-version=2025-05-01`, "--output", "json"]));
   const next = { properties: { ...(current.properties ?? {}), ...appSettings(parseEnv(await readFile(required(options, "env-file"), "utf8"))) } };
   const run = resolve(".codex/run"); await mkdir(run, { recursive: true, mode: 0o700 }); const body = resolve(run, "azure-appsettings.json");
   await writeFile(body, JSON.stringify(next), { mode: 0o600 }); await chmod(body, 0o600);
-  try { await az(["rest", "--method", "put", "--uri", uri, "--body", `@${body}`, "--output", "none"]); }
+  try { await az(["rest", "--method", "put", "--uri", `${siteUri}/config/appsettings?api-version=2025-05-01`, "--body", `@${body}`, "--output", "none"]); }
   finally { await rm(body, { force: true }); }
   process.stdout.write("Azure Static Web App settings updated from the 0600 env file; secret values were not printed.\n");
 }
