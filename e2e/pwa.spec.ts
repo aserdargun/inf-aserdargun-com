@@ -12,18 +12,24 @@ test("Chromium keeps data and nomodule scripts inert while executing supported s
     "<script nomodule>globalThis.__nomoduleRan=true</script>",
     "<script>globalThis.__classicRan=true</script>",
     '<script type="text/javascript">globalThis.__exactMimeRan=true</script>',
+    '<script type=" \ttext/javascript\r\n ">globalThis.__asciiWhitespaceMimeRan=true</script>',
     '<script type="text/javascript; charset=utf-8">globalThis.__parameterizedMimeRan=true</script>',
+    '<script type="\u00a0text/javascript\u00a0">globalThis.__nbspMimeRan=true</script>',
+    '<script type="\ufefftext/javascript\ufeff">globalThis.__bomMimeRan=true</script>',
     '<script type="module">globalThis.__moduleRan=true</script>',
   ].join(""));
   await expect.poll(() => page.evaluate(() => ({
+    asciiWhitespaceMime: (globalThis as typeof globalThis & { __asciiWhitespaceMimeRan?: boolean }).__asciiWhitespaceMimeRan,
     classic: (globalThis as typeof globalThis & { __classicRan?: boolean }).__classicRan,
+    bomMime: (globalThis as typeof globalThis & { __bomMimeRan?: boolean }).__bomMimeRan,
     exactMime: (globalThis as typeof globalThis & { __exactMimeRan?: boolean }).__exactMimeRan,
     json: (globalThis as typeof globalThis & { __jsonRan?: boolean }).__jsonRan,
     module: (globalThis as typeof globalThis & { __moduleRan?: boolean }).__moduleRan,
     nomodule: (globalThis as typeof globalThis & { __nomoduleRan?: boolean }).__nomoduleRan,
+    nbspMime: (globalThis as typeof globalThis & { __nbspMimeRan?: boolean }).__nbspMimeRan,
     parameterizedMime: (globalThis as typeof globalThis & { __parameterizedMimeRan?: boolean }).__parameterizedMimeRan,
     plain: (globalThis as typeof globalThis & { __plainRan?: boolean }).__plainRan,
-  }))).toEqual({ classic: true, exactMime: true, json: undefined, module: true, nomodule: undefined, parameterizedMime: undefined, plain: undefined });
+  }))).toEqual({ asciiWhitespaceMime: true, bomMime: undefined, classic: true, exactMime: true, json: undefined, module: true, nbspMime: undefined, nomodule: undefined, parameterizedMime: undefined, plain: undefined });
 });
 
 test("production-static routes enforce functional CSP and intentional cache headers", async ({ page, request }) => {

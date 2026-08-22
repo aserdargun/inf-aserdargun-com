@@ -175,27 +175,33 @@ test("HTML scanner hashes only CSP-governed executable script types", async () =
       "<script>classic-body</script>",
       '<script type="module">module-body</script>',
       '<script type="text/javascript">exact-mime-body</script>',
+      '<script type=" \ttext/javascript\r\n ">ascii-whitespace-mime-body</script>',
       '<script type="text/javascript; charset=utf-8">parameterized-mime-body</script>',
+      '<script type="\u00a0text/javascript\u00a0">nbsp-mime-body</script>',
+      '<script type="\ufefftext/javascript\ufeff">bom-mime-body</script>',
       '<script type="application/json">json-body</script>',
       '<script type="text/plain">plain-body</script>',
       "<script nomodule>nomodule-body</script>",
     ].join(""));
     const inert = await scanInlineScriptHashes(directory);
-    assert.deepEqual(inert, [cspHash("classic-body"), cspHash("exact-mime-body"), cspHash("module-body")].sort());
+    assert.deepEqual(inert, [cspHash("ascii-whitespace-mime-body"), cspHash("classic-body"), cspHash("exact-mime-body"), cspHash("module-body")].sort());
 
     await writeFile(join(directory, "index.html"), [
       "<!doctype html>",
       "<script>classic-body</script>",
       '<script type="module">module-body</script>',
       '<script type="text/javascript">exact-mime-body</script>',
+      '<script type="text/javascript">ascii-whitespace-mime-body</script>',
       '<script type="text/javascript">parameterized-mime-body</script>',
+      '<script type="text/javascript">nbsp-mime-body</script>',
+      '<script type="text/javascript">bom-mime-body</script>',
       "<script>json-body</script>",
       "<script>plain-body</script>",
       "<script>nomodule-body</script>",
     ].join(""));
     const executable = await scanInlineScriptHashes(directory);
     assert.notDeepEqual(executable, inert);
-    assert.deepEqual(executable, ["classic-body", "exact-mime-body", "json-body", "module-body", "nomodule-body", "parameterized-mime-body", "plain-body"].map(cspHash).sort());
+    assert.deepEqual(executable, ["ascii-whitespace-mime-body", "bom-mime-body", "classic-body", "exact-mime-body", "json-body", "module-body", "nomodule-body", "nbsp-mime-body", "parameterized-mime-body", "plain-body"].map(cspHash).sort());
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
