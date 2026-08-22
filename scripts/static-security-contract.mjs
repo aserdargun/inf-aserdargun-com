@@ -35,6 +35,25 @@ const cacheByRoute = new Map([
   ["/favicon.ico", "public, max-age=86400, must-revalidate"],
 ]);
 
+const classicJavaScriptMimeTypes = new Set([
+  "application/ecmascript",
+  "application/javascript",
+  "application/x-ecmascript",
+  "application/x-javascript",
+  "text/ecmascript",
+  "text/javascript",
+  "text/javascript1.0",
+  "text/javascript1.1",
+  "text/javascript1.2",
+  "text/javascript1.3",
+  "text/javascript1.4",
+  "text/javascript1.5",
+  "text/jscript",
+  "text/livescript",
+  "text/x-ecmascript",
+  "text/x-javascript",
+]);
+
 function requirePolicy(condition, message) {
   if (!condition) throw new Error(`Static security policy invalid: ${message}`);
 }
@@ -72,6 +91,14 @@ function scriptElements(html, path) {
   };
   visit(document);
   return elements;
+}
+
+function isCspGovernedExecutableScript(attributes) {
+  const type = (attributes.get("type") ?? "").trim().toLowerCase();
+  if (type === "module" || type === "importmap" || type === "speculationrules") return true;
+  const essence = type.split(";", 1)[0].trim();
+  const classic = type === "" || classicJavaScriptMimeTypes.has(essence);
+  return classic && !attributes.has("nomodule");
 }
 
 async function filesUnder(directory) {
@@ -138,6 +165,7 @@ export async function inlineScriptHashes(outputRoot) {
         requirePolicy(element.body.trim() === "", `${path} has an ambiguous external script with an inline body`);
         continue;
       }
+      if (!isCspGovernedExecutableScript(element.attributes)) continue;
       if (element.body.trim() !== "") hashes.add(`'sha256-${createHash("sha256").update(element.body).digest("base64")}'`);
     }
   }

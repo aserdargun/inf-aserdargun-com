@@ -4,6 +4,24 @@ import { readFileSync, readdirSync } from "node:fs";
 
 const image = readFileSync("api/test/fixtures/valid-infographic.png");
 
+test("Chromium keeps data and nomodule scripts inert while executing supported script types", async ({ page }) => {
+  await page.setContent([
+    "<!doctype html>",
+    '<script type="application/json">globalThis.__jsonRan=true</script>',
+    '<script type="text/plain">globalThis.__plainRan=true</script>',
+    "<script nomodule>globalThis.__nomoduleRan=true</script>",
+    "<script>globalThis.__classicRan=true</script>",
+    '<script type="module">globalThis.__moduleRan=true</script>',
+  ].join(""));
+  await expect.poll(() => page.evaluate(() => ({
+    classic: (globalThis as typeof globalThis & { __classicRan?: boolean }).__classicRan,
+    json: (globalThis as typeof globalThis & { __jsonRan?: boolean }).__jsonRan,
+    module: (globalThis as typeof globalThis & { __moduleRan?: boolean }).__moduleRan,
+    nomodule: (globalThis as typeof globalThis & { __nomoduleRan?: boolean }).__nomoduleRan,
+    plain: (globalThis as typeof globalThis & { __plainRan?: boolean }).__plainRan,
+  }))).toEqual({ classic: true, json: undefined, module: true, nomodule: undefined, plain: undefined });
+});
+
 test("production-static routes enforce functional CSP and intentional cache headers", async ({ page, request }) => {
   const violations: string[] = [];
   page.on("console", (message) => { if (/content security policy|refused to (?:execute|load|apply)/i.test(message.text())) violations.push(message.text()); });

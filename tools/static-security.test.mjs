@@ -167,6 +167,38 @@ test("HTML scanner rejects non-root-relative external script sources", async () 
   }
 });
 
+test("HTML scanner hashes only CSP-governed executable script types", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inf-csp-script-types-"));
+  try {
+    await writeFile(join(directory, "index.html"), [
+      "<!doctype html>",
+      "<script>classic-body</script>",
+      '<script type="module">module-body</script>',
+      '<script type="text/javascript; charset=utf-8">mime-body</script>',
+      '<script type="application/json">json-body</script>',
+      '<script type="text/plain">plain-body</script>',
+      "<script nomodule>nomodule-body</script>",
+    ].join(""));
+    const inert = await scanInlineScriptHashes(directory);
+    assert.deepEqual(inert, [cspHash("classic-body"), cspHash("mime-body"), cspHash("module-body")].sort());
+
+    await writeFile(join(directory, "index.html"), [
+      "<!doctype html>",
+      "<script>classic-body</script>",
+      '<script type="module">module-body</script>',
+      '<script type="text/javascript; charset=utf-8">mime-body</script>',
+      "<script>json-body</script>",
+      "<script>plain-body</script>",
+      "<script>nomodule-body</script>",
+    ].join(""));
+    const executable = await scanInlineScriptHashes(directory);
+    assert.notDeepEqual(executable, inert);
+    assert.deepEqual(executable, ["classic-body", "json-body", "mime-body", "module-body", "nomodule-body", "plain-body"].map(cspHash).sort());
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("service-worker release is deterministic and changes with every View release input", async () => {
   assert.equal(typeof securityContract.generatePublicViewServiceWorker, "function");
   const directory = await mkdtemp(join(tmpdir(), "inf-worker-release-"));

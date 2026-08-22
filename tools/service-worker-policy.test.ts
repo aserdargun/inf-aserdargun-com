@@ -11,6 +11,7 @@ function workerHarness() {
   let networkCalls = 0;
   let claims = 0;
   let cacheFailure: CacheFailure | undefined;
+  let fetchLifetimes: Promise<unknown>[] = [];
   const caches = {
     async open(name: string) {
       if (cacheFailure === "open") throw new Error("cache open failed");
@@ -33,15 +34,18 @@ function workerHarness() {
     setCacheFailure(value: CacheFailure | undefined) { cacheFailure = value; },
     networkCalls() { return networkCalls; },
     claims() { return claims; },
+    fetchWaitUntilCalls() { return fetchLifetimes.length; },
+    async settleFetchLifetime() { await Promise.all(fetchLifetimes); },
     caches: stores,
     async seed(cacheName: string, url: string, body: string) { const cache = await caches.open(cacheName); await cache.put(url, new Response(body, { status: 200 })); },
     async cached(cacheName: string, url: string) { return (await caches.open(cacheName)).match(url); },
     async lifecycle(name: "install" | "activate") { let completion: Promise<unknown> | undefined; handlers.get(name)!({ waitUntil(value: Promise<unknown>) { completion = value; } }); await completion; },
     async fetch(url: string, method = "GET", mode?: "navigate") {
       let response: Promise<Response> | undefined;
+      fetchLifetimes = [];
       const request = new Request(url, { method });
       if (mode) Object.defineProperty(request, "mode", { value: mode });
-      handlers.get("fetch")!({ request, respondWith(value: Promise<Response>) { response = value; } });
+      handlers.get("fetch")!({ request, respondWith(value: Promise<Response>) { response = value; }, waitUntil(value: Promise<unknown>) { fetchLifetimes.push(value); } });
       return response;
     },
   };
@@ -67,13 +71,15 @@ describe("public service-worker cache policy", () => {
     const cacheName = `${harness.version}-static`;
     const view = "http://inf.test/view/";
     await harness.seed(cacheName, view, "stale shell");
+    let requestUrl = view;
     if (failure === "delete-entry") {
-      for (let index = 0; index < 40; index += 1) await harness.seed(cacheName, `http://inf.test/_next/static/${index}.js`, String(index));
+      for (let index = 0; index < 39; index += 1) await harness.seed(cacheName, `http://inf.test/_next/static/${index}.js`, String(index));
+      requestUrl = "http://inf.test/view/fresh-item/";
     }
     const fresh = new Response("fresh shell", { status: 200 });
     harness.setNetwork(async () => fresh);
     harness.setCacheFailure(failure);
-    expect(await harness.fetch(view, "GET", "navigate")).toBe(fresh);
+    expect(await harness.fetch(requestUrl, "GET", "navigate")).toBe(fresh);
     expect(harness.networkCalls()).toBe(1);
   });
 
@@ -97,6 +103,34 @@ describe("public service-worker cache policy", () => {
     harness.setNetwork(async () => fresh);
     harness.setCacheFailure("put");
     expect(await harness.fetch(url, "GET", mode as "navigate" | undefined)).toBe(fresh);
+  });
+
+  test.each<CacheFailure>(["keys", "delete-entry"])("persistent %s failure preserves fresh catalog responses without exceeding the cache bound", async (failure) => {
+    const harness = workerHarness();
+    const cacheName = `${harness.version}-data`;
+    for (let index = 0; index < 40; index += 1) await harness.seed(cacheName, `http://inf.test/api/public/infographics/00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, String(index));
+    harness.setCacheFailure(failure);
+    for (let index = 40; index < 45; index += 1) {
+      const fresh = new Response(`fresh ${index}`, { status: 200 });
+      harness.setNetwork(async () => fresh);
+      expect(await harness.fetch(`http://inf.test/api/public/infographics/00000000-0000-4000-8000-${String(index).padStart(12, "0")}`)).toBe(fresh);
+      expect(harness.caches.get(cacheName)?.length).toBeLessThanOrEqual(40);
+    }
+  });
+
+  test("extends an image cache-hit event through stale-while-revalidate completion", async () => {
+    const harness = workerHarness();
+    const cacheName = `${harness.version}-images`;
+    const url = "http://inf.test/api/public/images/item-id";
+    await harness.seed(cacheName, url, "stale image");
+    let releaseNetwork!: (response: Response) => void;
+    harness.setNetwork(() => new Promise((resolve) => { releaseNetwork = resolve; }));
+    const response = await harness.fetch(url);
+    expect(await response?.text()).toBe("stale image");
+    expect(harness.fetchWaitUntilCalls()).toBe(1);
+    releaseNetwork(new Response("fresh image", { status: 200 }));
+    await harness.settleFetchLifetime();
+    expect(await (await harness.cached(cacheName, url))?.text()).toBe("fresh image");
   });
 
   test("install populates only the current static release and hashed assets remain cache-first", async () => {

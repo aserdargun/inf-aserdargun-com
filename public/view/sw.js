@@ -16,9 +16,14 @@ function writeBounded(cacheName, request, response) {
   if (!isSafeResponse(response)) return Promise.resolve();
   const work = async () => {
     const cache = await caches.open(cacheName);
-    await cache.put(request, response.clone());
     const keys = await cache.keys();
-    await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_ENTRIES)).map((key) => cache.delete(key)));
+    const requestUrl = typeof request === "string" ? new URL(request, self.location.origin).href : request.url;
+    const replacement = keys.some((key) => key.url === requestUrl);
+    const candidates = keys.filter((key) => key.url !== requestUrl);
+    const overflow = Math.max(0, keys.length + (replacement ? 0 : 1) - MAX_ENTRIES);
+    const deletions = await Promise.all(candidates.slice(0, overflow).map((key) => cache.delete(key)));
+    if (deletions.some((deleted) => !deleted)) throw new Error("Cache eviction failed");
+    await cache.put(request, response.clone());
   };
   const next = cacheWrites.then(work, work);
   cacheWrites = next.catch(() => undefined);
@@ -110,17 +115,20 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (publicImage(url.pathname)) {
-    event.respondWith((async () => {
+    let revalidation;
+    const responsePromise = (async () => {
       const cached = await matchBestEffort(IMAGE_CACHE, request);
-      const network = fetch(request).then(async (response) => {
+      revalidation = fetch(request).then(async (response) => {
         await writeBestEffort(IMAGE_CACHE, request, response);
         return response;
       }).catch(() => undefined);
-      if (cached) { void network; return cached; }
-      const response = await network;
+      if (cached) return cached;
+      const response = await revalidation;
       if (response) return response;
       throw new Error("Offline");
-    })());
+    })();
+    event.respondWith(responsePromise);
+    event.waitUntil(responsePromise.then(() => revalidation).catch(() => undefined));
     return;
   }
   if (staticAsset(url.pathname)) {
