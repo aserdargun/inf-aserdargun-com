@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { assertStaticSecurityConfig, inlineScriptHashes as scanInlineScriptHashes } from "../scripts/static-security-contract.mjs";
+import * as securityContract from "../scripts/static-security-contract.mjs";
 
 const placeholder = "__INF_CSP_SCRIPT_HASHES__";
 const securityHeaders = {
@@ -76,4 +79,113 @@ test("source and generated static configs enforce CSP, security headers, and int
   assert.ok(hashes.length > 0);
   assertCsp(artifact.globalHeaders["Content-Security-Policy"], hashes);
   assert.deepEqual(artifact.routes, source.routes);
+});
+
+test("CSP rejects script directive overrides and every unknown directive", async () => {
+  const source = JSON.parse(await readFile("public/staticwebapp.config.json", "utf8"));
+  const mutate = (suffix) => {
+    const config = globalThis.structuredClone(source);
+    config.globalHeaders["Content-Security-Policy"] += `; ${suffix}`;
+    return config;
+  };
+  assert.throws(() => assertStaticSecurityConfig(mutate("script-src-elem 'unsafe-inline'"), [placeholder]), /script-src-elem|directive/i);
+  assert.throws(() => assertStaticSecurityConfig(mutate("script-src-attr 'unsafe-inline'"), [placeholder]), /script-src-attr|directive/i);
+  assert.throws(() => assertStaticSecurityConfig(mutate("child-src 'self'"), [placeholder]), /child-src|directive/i);
+});
+
+test("HTML scanner hashes executable bodies unless a real src attribute exists", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inf-csp-attributes-"));
+  try {
+    await writeFile(join(directory, "index.html"), [
+      "<script>baseline</script>",
+      '<script data-src="decoy">danger</script>',
+      "<script x-src='decoy'>x-source</script>",
+      '<script srcdoc="ignored-as-an-attribute">srcdoc-body</script>',
+      "<script DATA-SRC = decoy defer>mixed-case</script>",
+      '<script data-note="src=decoy">quoted-src-text</script>',
+      '<script src="/external.js"></script>',
+      '<script SRC = /external-two.js async>   </script>',
+    ].join(""));
+    assert.deepEqual(await scanInlineScriptHashes(directory), [
+      "'sha256-6hI6n99pxkuccm/Jf/8cHsrHK8vNYnLKWxCWUzOZeI4='",
+      "'sha256-Ej/WZqo503ZpDPplcEJtNYXBiLKRvIes9HuE4/6CIQI='",
+      "'sha256-i6hJaiUlrhcf/RBNYy3t5u9BjZuVliqdiOL828jUjSQ='",
+      "'sha256-mU5J+uioQBAu9L4+9YDUpyaee4bAyH3XXbKVzmKjYaY='",
+      "'sha256-mdVnSuhV7Bql9WQdpfDOp/3wvHrOVIxS//60zhjM984='",
+      "'sha256-wiaXfHqvodPZ428JphUNqO51/uWTJlr3gmzsJZdPWFI='",
+    ]);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("HTML scanner rejects external script tags with executable inline bodies", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inf-csp-ambiguous-"));
+  try {
+    await writeFile(join(directory, "index.html"), '<script>baseline</script><script src="/external.js">inline-body</script>');
+    await assert.rejects(() => scanInlineScriptHashes(directory), /external.*inline|inline.*external|ambiguous/i);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("service-worker release is deterministic and changes with every View release input", async () => {
+  assert.equal(typeof securityContract.generatePublicViewServiceWorker, "function");
+  const directory = await mkdtemp(join(tmpdir(), "inf-worker-release-"));
+  const files = new Map([
+    ["view/index.html", "view-v1"],
+    ["view/sw.js", 'const VERSION = "__INF_PUBLIC_CACHE_VERSION__";'],
+    ["staticwebapp.config.json", "security-v1"],
+    ["theme-bootstrap.js", "theme-v1"],
+    ["manifest.webmanifest", "manifest-v1"],
+    ["icons/icon-192.png", "icon-192"],
+    ["icons/icon-512.png", "icon-512"],
+    ["icons/maskable-512.png", "icon-maskable"],
+    ["_next/static/chunks/app.js", "runtime-v1"],
+  ]);
+  try {
+    for (const [path, contents] of files) {
+      const target = join(directory, path);
+      await mkdir(join(target, ".."), { recursive: true });
+      await writeFile(target, contents);
+    }
+    const first = await securityContract.generatePublicViewServiceWorker({ outputRoot: directory });
+    assert.match(first.version, /^INF-PUBLIC-[a-f0-9]{64}$/);
+    assert.equal(first.version, `INF-PUBLIC-${first.digest}`);
+    assert.deepEqual(first.inputs, [
+      "_next/static/chunks/app.js",
+      "icons/icon-192.png",
+      "icons/icon-512.png",
+      "icons/maskable-512.png",
+      "manifest.webmanifest",
+      "staticwebapp.config.json",
+      "theme-bootstrap.js",
+      "view/index.html",
+    ]);
+    assert.doesNotMatch(await readFile(join(directory, "view/sw.js"), "utf8"), /__INF_PUBLIC_CACHE_VERSION__/);
+    assert.equal((await securityContract.generatePublicViewServiceWorker({ outputRoot: directory })).version, first.version);
+    await writeFile(join(directory, "view/index.html"), "view-v2");
+    const shellMutation = await securityContract.generatePublicViewServiceWorker({ outputRoot: directory });
+    assert.notEqual(shellMutation.version, first.version);
+    await writeFile(join(directory, "view/index.html"), "view-v1");
+    await writeFile(join(directory, "_next/static/chunks/app.js"), "runtime-v2");
+    const runtimeMutation = await securityContract.generatePublicViewServiceWorker({ outputRoot: directory });
+    assert.notEqual(runtimeMutation.version, first.version);
+    await writeFile(join(directory, "_next/static/chunks/app.js"), "runtime-v1");
+    const restored = await securityContract.generatePublicViewServiceWorker({ outputRoot: directory });
+    assert.equal(restored.version, first.version);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("deployed worker release covers the real View shell and every referenced Next static asset", async () => {
+  assert.equal(typeof securityContract.publicViewRelease, "function");
+  const release = await securityContract.publicViewRelease({ outputRoot: "out" });
+  assert.ok(release.inputs.includes("view/index.html"));
+  assert.ok(release.inputs.includes("staticwebapp.config.json"));
+  const html = await readFile("out/view/index.html", "utf8");
+  const references = [...new Set([...html.matchAll(/\/_next\/static\/[^"'\\]+/g)].map((match) => match[0].slice(1)))];
+  assert.ok(references.length > 0);
+  for (const reference of references) assert.ok(release.inputs.includes(reference), reference);
 });

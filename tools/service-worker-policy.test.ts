@@ -7,6 +7,8 @@ function workerHarness() {
   const handlers = new Map<string, (event: any) => void>();
   const stores = new Map<string, Entry[]>();
   let network: (request: Request) => Promise<Response> = async () => new Response("ok", { status: 200 });
+  let networkCalls = 0;
+  let claims = 0;
   const caches = {
     async open(name: string) {
       const entries = stores.get(name) ?? []; stores.set(name, entries);
@@ -17,15 +19,72 @@ function workerHarness() {
       };
     }, keys: async () => [...stores.keys()], delete: async (name: string) => stores.delete(name),
   };
-  const self = { location: { origin: "http://inf.test" }, addEventListener: (name: string, callback: (event: any) => void) => handlers.set(name, callback), skipWaiting: async () => undefined, clients: { claim: async () => undefined } };
-  vm.runInNewContext(readFileSync("public/view/sw.js", "utf8"), { self, caches, fetch: (request: Request) => network(request), URL, Request, Response, Error, Promise });
+  const source = readFileSync("public/view/sw.js", "utf8");
+  const version = source.match(/const VERSION = "([^"]+)"/)?.[1];
+  if (!version) throw new Error("Worker version is missing.");
+  const self = { location: { origin: "http://inf.test" }, addEventListener: (name: string, callback: (event: any) => void) => handlers.set(name, callback), skipWaiting: async () => undefined, clients: { claim: async () => { claims += 1; } } };
+  vm.runInNewContext(source, { self, caches, fetch: (request: Request) => { networkCalls += 1; return network(request); }, URL, Request, Response, Error, Promise });
   return {
-    setNetwork(value: typeof network) { network = value; }, caches: stores,
-    async fetch(url: string, method = "GET") { let response: Promise<Response> | undefined; handlers.get("fetch")!({ request: new Request(url, { method }), respondWith(value: Promise<Response>) { response = value; } }); return response; },
+    version,
+    setNetwork(value: typeof network) { network = value; },
+    networkCalls() { return networkCalls; },
+    claims() { return claims; },
+    caches: stores,
+    async seed(cacheName: string, url: string, body: string) { const cache = await caches.open(cacheName); await cache.put(url, new Response(body, { status: 200 })); },
+    async cached(cacheName: string, url: string) { return (await caches.open(cacheName)).match(url); },
+    async lifecycle(name: "install" | "activate") { let completion: Promise<unknown> | undefined; handlers.get(name)!({ waitUntil(value: Promise<unknown>) { completion = value; } }); await completion; },
+    async fetch(url: string, method = "GET", mode?: "navigate") {
+      let response: Promise<Response> | undefined;
+      const request = new Request(url, { method });
+      if (mode) Object.defineProperty(request, "mode", { value: mode });
+      handlers.get("fetch")!({ request, respondWith(value: Promise<Response>) { response = value; } });
+      return response;
+    },
   };
 }
 
 describe("public service-worker cache policy", () => {
+  test("View navigation attempts the network, refreshes the current cache, and falls back offline", async () => {
+    const harness = workerHarness();
+    const cacheName = `${harness.version}-static`;
+    const view = "http://inf.test/view/";
+    await harness.seed(cacheName, view, "stale shell");
+    harness.setNetwork(async () => new Response("fresh shell", { status: 200 }));
+    expect(await (await harness.fetch(view, "GET", "navigate"))?.text()).toBe("fresh shell");
+    expect(harness.networkCalls()).toBe(1);
+    expect(await (await harness.cached(cacheName, view))?.text()).toBe("fresh shell");
+    harness.setNetwork(async () => { throw new TypeError("offline"); });
+    expect(await (await harness.fetch("http://inf.test/view/item-id/", "GET", "navigate"))?.text()).toBe("fresh shell");
+    expect(harness.networkCalls()).toBe(2);
+  });
+
+  test("install populates only the current static release and hashed assets remain cache-first", async () => {
+    const harness = workerHarness();
+    await harness.seed("PUBLIC-CACHE-v1-static", "http://inf.test/view/", "old shell");
+    harness.setNetwork(async (request) => new Response(`installed:${request.url}`, { status: 200 }));
+    await harness.lifecycle("install");
+    const current = `${harness.version}-static`;
+    expect([...harness.caches.keys()].sort()).toEqual(["PUBLIC-CACHE-v1-static", current].sort());
+    expect(harness.caches.get(current)).toHaveLength(5);
+    const asset = "http://inf.test/_next/static/chunks/app.123.js";
+    await harness.seed(current, asset, "hashed runtime");
+    const callsBeforeAsset = harness.networkCalls();
+    expect(await (await harness.fetch(asset))?.text()).toBe("hashed runtime");
+    expect(harness.networkCalls()).toBe(callsBeforeAsset);
+  });
+
+  test("activation deletes only prior INF public releases and claims clients", async () => {
+    const harness = workerHarness();
+    const current = `${harness.version}-static`;
+    await harness.seed(current, "http://inf.test/view/", "current");
+    await harness.seed("PUBLIC-CACHE-v1-static", "http://inf.test/view/", "legacy");
+    await harness.seed("INF-PUBLIC-deadbeef-static", "http://inf.test/view/", "old");
+    await harness.seed("UNRELATED-CACHE-v1", "http://inf.test/other", "unrelated");
+    await harness.lifecycle("activate");
+    expect([...harness.caches.keys()].sort()).toEqual([current, "UNRELATED-CACHE-v1"].sort());
+    expect(harness.claims()).toBe(1);
+  });
+
   test("uses a last-good public catalog response offline without serving it to owner URLs", async () => {
     const harness = workerHarness(); const catalog = "http://inf.test/api/public/infographics";
     const first = await harness.fetch(catalog); expect(await first?.text()).toBe("ok");
@@ -39,6 +98,9 @@ describe("public service-worker cache policy", () => {
     const harness = workerHarness();
     expect(await harness.fetch("http://inf.test/api/public/infographics", "POST")).toBeUndefined();
     expect(await harness.fetch("https://elsewhere.test/api/public/infographics")).toBeUndefined();
+    for (const privateUrl of ["/", "/login", "/settings", "/api/infographics", "/api/private/unknown", "/api/public/unknown"]) {
+      expect(await harness.fetch(`http://inf.test${privateUrl}`), privateUrl).toBeUndefined();
+    }
     harness.setNetwork(async () => new Response("unauthorized", { status: 401 })); await (await harness.fetch("http://inf.test/api/public/infographics"))?.text();
     harness.setNetwork(async () => new Response("failure", { status: 500 })); await (await harness.fetch("http://inf.test/api/public/infographics/00000000-0000-4000-8000-000000000001"))?.text();
     expect([...harness.caches.values()].flat()).toHaveLength(0);

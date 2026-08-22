@@ -1,8 +1,19 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 export const CSP_HASH_PLACEHOLDER = "__INF_CSP_SCRIPT_HASHES__";
+export const SERVICE_WORKER_VERSION_PLACEHOLDER = "__INF_PUBLIC_CACHE_VERSION__";
+
+const viewReleaseFixedInputs = [
+  "view/index.html",
+  "staticwebapp.config.json",
+  "theme-bootstrap.js",
+  "manifest.webmanifest",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/maskable-512.png",
+];
 
 const requiredHeaders = Object.freeze({
   "Cache-Control": "private, no-store",
@@ -44,6 +55,70 @@ function exactDirective(directives, name, expected) {
   requirePolicy(JSON.stringify(directives.get(name)) === JSON.stringify(expected), `${name} must be exactly ${expected.join(" ")}`);
 }
 
+function scriptElements(html, path) {
+  const elements = [];
+  const lower = html.toLowerCase();
+  let cursor = 0;
+  while (cursor < html.length) {
+    const start = lower.indexOf("<script", cursor);
+    if (start < 0) break;
+    const boundary = html[start + 7];
+    if (boundary && !/[\s/>]/.test(boundary)) { cursor = start + 7; continue; }
+    let quote = "";
+    let tagEnd = start + 7;
+    for (; tagEnd < html.length; tagEnd += 1) {
+      const character = html[tagEnd];
+      if (quote) {
+        if (character === quote) quote = "";
+      } else if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === ">") {
+        break;
+      }
+    }
+    requirePolicy(tagEnd < html.length && !quote, `${path} has a malformed script start tag`);
+    const close = lower.indexOf("</script", tagEnd + 1);
+    requirePolicy(close >= 0, `${path} has an unclosed script element`);
+    const closeMatch = html.slice(close).match(/^<\/script\s*>/i);
+    requirePolicy(closeMatch, `${path} has a malformed script end tag`);
+    elements.push({ attributes: html.slice(start + 7, tagEnd), body: html.slice(tagEnd + 1, close) });
+    cursor = close + closeMatch[0].length;
+  }
+  return elements;
+}
+
+function attributeNames(source, path) {
+  const names = new Set();
+  let cursor = 0;
+  while (cursor < source.length) {
+    while (/\s/.test(source[cursor] ?? "")) cursor += 1;
+    if (cursor >= source.length || source[cursor] === "/") break;
+    const start = cursor;
+    while (cursor < source.length && !/[\s"'=<>/]/.test(source[cursor])) cursor += 1;
+    requirePolicy(cursor > start, `${path} has a malformed script attribute`);
+    const name = source.slice(start, cursor).toLowerCase();
+    requirePolicy(!names.has(name), `${path} has a duplicate script attribute ${name}`);
+    names.add(name);
+    while (/\s/.test(source[cursor] ?? "")) cursor += 1;
+    if (source[cursor] !== "=") continue;
+    cursor += 1;
+    while (/\s/.test(source[cursor] ?? "")) cursor += 1;
+    requirePolicy(cursor < source.length, `${path} has a missing value for script attribute ${name}`);
+    const quote = source[cursor] === '"' || source[cursor] === "'" ? source[cursor] : "";
+    if (quote) {
+      cursor += 1;
+      const end = source.indexOf(quote, cursor);
+      requirePolicy(end >= 0, `${path} has an unterminated script attribute ${name}`);
+      cursor = end + 1;
+    } else {
+      const valueStart = cursor;
+      while (cursor < source.length && !/[\s>]/.test(source[cursor])) cursor += 1;
+      requirePolicy(cursor > valueStart, `${path} has an empty script attribute ${name}`);
+    }
+  }
+  return names;
+}
+
 async function filesUnder(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -54,15 +129,60 @@ async function filesUnder(directory) {
   return files.sort();
 }
 
+export async function publicViewRelease({ outputRoot = "out" } = {}) {
+  const root = resolve(outputRoot);
+  const nextStaticFiles = await filesUnder(resolve(root, "_next/static"));
+  const inputs = [...viewReleaseFixedInputs, ...nextStaticFiles.map((path) => relative(root, path).split("\\").join("/"))].sort();
+  const hash = createHash("sha256");
+  for (const path of inputs) {
+    const bytes = await readFile(resolve(root, path));
+    hash.update(path);
+    hash.update("\0");
+    hash.update(String(bytes.length));
+    hash.update("\0");
+    hash.update(bytes);
+    hash.update("\0");
+  }
+  const digest = hash.digest("hex");
+  return { digest, inputs, version: `INF-PUBLIC-${digest}` };
+}
+
+export async function generatePublicViewServiceWorker({ outputRoot = "out" } = {}) {
+  const root = resolve(outputRoot);
+  const release = await publicViewRelease({ outputRoot: root });
+  const workerPath = resolve(root, "view/sw.js");
+  const source = await readFile(workerPath, "utf8");
+  const versionPattern = /const VERSION = "(__INF_PUBLIC_CACHE_VERSION__|INF-PUBLIC-[a-f0-9]{64})";/g;
+  const matches = [...source.matchAll(versionPattern)];
+  requirePolicy(matches.length === 1, "service worker must contain exactly one replaceable release version");
+  const generated = source.replace(versionPattern, `const VERSION = "${release.version}";`);
+  requirePolicy(!generated.includes(SERVICE_WORKER_VERSION_PLACEHOLDER), "generated service worker retains a stale release placeholder");
+  await writeFile(workerPath, generated);
+  return release;
+}
+
+export async function assertPublicViewServiceWorker({ outputRoot = "out" } = {}) {
+  const root = resolve(outputRoot);
+  const release = await publicViewRelease({ outputRoot: root });
+  const source = await readFile(resolve(root, "view/sw.js"), "utf8");
+  requirePolicy(!source.includes(SERVICE_WORKER_VERSION_PLACEHOLDER), "generated service worker retains a stale release placeholder");
+  requirePolicy(source.includes(`const VERSION = "${release.version}";`), "service worker release does not match its View inputs");
+  return release;
+}
+
 export async function inlineScriptHashes(outputRoot) {
   const hashes = new Set();
   const files = (await filesUnder(resolve(outputRoot))).filter((path) => path.endsWith(".html"));
   requirePolicy(files.length > 0, "generated export has no HTML files");
   for (const path of files) {
     const html = await readFile(path, "utf8");
-    for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-      if (/\bsrc\s*=/i.test(match[1])) continue;
-      hashes.add(`'sha256-${createHash("sha256").update(match[2]).digest("base64")}'`);
+    for (const element of scriptElements(html, path)) {
+      const external = attributeNames(element.attributes, path).has("src");
+      if (external) {
+        requirePolicy(element.body.trim() === "", `${path} has an ambiguous external script with an inline body`);
+        continue;
+      }
+      if (element.body.trim() !== "") hashes.add(`'sha256-${createHash("sha256").update(element.body).digest("base64")}'`);
     }
   }
   requirePolicy(hashes.size > 0, "generated export has no inline Next hydration scripts to pin");
@@ -74,6 +194,8 @@ export function assertStaticSecurityConfig(config, expectedScriptSources) {
   requirePolicy(config.globalHeaders && typeof config.globalHeaders === "object", "globalHeaders are missing");
   for (const [name, value] of Object.entries(requiredHeaders)) requirePolicy(config.globalHeaders[name] === value, `${name} must be ${value}`);
   const directives = cspDirectives(config.globalHeaders["Content-Security-Policy"]);
+  const expectedNames = ["default-src", "base-uri", "connect-src", "font-src", "form-action", "frame-ancestors", "img-src", "manifest-src", "object-src", "script-src", "script-src-attr", "style-src", "worker-src"];
+  requirePolicy(JSON.stringify([...directives.keys()]) === JSON.stringify(expectedNames), `CSP directives must be exactly ${expectedNames.join(", ")}`);
   exactDirective(directives, "default-src", ["'self'"]);
   exactDirective(directives, "base-uri", ["'self'"]);
   exactDirective(directives, "connect-src", ["'self'"]);
@@ -86,6 +208,7 @@ export function assertStaticSecurityConfig(config, expectedScriptSources) {
   exactDirective(directives, "style-src", ["'self'", "'unsafe-inline'"]);
   exactDirective(directives, "worker-src", ["'self'"]);
   exactDirective(directives, "script-src", ["'self'", ...expectedScriptSources]);
+  exactDirective(directives, "script-src-attr", ["'none'"]);
   const scripts = directives.get("script-src").join(" ");
   requirePolicy(!/unsafe-inline|unsafe-eval|\*|https?:/i.test(scripts), "script-src must not allow inline/eval/wildcard/remote scripts");
   for (const values of directives.values()) requirePolicy(!values.some((value) => value === "*" || /^https?:/i.test(value)), "CSP must not allow wildcard or remote origins");
@@ -126,5 +249,6 @@ export async function generateStaticSecurityConfig({ sourcePath = "public/static
   const serialized = `${JSON.stringify(generated, null, 2)}\n`;
   requirePolicy(!serialized.includes(CSP_HASH_PLACEHOLDER), "generated config retains a stale CSP placeholder");
   await writeFile(resolve(outputRoot, "staticwebapp.config.json"), serialized);
-  return { config: generated, hashes };
+  const release = await generatePublicViewServiceWorker({ outputRoot });
+  return { config: generated, hashes, release };
 }

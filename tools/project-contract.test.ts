@@ -7,12 +7,15 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const cspPlaceholder = "__INF_CSP_SCRIPT_HASHES__";
-const invalidArtifactCases: Array<[string, "placeholder" | "unhashed", RegExp]> = [
+const workerPlaceholder = "__INF_PUBLIC_CACHE_VERSION__";
+const invalidArtifactCases: Array<[string, "placeholder" | "unhashed" | "worker-placeholder" | "worker-mismatch", RegExp]> = [
   ["stale CSP placeholder", "placeholder", /stale CSP hash placeholder/i],
   ["unhashed inline script", "unhashed", /script-src/i],
+  ["stale service-worker placeholder", "worker-placeholder", /stale service-worker release placeholder/i],
+  ["service-worker release mismatch", "worker-mismatch", /service worker release/i],
 ];
 
-function writeCompleteArtifact(directory: string, mode: "valid" | "placeholder" | "unhashed" = "valid") {
+function writeCompleteArtifact(directory: string, mode: "valid" | "placeholder" | "unhashed" | "worker-placeholder" | "worker-mismatch" = "valid") {
   const hydrationScript = "globalThis.__fixture=true;";
   const hash = `'sha256-${createHash("sha256").update(hydrationScript).digest("base64")}'`;
   const sourceConfig = readFileSync("public/staticwebapp.config.json", "utf8");
@@ -23,7 +26,7 @@ function writeCompleteArtifact(directory: string, mode: "valid" | "placeholder" 
     "out/view/index.html": html,
     "out/staticwebapp.config.json": generatedConfig,
     "out/manifest.webmanifest": "{}",
-    "out/view/sw.js": "self.addEventListener('fetch',()=>{});",
+    "out/view/sw.js": `const VERSION = "${workerPlaceholder}";`,
     "out/theme-bootstrap.js": "globalThis.__theme=true;",
     "out/icons/icon-192.png": "icon",
     "out/icons/icon-512.png": "icon",
@@ -37,6 +40,14 @@ function writeCompleteArtifact(directory: string, mode: "valid" | "placeholder" 
     mkdirSync(resolve(target, ".."), { recursive: true });
     writeFileSync(target, contents);
   }
+  const moduleUrl = pathToFileURL(resolve("scripts/static-security-contract.mjs")).href;
+  const release = spawnSync(process.execPath, ["--input-type=module", "-e", `import { generatePublicViewServiceWorker } from ${JSON.stringify(moduleUrl)}; await generatePublicViewServiceWorker({ outputRoot: "out" });`], {
+    cwd: directory,
+    encoding: "utf8",
+  });
+  if (release.status !== 0) throw new Error(release.stderr);
+  if (mode === "worker-placeholder") writeFileSync(join(directory, "out/view/sw.js"), `const VERSION = "${workerPlaceholder}";`);
+  if (mode === "worker-mismatch") writeFileSync(join(directory, "out/theme-bootstrap.js"), "globalThis.__theme='changed';");
 }
 
 describe("project contract", () => {

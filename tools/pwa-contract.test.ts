@@ -40,7 +40,10 @@ describe("public PWA contract", () => {
 
   test("has a bounded public-only service worker policy", () => {
     const serviceWorker = readFileSync(resolve(root, "public/view/sw.js"), "utf8");
-    expect(serviceWorker).toContain("PUBLIC-CACHE-v1");
+    const deployedWorker = readFileSync(resolve(root, "out/view/sw.js"), "utf8");
+    expect(serviceWorker).toContain("__INF_PUBLIC_CACHE_VERSION__");
+    expect(deployedWorker).toMatch(/const VERSION = "INF-PUBLIC-[a-f0-9]{64}"/);
+    expect(deployedWorker).not.toContain("__INF_PUBLIC_CACHE_VERSION__");
     expect(serviceWorker).toContain("request.method !== \"GET\"");
     expect(serviceWorker).toContain("url.origin !== self.location.origin");
     expect(serviceWorker).toContain("/api/public/infographics");

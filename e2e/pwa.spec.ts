@@ -1,5 +1,6 @@
 import { expect, test } from "playwright/test";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 
 const image = readFileSync("api/test/fixtures/valid-infographic.png");
 
@@ -39,6 +40,25 @@ test("production-static routes enforce functional CSP and intentional cache head
   expect(violations).toEqual([]);
 });
 
+test("browser-parsed inline script bodies exactly match the authoritative CSP hashes", async ({ page }) => {
+  await page.goto("/");
+  const htmlFiles = (readdirSync("out", { recursive: true }) as string[])
+    .filter((path) => path.endsWith(".html"))
+    .sort()
+    .map((path) => ({ html: readFileSync(`out/${path}`, "utf8"), path }));
+  const bodies = await page.evaluate((files) => files.flatMap(({ html, path }) => {
+    const document = new DOMParser().parseFromString(html, "text/html");
+    return [...document.scripts]
+      .filter((script) => !script.hasAttribute("src") && script.textContent?.trim())
+      .map((script) => ({ body: script.textContent ?? "", path }));
+  }), htmlFiles);
+  expect(bodies.length).toBeGreaterThan(0);
+  const browserHashes = [...new Set(bodies.map(({ body }) => `'sha256-${createHash("sha256").update(body).digest("base64")}'`))].sort();
+  const config = JSON.parse(readFileSync("out/staticwebapp.config.json", "utf8"));
+  const policyHashes = [...config.globalHeaders["Content-Security-Policy"].matchAll(/'sha256-[^']+'/g)].map((match: RegExpMatchArray) => match[0]).sort();
+  expect(browserHashes).toEqual(policyHashes);
+});
+
 test("View Mode exposes a local manifest, icons, and non-blocking service-worker registration", async ({ page, request }) => {
   const external: string[] = [];
   page.on("request", (entry) => { if (new URL(entry.url()).origin !== "http://127.0.0.1:4280") external.push(entry.url()); });
@@ -59,6 +79,40 @@ test("View Mode exposes a local manifest, icons, and non-blocking service-worker
   await page.goto("/");
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker?.controller))).toBeFalsy();
   expect(external).toEqual([]);
+});
+
+test("deployed worker replaces a stale release, refreshes View navigation, and falls back offline", async ({ page, context }) => {
+  await page.goto("/login/");
+  await page.evaluate(async () => {
+    const old = await caches.open("PUBLIC-CACHE-v1-static");
+    await old.put("/view/", new Response("<h1>stale release</h1>", { headers: { "Content-Type": "text/html" } }));
+  });
+  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.goto("/view/");
+  await expect(page.getByRole("heading", { name: "Infographics" })).toBeVisible();
+  await expect.poll(() => page.evaluate(async () => ({
+    controlled: Boolean(navigator.serviceWorker?.controller),
+    names: await caches.keys(),
+  }))).toMatchObject({ controlled: true, names: expect.not.arrayContaining(["PUBLIC-CACHE-v1-static"]) });
+  const current = await page.evaluate(async () => (await caches.keys()).find((name) => /^INF-PUBLIC-[a-f0-9]{64}-static$/.test(name)) ?? "");
+  expect(current).toMatch(/^INF-PUBLIC-[a-f0-9]{64}-static$/);
+  await page.evaluate(async (cacheName) => {
+    const cache = await caches.open(cacheName);
+    await cache.put("/view/", new Response("<h1>stale release</h1>", { headers: { "Content-Type": "text/html" } }));
+  }, current);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Infographics" })).toBeVisible();
+  const refreshed = await page.evaluate(async (cacheName) => (await (await caches.open(cacheName)).match("/view/"))?.text(), current);
+  expect(refreshed).toContain('class="public-view"');
+  expect(refreshed).toContain("inf-static-release");
+  expect(refreshed).not.toContain("stale release");
+  await context.setOffline(true);
+  try {
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Infographics" })).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+  }
 });
 
 test("loading, empty, error, and sparse success public states keep the footer at the viewport edge", async ({ page }) => {

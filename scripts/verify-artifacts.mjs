@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { access, readFile, readdir } from "node:fs/promises";
-import { assertStaticSecurityConfig, CSP_HASH_PLACEHOLDER, inlineScriptHashes } from "./static-security-contract.mjs";
+import { assertPublicViewServiceWorker, assertStaticSecurityConfig, CSP_HASH_PLACEHOLDER, inlineScriptHashes, SERVICE_WORKER_VERSION_PLACEHOLDER } from "./static-security-contract.mjs";
 
 const required = [
   "out/index.html",
@@ -30,6 +30,9 @@ async function verify() {
   if (configSource.includes(CSP_HASH_PLACEHOLDER)) throw new Error("Generated artifact contains a stale CSP hash placeholder.");
   const config = JSON.parse(configSource);
   assertStaticSecurityConfig(config, await inlineScriptHashes("out"));
+  const worker = await readFile("out/view/sw.js", "utf8");
+  if (worker.includes(SERVICE_WORKER_VERSION_PLACEHOLDER)) throw new Error("Generated artifact contains a stale service-worker release placeholder.");
+  await assertPublicViewServiceWorker({ outputRoot: "out" });
 }
 
 try {

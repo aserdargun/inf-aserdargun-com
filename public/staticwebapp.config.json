@@ -37,7 +37,7 @@
     "apiRuntime": "node:22"
   },
   "globalHeaders": {
-    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' __INF_CSP_SCRIPT_HASHES__; style-src 'self' 'unsafe-inline'; worker-src 'self'",
+    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' __INF_CSP_SCRIPT_HASHES__; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; worker-src 'self'",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
