@@ -137,5 +137,5 @@ test("service worker policy does not cache private, mutation, error, or cross-or
   expect(worker).toContain("request.method !== \"GET\"");
   expect(worker).toContain("url.origin !== self.location.origin");
   expect(worker).toContain("response.ok");
-  expect(worker).toContain("writeBounded(DATA_CACHE, request, response)");
+  expect(worker).toContain("writeBestEffort(DATA_CACHE, request, response)");
 });

@@ -20,7 +20,7 @@ function writeCompleteArtifact(directory: string, mode: "valid" | "placeholder" 
   const hash = `'sha256-${createHash("sha256").update(hydrationScript).digest("base64")}'`;
   const sourceConfig = readFileSync("public/staticwebapp.config.json", "utf8");
   const generatedConfig = mode === "placeholder" ? sourceConfig : sourceConfig.replace(cspPlaceholder, hash);
-  const html = `<html><body><script>${hydrationScript}</script>${mode === "unhashed" ? "<script>globalThis.__unhashed=true;</script>" : ""}</body></html>`;
+  const html = `<!doctype html><html><body><script>${hydrationScript}</script>${mode === "unhashed" ? "<script>globalThis.__unhashed=true;</script>" : ""}</body></html>`;
   const artifacts: Record<string, string> = {
     "out/index.html": html,
     "out/view/index.html": html,

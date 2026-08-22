@@ -15,6 +15,10 @@ const securityHeaders = {
   "X-Frame-Options": "DENY",
 };
 
+function cspHash(body) {
+  return `'sha256-${createHash("sha256").update(body).digest("base64")}'`;
+}
+
 async function htmlFiles(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -97,6 +101,7 @@ test("HTML scanner hashes executable bodies unless a real src attribute exists",
   const directory = await mkdtemp(join(tmpdir(), "inf-csp-attributes-"));
   try {
     await writeFile(join(directory, "index.html"), [
+      "<!doctype html>",
       "<script>baseline</script>",
       '<script data-src="decoy">danger</script>',
       "<script x-src='decoy'>x-source</script>",
@@ -122,8 +127,41 @@ test("HTML scanner hashes executable bodies unless a real src attribute exists",
 test("HTML scanner rejects external script tags with executable inline bodies", async () => {
   const directory = await mkdtemp(join(tmpdir(), "inf-csp-ambiguous-"));
   try {
-    await writeFile(join(directory, "index.html"), '<script>baseline</script><script src="/external.js">inline-body</script>');
+    await writeFile(join(directory, "index.html"), '<!doctype html><script>baseline</script><script src="/external.js">inline-body</script>');
     await assert.rejects(() => scanInlineScriptHashes(directory), /external.*inline|inline.*external|ambiguous/i);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("HTML scanner hashes only executable document scripts, excluding comments and template contents", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inf-csp-document-tree-"));
+  try {
+    await writeFile(join(directory, "index.html"), [
+      "<!doctype html>",
+      "<script>baseline</script>",
+      "<!-- <script>comment-only</script> -->",
+      "<template><script>template-only</script></template>",
+    ].join(""));
+    assert.deepEqual(await scanInlineScriptHashes(directory), [cspHash("baseline")]);
+
+    await writeFile(join(directory, "index.html"), [
+      "<!doctype html>",
+      "<script>baseline</script>",
+      "<script>comment-only</script>",
+      "<template><script>template-only</script></template>",
+    ].join(""));
+    assert.deepEqual(await scanInlineScriptHashes(directory), [cspHash("baseline"), cspHash("comment-only")].sort());
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("HTML scanner rejects non-root-relative external script sources", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "inf-csp-external-origin-"));
+  try {
+    await writeFile(join(directory, "index.html"), '<!doctype html><script>baseline</script><script src="https://attacker.example/payload.js"></script>');
+    await assert.rejects(() => scanInlineScriptHashes(directory), /external|same-origin|root-relative|src/i);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }

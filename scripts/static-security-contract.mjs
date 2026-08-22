@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
+import { parse } from "parse5";
 
 export const CSP_HASH_PLACEHOLDER = "__INF_CSP_SCRIPT_HASHES__";
 export const SERVICE_WORKER_VERSION_PLACEHOLDER = "__INF_PUBLIC_CACHE_VERSION__";
@@ -56,67 +57,21 @@ function exactDirective(directives, name, expected) {
 }
 
 function scriptElements(html, path) {
+  const parseErrors = [];
+  const document = parse(html, { onParseError: (error) => parseErrors.push(error) });
+  requirePolicy(parseErrors.length === 0, `${path} contains malformed HTML (${parseErrors[0]?.code ?? "parse error"})`);
   const elements = [];
-  const lower = html.toLowerCase();
-  let cursor = 0;
-  while (cursor < html.length) {
-    const start = lower.indexOf("<script", cursor);
-    if (start < 0) break;
-    const boundary = html[start + 7];
-    if (boundary && !/[\s/>]/.test(boundary)) { cursor = start + 7; continue; }
-    let quote = "";
-    let tagEnd = start + 7;
-    for (; tagEnd < html.length; tagEnd += 1) {
-      const character = html[tagEnd];
-      if (quote) {
-        if (character === quote) quote = "";
-      } else if (character === '"' || character === "'") {
-        quote = character;
-      } else if (character === ">") {
-        break;
-      }
+  const visit = (node) => {
+    if (node?.tagName === "template") return;
+    if (node?.tagName === "script") {
+      const attributes = new Map((node.attrs ?? []).map((attribute) => [attribute.name.toLowerCase(), attribute.value]));
+      const body = (node.childNodes ?? []).filter((child) => child.nodeName === "#text").map((child) => child.value ?? "").join("");
+      elements.push({ attributes, body });
     }
-    requirePolicy(tagEnd < html.length && !quote, `${path} has a malformed script start tag`);
-    const close = lower.indexOf("</script", tagEnd + 1);
-    requirePolicy(close >= 0, `${path} has an unclosed script element`);
-    const closeMatch = html.slice(close).match(/^<\/script\s*>/i);
-    requirePolicy(closeMatch, `${path} has a malformed script end tag`);
-    elements.push({ attributes: html.slice(start + 7, tagEnd), body: html.slice(tagEnd + 1, close) });
-    cursor = close + closeMatch[0].length;
-  }
+    for (const child of node?.childNodes ?? []) visit(child);
+  };
+  visit(document);
   return elements;
-}
-
-function attributeNames(source, path) {
-  const names = new Set();
-  let cursor = 0;
-  while (cursor < source.length) {
-    while (/\s/.test(source[cursor] ?? "")) cursor += 1;
-    if (cursor >= source.length || source[cursor] === "/") break;
-    const start = cursor;
-    while (cursor < source.length && !/[\s"'=<>/]/.test(source[cursor])) cursor += 1;
-    requirePolicy(cursor > start, `${path} has a malformed script attribute`);
-    const name = source.slice(start, cursor).toLowerCase();
-    requirePolicy(!names.has(name), `${path} has a duplicate script attribute ${name}`);
-    names.add(name);
-    while (/\s/.test(source[cursor] ?? "")) cursor += 1;
-    if (source[cursor] !== "=") continue;
-    cursor += 1;
-    while (/\s/.test(source[cursor] ?? "")) cursor += 1;
-    requirePolicy(cursor < source.length, `${path} has a missing value for script attribute ${name}`);
-    const quote = source[cursor] === '"' || source[cursor] === "'" ? source[cursor] : "";
-    if (quote) {
-      cursor += 1;
-      const end = source.indexOf(quote, cursor);
-      requirePolicy(end >= 0, `${path} has an unterminated script attribute ${name}`);
-      cursor = end + 1;
-    } else {
-      const valueStart = cursor;
-      while (cursor < source.length && !/[\s>]/.test(source[cursor])) cursor += 1;
-      requirePolicy(cursor > valueStart, `${path} has an empty script attribute ${name}`);
-    }
-  }
-  return names;
 }
 
 async function filesUnder(directory) {
@@ -177,8 +132,9 @@ export async function inlineScriptHashes(outputRoot) {
   for (const path of files) {
     const html = await readFile(path, "utf8");
     for (const element of scriptElements(html, path)) {
-      const external = attributeNames(element.attributes, path).has("src");
-      if (external) {
+      const source = element.attributes.get("src");
+      if (source !== undefined) {
+        requirePolicy(source.startsWith("/") && !source.startsWith("//") && !source.includes("\\"), `${path} has a non-root-relative external script src`);
         requirePolicy(element.body.trim() === "", `${path} has an ambiguous external script with an inline body`);
         continue;
       }

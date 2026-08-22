@@ -25,6 +25,21 @@ function writeBounded(cacheName, request, response) {
   return next;
 }
 
+async function writeBestEffort(cacheName, request, response) {
+  try { await writeBounded(cacheName, request, response); } catch { /* A fresh network response remains authoritative. */ }
+}
+
+async function matchBestEffort(cacheName, ...requests) {
+  try {
+    const cache = await caches.open(cacheName);
+    for (const request of requests) {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+    }
+  } catch { /* Cache storage is optional for online responses. */ }
+  return undefined;
+}
+
 function publicCatalog(pathname) {
   return pathname === "/api/public/infographics" || /^\/api\/public\/infographics\/[0-9a-f-]+$/i.test(pathname);
 }
@@ -66,40 +81,39 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (viewNavigation(request, url.pathname)) {
     event.respondWith((async () => {
-      const cache = await caches.open(STATIC_CACHE);
+      let response;
       try {
-        const response = await fetch(request);
-        await writeBounded(STATIC_CACHE, request, response);
-        return response;
-      } catch {
-        const cached = await cache.match(request) ?? await cache.match("/view/");
+        response = await fetch(request);
+      } catch (networkError) {
+        const cached = await matchBestEffort(STATIC_CACHE, request, "/view/");
         if (cached) return cached;
-        throw new Error("Offline");
+        throw networkError;
       }
+      await writeBestEffort(STATIC_CACHE, request, response);
+      return response;
     })());
     return;
   }
   if (publicCatalog(url.pathname)) {
     event.respondWith((async () => {
-      const cache = await caches.open(DATA_CACHE);
+      let response;
       try {
-        const response = await fetch(request);
-        await writeBounded(DATA_CACHE, request, response);
-        return response;
-      } catch {
-        const cached = await cache.match(request);
+        response = await fetch(request);
+      } catch (networkError) {
+        const cached = await matchBestEffort(DATA_CACHE, request);
         if (cached) return cached;
-        throw new Error("Offline");
+        throw networkError;
       }
+      await writeBestEffort(DATA_CACHE, request, response);
+      return response;
     })());
     return;
   }
   if (publicImage(url.pathname)) {
     event.respondWith((async () => {
-      const cache = await caches.open(IMAGE_CACHE);
-      const cached = await cache.match(request);
+      const cached = await matchBestEffort(IMAGE_CACHE, request);
       const network = fetch(request).then(async (response) => {
-        await writeBounded(IMAGE_CACHE, request, response);
+        await writeBestEffort(IMAGE_CACHE, request, response);
         return response;
       }).catch(() => undefined);
       if (cached) { void network; return cached; }
@@ -111,11 +125,10 @@ self.addEventListener("fetch", (event) => {
   }
   if (staticAsset(url.pathname)) {
     event.respondWith((async () => {
-      const cache = await caches.open(STATIC_CACHE);
-      const cached = await cache.match(request);
+      const cached = await matchBestEffort(STATIC_CACHE, request);
       if (cached) return cached;
       const response = await fetch(request);
-      await writeBounded(STATIC_CACHE, request, response);
+      await writeBestEffort(STATIC_CACHE, request, response);
       return response;
     })());
   }
