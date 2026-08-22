@@ -140,6 +140,16 @@ test("login and public view keep their approved access boundaries", async ({ pag
   await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
 });
 
+test("public View Mode exposes an admin sign-in entrypoint", async ({ page }) => {
+  await page.goto("/view/");
+
+  const adminSignIn = page.getByRole("link", { name: "Admin sign in" });
+  await expect(adminSignIn).toHaveAttribute("href", "/login/");
+  await adminSignIn.click();
+  await expect(page).toHaveURL(/\/login\/$/);
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
 test("login exposes the GitHub failure recovery copy", async ({ page }) => {
   await page.goto("/login/?error=github");
   await expect(page.getByText("We could not sign you in. Try again.", { exact: true })).toBeVisible();
