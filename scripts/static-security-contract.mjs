@@ -96,8 +96,7 @@ function scriptElements(html, path) {
 function isCspGovernedExecutableScript(attributes) {
   const type = (attributes.get("type") ?? "").trim().toLowerCase();
   if (type === "module" || type === "importmap" || type === "speculationrules") return true;
-  const essence = type.split(";", 1)[0].trim();
-  const classic = type === "" || classicJavaScriptMimeTypes.has(essence);
+  const classic = type === "" || classicJavaScriptMimeTypes.has(type);
   return classic && !attributes.has("nomodule");
 }
 

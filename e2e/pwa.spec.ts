@@ -11,15 +11,19 @@ test("Chromium keeps data and nomodule scripts inert while executing supported s
     '<script type="text/plain">globalThis.__plainRan=true</script>',
     "<script nomodule>globalThis.__nomoduleRan=true</script>",
     "<script>globalThis.__classicRan=true</script>",
+    '<script type="text/javascript">globalThis.__exactMimeRan=true</script>',
+    '<script type="text/javascript; charset=utf-8">globalThis.__parameterizedMimeRan=true</script>',
     '<script type="module">globalThis.__moduleRan=true</script>',
   ].join(""));
   await expect.poll(() => page.evaluate(() => ({
     classic: (globalThis as typeof globalThis & { __classicRan?: boolean }).__classicRan,
+    exactMime: (globalThis as typeof globalThis & { __exactMimeRan?: boolean }).__exactMimeRan,
     json: (globalThis as typeof globalThis & { __jsonRan?: boolean }).__jsonRan,
     module: (globalThis as typeof globalThis & { __moduleRan?: boolean }).__moduleRan,
     nomodule: (globalThis as typeof globalThis & { __nomoduleRan?: boolean }).__nomoduleRan,
+    parameterizedMime: (globalThis as typeof globalThis & { __parameterizedMimeRan?: boolean }).__parameterizedMimeRan,
     plain: (globalThis as typeof globalThis & { __plainRan?: boolean }).__plainRan,
-  }))).toEqual({ classic: true, json: undefined, module: true, nomodule: undefined, plain: undefined });
+  }))).toEqual({ classic: true, exactMime: true, json: undefined, module: true, nomodule: undefined, parameterizedMime: undefined, plain: undefined });
 });
 
 test("production-static routes enforce functional CSP and intentional cache headers", async ({ page, request }) => {
