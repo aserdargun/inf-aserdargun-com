@@ -17,4 +17,6 @@ test("Codex exposes the ordered local lifecycle and delegates through package sc
   assert.match(manifest.scripts["lifecycle:test"], /tools\/codex-environment\.test\.mjs/);
   assert.equal(manifest.scripts["stop:codex"], "node scripts/stop-local.mjs");
   assert.equal(manifest.scripts["api:build"], "node scripts/build-api.mjs");
+  const apiBuild = await readFile("scripts/build-api.mjs", "utf8");
+  assert.match(apiBuild, /--config\.node-linker=hoisted/);
 });

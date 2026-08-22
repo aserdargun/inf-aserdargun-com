@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -34,6 +34,13 @@ function writeCompleteArtifact(directory: string, mode: "valid" | "placeholder" 
     "out/_next/static/chunks/app.js": "globalThis.__app=true;",
     "api-dist/host.json": "{}",
     "api-dist/package.json": "{}",
+    "api-dist/dist/index.js": "export {};",
+    "api-dist/node_modules/@azure/functions/package.json": "{}",
+    "api-dist/node_modules/@inf/contracts/package.json": "{}",
+    "api-dist/node_modules/@inf/domain/package.json": "{}",
+    "api-dist/node_modules/googleapis/package.json": "{}",
+    "api-dist/node_modules/sharp/package.json": "{}",
+    "api-dist/node_modules/zod/package.json": "{}",
   };
   for (const [artifact, contents] of Object.entries(artifacts)) {
     const target = join(directory, artifact);
@@ -116,6 +123,30 @@ describe("project contract", () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("Artifacts verified.");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  test("rejects a runtime package exposed only through a symbolic link", () => {
+    const directory = mkdtempSync(join(tmpdir(), "inf-artifacts-"));
+
+    try {
+      writeCompleteArtifact(directory);
+      const functionsPackage = join(directory, "api-dist/node_modules/@azure/functions");
+      const linkTarget = join(directory, "linked-functions-package");
+      rmSync(functionsPackage, { force: true, recursive: true });
+      mkdirSync(linkTarget, { recursive: true });
+      writeFileSync(join(linkTarget, "package.json"), "{}");
+      symlinkSync(linkTarget, functionsPackage, "dir");
+
+      const result = spawnSync(process.execPath, [resolve("scripts/verify-artifacts.mjs")], {
+        cwd: directory,
+        encoding: "utf8"
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/physical directory|symbolic link/i);
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

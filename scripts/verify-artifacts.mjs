@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, lstat, readFile, readdir } from "node:fs/promises";
 import { assertPublicViewServiceWorker, assertStaticSecurityConfig, CSP_HASH_PLACEHOLDER, inlineScriptHashes, SERVICE_WORKER_VERSION_PLACEHOLDER } from "./static-security-contract.mjs";
 
 const required = [
@@ -14,6 +14,22 @@ const required = [
   "out/icons/maskable-512.png",
   "api-dist/host.json",
   "api-dist/package.json",
+  "api-dist/dist/index.js",
+  "api-dist/node_modules/@azure/functions/package.json",
+  "api-dist/node_modules/@inf/contracts/package.json",
+  "api-dist/node_modules/@inf/domain/package.json",
+  "api-dist/node_modules/googleapis/package.json",
+  "api-dist/node_modules/sharp/package.json",
+  "api-dist/node_modules/zod/package.json",
+];
+
+const runtimePackageDirectories = [
+  "api-dist/node_modules/@azure/functions",
+  "api-dist/node_modules/@inf/contracts",
+  "api-dist/node_modules/@inf/domain",
+  "api-dist/node_modules/googleapis",
+  "api-dist/node_modules/sharp",
+  "api-dist/node_modules/zod",
 ];
 
 async function verify() {
@@ -22,6 +38,12 @@ async function verify() {
       await access(artifact, constants.R_OK);
     } catch {
       throw new Error(`Missing required artifact: ${artifact}`);
+    }
+  }
+  for (const packageDirectory of runtimePackageDirectories) {
+    const status = await lstat(packageDirectory);
+    if (!status.isDirectory() || status.isSymbolicLink()) {
+      throw new Error(`API runtime package must be a physical directory: ${packageDirectory}`);
     }
   }
   const staticAssets = await readdir("out/_next/static", { recursive: true });

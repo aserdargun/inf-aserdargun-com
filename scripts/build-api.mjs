@@ -14,6 +14,6 @@ if (domainCode !== 0) process.exit(domainCode ?? 1);
 const child = spawn(command, ["--filter", "@inf/api", "build"], { stdio: "inherit" });
 const code = await new Promise((resolveExit) => child.once("exit", resolveExit));
 if (code !== 0) process.exit(code ?? 1);
-const deploy = spawn(command, ["--filter", "@inf/api", "deploy", "--prod", "api-dist"], { stdio: "inherit" });
+const deploy = spawn(command, ["--filter", "@inf/api", "--prod", "--config.node-linker=hoisted", "deploy", "api-dist"], { stdio: "inherit" });
 const deployCode = await new Promise((resolveExit) => deploy.once("exit", resolveExit));
 process.exitCode = deployCode ?? 1;
