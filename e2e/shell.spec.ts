@@ -37,6 +37,7 @@ test("uses the editorial design system and a wide owner workspace", async ({ pag
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(245, 242, 234)");
   await expect(page.locator(".app-main")).toHaveCSS("margin-left", "248px");
   await expect(page.locator(".today-page > .page-header")).toBeVisible();
+  await expect(page.locator(".today-page > .page-header")).toHaveCSS("margin-bottom", "88px");
 });
 
 test("switches navigation atomically at the approved breakpoint and keeps Settings reachable", async ({ page }) => {
