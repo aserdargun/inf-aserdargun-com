@@ -156,6 +156,17 @@ test("login exposes the GitHub failure recovery copy", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
+test("login returns GitHub authentication to the current origin", async ({ page }) => {
+  await page.goto("/login/");
+
+  const authRequest = page.waitForRequest((request) => request.url().includes("/.auth/login/github?"));
+  await page.getByRole("button", { name: "Continue with GitHub" }).click();
+
+  const requestUrl = new URL((await authRequest).url());
+  expect(requestUrl.pathname).toBe("/.auth/login/github");
+  expect(requestUrl.searchParams.get("post_login_redirect_uri")).toBe("http://127.0.0.1:4280/");
+});
+
 test("login reports a pending GitHub sign-in immediately", async ({ page }) => {
   await page.goto("/login/?pending=github");
   await expect(page.getByRole("button", { name: "Signing in…" })).toBeDisabled();
