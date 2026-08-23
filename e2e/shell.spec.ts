@@ -118,6 +118,24 @@ test("shows loading, empty, error, and success Today states with exact copy", as
   await expect(page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).resolves.toBeTruthy();
 });
 
+test("keeps Today actions together and its empty state clear above mobile navigation", async ({ page }) => {
+  await mockToday(page, "empty");
+  await page.goto("/");
+
+  const actions = page.locator(".page-header__actions");
+  await expect(actions.getByRole("link", { name: "Start review" })).toBeVisible();
+  await expect(actions.getByRole("link", { name: "Surprise me" })).toBeVisible();
+  await expect(page.locator(".today-empty")).toContainText("Nothing needs your attention right now.");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".mobile-nav")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>(".app-main")!;
+    const nav = document.querySelector<HTMLElement>(".mobile-nav")!;
+    return parseFloat(getComputedStyle(main).paddingBottom) > nav.getBoundingClientRect().height;
+  })).toBeTruthy();
+});
+
 test("orders Today content, excludes archived review rows, and preserves diagram labels", async ({ page }) => {
   const now = Date.now();
   const at = (days: number) => new Date(now + days * 86_400_000).toISOString();
