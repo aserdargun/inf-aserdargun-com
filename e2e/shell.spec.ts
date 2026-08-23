@@ -29,6 +29,16 @@ test("owner sees Today navigation and primary learning actions", async ({ page }
   await expect(page.getByRole("link", { name: "Surprise me" })).toBeVisible();
 });
 
+test("uses the editorial design system and a wide owner workspace", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/");
+
+  await expect(page.locator(".sidebar")).toHaveCSS("width", "248px");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(245, 242, 234)");
+  await expect(page.locator(".app-main")).toHaveCSS("margin-left", "248px");
+  await expect(page.locator(".today-page > .page-header")).toBeVisible();
+});
+
 test("switches navigation atomically at the approved breakpoint and keeps Settings reachable", async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 900 });
   await page.goto("/");
@@ -126,7 +136,7 @@ test("orders Today content, excludes archived review rows, and preserves diagram
   await expect(page.locator(".review-next__thumbnail")).toHaveCount(3);
   await expect(page.locator(".review-next__thumbnail").first()).toHaveAttribute("alt", "Oldest diagram");
   await expect(page.locator(".review-next__thumbnail").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height }))).resolves.toEqual({ fit: "contain", width: 64, height: 48 });
-  await expect(page.locator(".media-frame img").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, background: getComputedStyle(image.parentElement!).backgroundColor }))).resolves.toEqual({ fit: "contain", background: "rgb(247, 248, 250)" });
+  await expect(page.locator(".media-frame img").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, background: getComputedStyle(image.parentElement!).backgroundColor }))).resolves.toEqual({ fit: "contain", background: "rgb(255, 254, 250)" });
 });
 
 test("login and public view keep their approved access boundaries", async ({ page }) => {
