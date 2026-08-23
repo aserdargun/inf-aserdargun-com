@@ -59,6 +59,30 @@ test("uploads without metadata, then categorizes and tags in Inbox", async ({ pa
   }]);
 });
 
+test("keeps capture media visible beside details on desktop and stacks the workflow on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/add/");
+
+  const workspace = page.locator(".capture-workspace");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.locator(":scope > .capture-workspace__media")).toHaveCount(1);
+  await expect(workspace.locator(":scope > .capture-workspace__details")).toHaveCount(1);
+  await expect.poll(() => workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+  await expect(page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).resolves.toBeTruthy();
+});
+
+test("keeps Drive sync in the Inbox page header", async ({ page }) => {
+  await mockCaptureAndInbox(page);
+  await page.goto("/inbox/");
+
+  const header = page.locator(".inbox-page > .page-header");
+  await expect(header).toBeVisible();
+  await expect(header.locator(".page-header__actions").getByRole("button", { name: "Sync Drive" })).toBeVisible();
+});
+
 test("uses one 44px native picker with keyboard, drop, and clipboard image paths", async ({ page }) => {
   await page.setViewportSize({ width: 427, height: 922 });
   await page.goto("/add/");
