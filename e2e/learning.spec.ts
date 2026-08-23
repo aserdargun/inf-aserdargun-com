@@ -23,6 +23,7 @@ test("surprise makes one persisted selection per intent without seen posts or re
   await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: png }));
   await page.goto("/surprise/");
   await expect(page.getByRole("img", { name: "Reviewable diagram" })).toBeVisible();
+  await expect(page.locator(".surprise-page .learning-stage")).toBeVisible();
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-12-surprise-desktop.png" });
   expect(surpriseCalls).toBe(1);
   await page.getByRole("button", { name: "Switch to dark theme" }).dispatchEvent("click");
@@ -71,6 +72,7 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: png }));
   await page.goto("/review/");
   await expect(page.getByRole("heading", { name: "Next review" })).toBeVisible();
+  await expect(page.locator(".review-page .learning-stage")).toBeVisible();
   const goodButton = page.getByRole("button", { name: /Good/ });
   await goodButton.click();
   await expect.poll(() => reviewCalls).toBe(1);
@@ -84,9 +86,9 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   releaseReview!();
   const saved = page.getByText("Review saved.", { exact: true });
   await expect(saved).toBeVisible();
-  await expect(saved).toHaveCSS("color", "rgb(22, 121, 74)");
+  await expect(saved).toHaveCSS("color", "rgb(22, 128, 106)");
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
-  await expect(saved).toHaveCSS("color", "rgb(79, 209, 139)");
+  await expect(saved).toHaveCSS("color", "rgb(98, 198, 174)");
   await expect(page.getByText("You are caught up.", { exact: true })).toBeVisible();
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-12-review-desktop.png" });
   expect(dueCalls).toBe(2);
@@ -116,10 +118,11 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   await page.route("**/api/settings/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...health, rawMalformedBody: "refresh_token=do-not-render" }) }));
   await page.goto("/settings/");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.locator(".settings-overview")).toBeVisible();
   const healthy = page.locator(".health--ok");
-  await expect(healthy.first()).toHaveCSS("color", "rgb(22, 121, 74)");
+  await expect(healthy.first()).toHaveCSS("color", "rgb(22, 128, 106)");
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
-  await expect(healthy.first()).toHaveCSS("color", "rgb(79, 209, 139)");
+  await expect(healthy.first()).toHaveCSS("color", "rgb(98, 198, 174)");
   await expect(page.getByText("INF does not use AI.", { exact: true })).toBeVisible();
   const rejectedFiles = page.getByRole("list", { name: "Rejected files" });
   await expect(rejectedFiles).toHaveAccessibleName("Rejected files");

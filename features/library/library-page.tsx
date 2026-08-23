@@ -2,6 +2,7 @@
 
 import type { OwnerCatalogResponse } from "@inf/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";
 import { apiRequest } from "../../lib/api-client";
 import { routes } from "../../lib/routes";
@@ -46,7 +47,7 @@ export function LibraryPage() {
   useEffect(() => { const restore = () => setFilters(parseFilters()); restore(); setReady(true); window.addEventListener("popstate", restore); return () => { requestId.current += 1; activeRequest.current?.abort(); activeRequest.current = null; window.removeEventListener("popstate", restore); }; }, []);
   useEffect(() => { if (ready) void load(filters); }, [filters, load, ready]);
   const updateFilters = useCallback((next: LibraryFiltersValue) => { setFilters(next); window.history.pushState(null, "", filterUrl(next)); }, []);
-  const heading = <header className="library-page__header"><h1>Library</h1><p>Your organized infographics.</p></header>;
+  const heading = <PageHeader description="Your organized infographics." title="Library" />;
   if (state === "loading" && !catalog) return <section className="library-page">{heading}<PageState kind="loading" title="Loading Library…" /></section>;
   if (state === "error") return <section className="library-page">{heading}<PageState action={<RetryButton onRetry={() => void load(filters)} />} kind="error" title="Library could not be loaded. Try again." /></section>;
   if (state === "empty") return <section className="library-page">{heading}<PageState action={<a className="button button--primary" href={routes.inbox}>Go to Inbox</a>} description="Organize an item from Inbox to add it here." kind="empty" title="Library is empty." /></section>;

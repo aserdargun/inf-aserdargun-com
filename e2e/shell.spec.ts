@@ -29,6 +29,17 @@ test("owner sees Today navigation and primary learning actions", async ({ page }
   await expect(page.getByRole("link", { name: "Surprise me" })).toBeVisible();
 });
 
+test("uses the editorial design system and a wide owner workspace", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/");
+
+  await expect(page.locator(".sidebar")).toHaveCSS("width", "248px");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(245, 242, 234)");
+  await expect(page.locator(".app-main")).toHaveCSS("margin-left", "248px");
+  await expect(page.locator(".today-page > .page-header")).toBeVisible();
+  await expect(page.locator(".today-page > .page-header")).toHaveCSS("margin-bottom", "88px");
+});
+
 test("switches navigation atomically at the approved breakpoint and keeps Settings reachable", async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 900 });
   await page.goto("/");
@@ -108,6 +119,24 @@ test("shows loading, empty, error, and success Today states with exact copy", as
   await expect(page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).resolves.toBeTruthy();
 });
 
+test("keeps Today actions together and its empty state clear above mobile navigation", async ({ page }) => {
+  await mockToday(page, "empty");
+  await page.goto("/");
+
+  const actions = page.locator(".page-header__actions");
+  await expect(actions.getByRole("link", { name: "Start review" })).toBeVisible();
+  await expect(actions.getByRole("link", { name: "Surprise me" })).toBeVisible();
+  await expect(page.locator(".today-empty")).toContainText("Nothing needs your attention right now.");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".mobile-nav")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>(".app-main")!;
+    const nav = document.querySelector<HTMLElement>(".mobile-nav")!;
+    return parseFloat(getComputedStyle(main).paddingBottom) > nav.getBoundingClientRect().height;
+  })).toBeTruthy();
+});
+
 test("orders Today content, excludes archived review rows, and preserves diagram labels", async ({ page }) => {
   const now = Date.now();
   const at = (days: number) => new Date(now + days * 86_400_000).toISOString();
@@ -126,7 +155,7 @@ test("orders Today content, excludes archived review rows, and preserves diagram
   await expect(page.locator(".review-next__thumbnail")).toHaveCount(3);
   await expect(page.locator(".review-next__thumbnail").first()).toHaveAttribute("alt", "Oldest diagram");
   await expect(page.locator(".review-next__thumbnail").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height }))).resolves.toEqual({ fit: "contain", width: 64, height: 48 });
-  await expect(page.locator(".media-frame img").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, background: getComputedStyle(image.parentElement!).backgroundColor }))).resolves.toEqual({ fit: "contain", background: "rgb(247, 248, 250)" });
+  await expect(page.locator(".media-frame img").first().evaluate((image) => ({ fit: getComputedStyle(image).objectFit, background: getComputedStyle(image.parentElement!).backgroundColor }))).resolves.toEqual({ fit: "contain", background: "rgb(255, 254, 250)" });
 });
 
 test("login and public view keep their approved access boundaries", async ({ page }) => {
@@ -138,6 +167,15 @@ test("login and public view keep their approved access boundaries", async ({ pag
   await expect(page.getByText("A public collection of visual notes.", { exact: true })).toBeVisible();
   await expect(page.getByRole("navigation")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
+});
+
+test("login presents the shared INF identity and a safe return to the public collection", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/login/");
+
+  await expect(page.locator(".login-page__intro")).toBeVisible();
+  await expect(page.locator(".login-panel")).toBeVisible();
+  await expect(page.getByRole("link", { name: "View public collection" })).toHaveAttribute("href", "/view/");
 });
 
 test("public View Mode exposes an admin sign-in entrypoint", async ({ page }) => {

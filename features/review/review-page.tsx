@@ -3,6 +3,7 @@
 import type { DueReviewResponse, MaterializedInfographic, ReviewRating } from "@inf/contracts";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";
 import { apiRequest } from "../../lib/api-client";
 import { routes } from "../../lib/routes";
@@ -67,5 +68,5 @@ export function ReviewPage() {
     window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown);
   }, [item, rate]);
 
-  return <div className="learning-page review-page"><header><h1>Review</h1></header><p aria-live="polite" className={`review-announcement${message.includes("could not") ? " error-copy" : ""}`}>{message}</p>{state === "loading" ? <PageState kind="loading" title={saving ? "Saving review…" : "Loading next review…"} /> : null}{state === "error" ? <PageState action={<RetryButton onRetry={() => void load()} />} kind="error" title="The review could not be loaded. Try again." /> : null}{state === "empty" ? <PageState action={<a className="button button--primary" href={routes.today}>Back to Today</a>} description="No reviews are due right now." kind="empty" title="You are caught up." /> : null}{state === "success" && item ? <section className="review-card"><h2>Next review</h2><div className="learning-media"><Image alt={item.title} fill priority sizes="(max-width: 767px) calc(100vw - 40px), min(900px, 70vw)" src={`/api/public/images/${item.originalDriveFileId}`} /></div><h3>{item.title}</h3><p>Do you remember the main idea of this infographic?</p><RatingControls disabled={saving} onRate={rate} /></section> : null}</div>;
+  return <div className="learning-page review-page"><PageHeader title="Review" /><p aria-live="polite" className={`review-announcement${message.includes("could not") ? " error-copy" : ""}`}>{message}</p>{state === "loading" ? <PageState kind="loading" title={saving ? "Saving review…" : "Loading next review…"} /> : null}{state === "error" ? <PageState action={<RetryButton onRetry={() => void load()} />} kind="error" title="The review could not be loaded. Try again." /> : null}{state === "empty" ? <PageState action={<a className="button button--primary" href={routes.today}>Back to Today</a>} description="No reviews are due right now." kind="empty" title="You are caught up." /> : null}{state === "success" && item ? <section className="review-card learning-stage"><h2>Next review</h2><div className="learning-media"><Image alt={item.title} fill priority sizes="(max-width: 767px) calc(100vw - 40px), min(900px, 70vw)" src={`/api/public/images/${item.originalDriveFileId}`} /></div><h3>{item.title}</h3><p>Do you remember the main idea of this infographic?</p><RatingControls disabled={saving} onRate={rate} /></section> : null}</div>;
 }

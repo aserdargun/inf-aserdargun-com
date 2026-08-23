@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
+import { PageHeader } from "../../components/ui/page-header";
 import { apiRequest } from "../../lib/api-client";
 import { routes } from "../../lib/routes";
 import { CaptureDropzone } from "./capture-dropzone";
@@ -55,16 +56,22 @@ export function CaptureForm() {
   }
 
   return <form className="capture-form" onSubmit={(event) => void submit(event)}>
-    <header><h1>Add infographic</h1><p id="capture-help">Paste, drop, or choose an image.</p></header>
-    <CaptureDropzone disabled={saving} onChooseClipboard={chooseClipboard} onFile={selectFile} />
-    {previewUrl ? <figure className="capture-preview"><img alt="Infographic preview" src={previewUrl} /><figcaption>{file?.name}</figcaption></figure> : <p aria-live="polite" className="visually-hidden">No image selected.</p>}
-    <section aria-labelledby="optional-details-title" className="capture-details"><h2 id="optional-details-title">Optional details</h2>
-      <label>Title<input maxLength={200} name="title" /></label>
-      <label>Source URL<input name="sourceUrl" type="url" /></label>
-      <label>Platform<input maxLength={100} name="sourcePlatform" /></label>
-      <label>Notes<textarea maxLength={10000} name="notes" rows={4} /></label>
-    </section>
-    {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{error}</p> : null}
-    <Button className="capture-form__save" disabled={saving} type="submit">{saving ? "Saving to Inbox…" : "Save to Inbox"}</Button>
+    <PageHeader description="Paste, drop, or choose an image." descriptionId="capture-help" title="Add infographic" />
+    <div className="capture-workspace">
+      <div className="capture-workspace__media">
+        <CaptureDropzone disabled={saving} onChooseClipboard={chooseClipboard} onFile={selectFile} />
+        {previewUrl ? <figure className="capture-preview"><img alt="Infographic preview" src={previewUrl} /><figcaption>{file?.name}</figcaption></figure> : <p aria-live="polite" className="visually-hidden">No image selected.</p>}
+      </div>
+      <div className="capture-workspace__details">
+        <section aria-labelledby="optional-details-title" className="capture-details"><h2 id="optional-details-title">Optional details</h2>
+          <label>Title<input maxLength={200} name="title" /></label>
+          <label>Source URL<input name="sourceUrl" type="url" /></label>
+          <label>Platform<input maxLength={100} name="sourcePlatform" /></label>
+          <label>Notes<textarea maxLength={10000} name="notes" rows={4} /></label>
+        </section>
+        {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{error}</p> : null}
+        <Button className="capture-form__save" disabled={saving} type="submit">{saving ? "Saving to Inbox…" : "Save to Inbox"}</Button>
+      </div>
+    </div>
   </form>;
 }

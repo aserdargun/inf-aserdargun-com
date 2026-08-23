@@ -50,6 +50,7 @@ async function mockLibrary(page: import("playwright/test").Page, options: { dele
 test("searches, restores all server query filters through history, opens detail, favorites, archives, and confirms deletion", async ({ page }) => {
   const mock = await mockLibrary(page);
   await page.goto("/library/?q=%20MEMORY%20&category=gpu&tag=memory&sort=recent");
+  await expect(page.locator(".library-page > .page-header")).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Memory hierarchy" })).toBeVisible();
   await expect(page.getByLabel("Search library")).toHaveValue("MEMORY");
   await expect(page.getByLabel("Category")).toHaveValue("gpu");
