@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 
 test("Codex exposes the ordered local lifecycle and delegates through package scripts", async () => {
@@ -19,4 +20,19 @@ test("Codex exposes the ordered local lifecycle and delegates through package sc
   assert.equal(manifest.scripts["api:build"], "node scripts/build-api.mjs");
   const apiBuild = await readFile("scripts/build-api.mjs", "utf8");
   assert.match(apiBuild, /--config\.node-linker=hoisted/);
+});
+
+test("checkout-private Codex run artifacts remain outside repository lint", async () => {
+  const fixture = `.codex/run/eslint-ignore-contract-${process.pid}.js`;
+  await mkdir(".codex/run", { recursive: true });
+  await writeFile(fixture, "console.log(process.cwd());\n", "utf8");
+
+  try {
+    const result = spawnSync("pnpm", ["exec", "eslint", fixture, "--no-warn-ignored"], {
+      encoding: "utf8"
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  } finally {
+    await rm(fixture, { force: true });
+  }
 });
