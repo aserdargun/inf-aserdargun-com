@@ -66,6 +66,7 @@ function assertCsp(csp, expectedHashes) {
 
 test("source and generated static configs enforce CSP, security headers, and intentional cache classes", async () => {
   const source = JSON.parse(await readFile("public/staticwebapp.config.json", "utf8"));
+  assert.equal(source.mimeTypes?.[".webmanifest"], "application/manifest+json");
   assert.deepEqual(Object.fromEntries(Object.entries(source.globalHeaders).filter(([name]) => name !== "Content-Security-Policy")), securityHeaders);
   assertCsp(source.globalHeaders["Content-Security-Policy"], [placeholder]);
   const cacheByRoute = new Map(source.routes.map((route) => [route.route, route.headers?.["Cache-Control"]]));
@@ -83,6 +84,7 @@ test("source and generated static configs enforce CSP, security headers, and int
   const hashes = await inlineScriptHashes("out");
   assert.ok(hashes.length > 0);
   assertCsp(artifact.globalHeaders["Content-Security-Policy"], hashes);
+  assert.deepEqual(artifact.mimeTypes, source.mimeTypes);
   assert.deepEqual(artifact.routes, source.routes);
 });
 
