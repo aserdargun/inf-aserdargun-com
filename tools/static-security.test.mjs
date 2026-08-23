@@ -74,6 +74,7 @@ test("source and generated static configs enforce CSP, security headers, and int
   assert.equal(cacheByRoute.get("/view*"), "public, max-age=0, must-revalidate");
   assert.equal(cacheByRoute.get("/manifest.webmanifest"), "public, max-age=300, must-revalidate");
   assert.equal(cacheByRoute.get("/icons/*"), "public, max-age=86400, must-revalidate");
+  assert.equal(cacheByRoute.get("/favicon.svg"), "public, max-age=86400, must-revalidate");
   assert.equal(cacheByRoute.get("/favicon.ico"), "public, max-age=86400, must-revalidate");
   assert.equal(cacheByRoute.get("/_next/static/*"), "public, max-age=31536000, immutable");
 

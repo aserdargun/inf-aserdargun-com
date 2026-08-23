@@ -1,4 +1,4 @@
-# INF design system
+# Infographics design system
 
 Status: accepted implementation inventory for Tasks 9–13. This document turns
 the approved visual concepts into build rules; it is not a screenshot-tracing
@@ -18,19 +18,19 @@ sampling image pixels or reproducing image artifacts.
 
 ## Product language and visible copy
 
-INF is a private, single-user, image-first learning notebook. Its owner loop
+Infographics is a private, single-user, image-first learning notebook. Its owner loop
 is Capture → Organize → Resurface → Recall → Learn. It is not a marketing
 site, social feed, analytics dashboard, generic bookmark manager, or AI
 product.
 
 ### Owner navigation
 
-Desktop sidebar: `INF`, `Today`, `Inbox`, `Library`, `Add`, `Review`,
+Desktop sidebar: `Infographics`, `Today`, `Inbox`, `Library`, `Add`, `Review`,
 `Surprise`, `Settings`. The compact theme control is icon-only. Mobile bottom
 navigation is exactly five items: `Today`, `Inbox`, `Add`, `Library`, `Review`.
 Settings remains owner-only on mobile through the persistent top bar: place a
 24px `Settings` icon button at the far right, horizontally aligned with the
-`INF` wordmark and above the route heading; its exact accessible name and
+`Infographics` wordmark and above the route heading; its exact accessible name and
 tooltip are `Settings`, and it links to `/settings`. It is present on every
 owner mobile route, not in the bottom navigation, and is never rendered on
 `/view` or `/view/[id]`.
@@ -46,7 +46,7 @@ state).
 
 #### Login (`/login`)
 
-- Default: `INF`, `Sign in`, `This private notebook is available to its owner.`,
+- Default: `Infographics`, `Sign in`, `This private notebook is available to its owner.`,
   `Continue with GitHub`.
 - Loading: `Signing in…`.
 - Error: `We could not sign you in. Try again.`, `Try again`.
@@ -140,8 +140,8 @@ state).
 
 - Default: `Settings`, `Application`, `Connection health`, `Public Drive`,
   `Private Drive`, `Data`, `Quarantine`, `Backup and export`, `PWA`,
-  `INF does not use AI.`, `Export inventory JSON`, `Open public image folder`,
-  `Open private backup folder`, `Install INF`.
+  `Infographics does not use AI.`, `Export inventory JSON`, `Open public image folder`,
+  `Open private backup folder`, `Install Infographics`.
 - Loading: `Loading Settings…`.
 - Empty: `No quarantine records.`, `No action is needed.`
 - Error: `Settings could not be loaded. Try again.`,
@@ -149,7 +149,7 @@ state).
 
 #### Public gallery (`/view`)
 
-- Default: `INF`, `Infographics`, `A public collection of visual notes.`,
+- Default: `Infographics`, `Infographics`, `A public collection of visual notes.`,
   `Open {{title}}`, `View only`. Each item exposes only safe `{{title}}` and
   `{{date}}`.
 - Loading: `Loading infographics…`.
@@ -158,7 +158,7 @@ state).
 
 #### Public infographic (`/view/[id]`)
 
-- Default: `INF`, `Back to Infographics`, `{{title}}`, `{{date}}`,
+- Default: `Infographics`, `Back to Infographics`, `{{title}}`, `{{date}}`,
   `View only`.
 - Loading: `Loading infographic…`.
 - Empty/not found: `This infographic is not available.`, `Back to Infographics`.
@@ -217,7 +217,7 @@ regular; headings are compact and decisive, with no display/marketing scale.
 
 | Role | Size / line-height | Weight | Use |
 | --- | --- | ---: | --- |
-| App wordmark | 24px / 28px desktop; 20px / 24px mobile | 700 | `INF` |
+| App wordmark | 24px / 28px desktop; 20px / 24px mobile | 700 | `Infographics` |
 | Page title | 40px / 48px desktop; 32px / 40px mobile | 700 | `Today`, `Infographics`, `Add infographic` |
 | Section title | 22px / 28px | 650–700 | `Recently added`, `Review next`, `Optional details` |
 | Body / action | 16px / 24px | 400; 600 for actions | Body, nav, buttons, fields |
@@ -269,7 +269,7 @@ area for basic route content.
   minimum 44×44px touch target. Use 24px icon over 12px label. Active Add is
   centered but remains part of the bar—never a floating action bubble.
 - **Mobile owner top bar:** fixed-in-flow 56px route header above page content;
-  `INF` is left aligned and the 44×44px `Settings` icon-link is right aligned.
+  `Infographics` is left aligned and the 44×44px `Settings` icon-link is right aligned.
   The control is owner-only, uses the exact accessible label `Settings`, and
   links to `/settings`; it supplements rather than changes the five-item bottom
   nav. It is absent from all public View routes.

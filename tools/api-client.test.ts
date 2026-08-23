@@ -11,7 +11,7 @@ describe("apiRequest", () => {
 
   test("reports network failures with a safe actionable message", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
-    await expect(apiRequest("/api/infographics")).rejects.toMatchObject({ name: "ApiClientError", status: 0, message: "Unable to reach INF. Try again." } satisfies Partial<ApiClientError>);
+    await expect(apiRequest("/api/infographics")).rejects.toMatchObject({ name: "ApiClientError", status: 0, message: "Unable to reach Infographics. Try again." } satisfies Partial<ApiClientError>);
   });
 
   test("preserves an abort while fetch is pending", async () => {
@@ -28,6 +28,6 @@ describe("apiRequest", () => {
 
   test("keeps malformed response bodies safe", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockRejectedValue(new SyntaxError("invalid JSON")) } as unknown as Response));
-    await expect(apiRequest("/api/infographics")).rejects.toMatchObject({ name: "ApiClientError", status: 200, message: "INF returned an invalid response. Try again." } satisfies Partial<ApiClientError>);
+    await expect(apiRequest("/api/infographics")).rejects.toMatchObject({ name: "ApiClientError", status: 200, message: "Infographics returned an invalid response. Try again." } satisfies Partial<ApiClientError>);
   });
 });

@@ -111,7 +111,7 @@ export const SettingsInventoryItemSchema = z.strictObject({
 
 export const SettingsHealthResponseSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  application: z.strictObject({ name: z.literal("INF"), version: z.string().min(1), runtimeVersion: z.string().min(1), usesAi: z.literal(false) }),
+  application: z.strictObject({ name: z.literal("Infographics"), version: z.string().min(1), runtimeVersion: z.string().min(1), usesAi: z.literal(false) }),
   connectionHealth: z.strictObject({ publicDrive: DriveHealthSchema, privateDrive: DriveHealthSchema }),
   data: SettingsStatsResponseSchema,
   quarantine: z.strictObject({

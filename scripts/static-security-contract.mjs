@@ -32,6 +32,7 @@ const cacheByRoute = new Map([
   ["/manifest.webmanifest", "public, max-age=300, must-revalidate"],
   ["/theme-bootstrap.js", "public, max-age=300, must-revalidate"],
   ["/icons/*", "public, max-age=86400, must-revalidate"],
+  ["/favicon.svg", "public, max-age=86400, must-revalidate"],
   ["/favicon.ico", "public, max-age=86400, must-revalidate"],
 ]);
 

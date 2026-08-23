@@ -1,6 +1,6 @@
-# INF — Personal Infographic Learning System
+# Infographics — Personal Infographic Learning System
 
-INF is a personal, image-first learning notebook. Capture an infographic, organize it, resurface it, and record recall. `/view` is an intentionally public, read-only image collection; all learning records remain private.
+Infographics is a personal, image-first learning notebook. Capture an infographic, organize it, resurface it, and record recall. `/view` is an intentionally public, read-only image collection; all learning records remain private.
 
 ## Local actions
 
@@ -19,7 +19,7 @@ Run uses loopback-only ports: Next 3000, Functions 7071, a private local API cap
 
 ## Drive and recovery
 
-Production uses the public root `1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK` and a restricted sibling private root. Create Google OAuth credentials and keep `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, and the private/folder IDs in `.env.local` (0600), never in the frontend or repository. Manual image drops go in public `Inbox`; **Sync Drive** discovers them. INF retains originals, creates WebP thumbnails, and stores immutable private JSON events. Recovery is both Drive roots: copy the public images and private event hierarchy, then rebuild state by folding the events. Settings can export a portable inventory.
+Production uses the public root `1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK` and a restricted sibling private root. Create Google OAuth credentials and keep `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, and the private/folder IDs in `.env.local` (0600), never in the frontend or repository. Manual image drops go in public `Inbox`; **Sync Drive** discovers them. Infographics retains originals, creates WebP thumbnails, and stores immutable private JSON events. Recovery is both Drive roots: copy the public images and private event hierarchy, then rebuild state by folding the events. Settings can export a portable inventory.
 
 The provisioning workflow performs a bounded loopback-only Desktop OAuth callback with PKCE/state validation, verifies the exact Drive owner, creates or selects the exact folder tree idempotently, fails closed on incomplete permission metadata, and writes credentials plus audit folder IDs without printing secret values. Full Drive scope is deliberate: `drive.file` cannot reliably read the pre-existing shared root or images pasted manually outside this app. Live authorization still requires the owner to complete Google's consent step.
 

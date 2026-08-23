@@ -30,6 +30,7 @@ describe("owner Settings health", () => {
     expect(response.status).toBe(200);
     expect(response.headers?.["cache-control"]).toBe("no-store");
     const body = String(response.body);
+    expect(body).toContain('"name":"Infographics"');
     expect(body).toContain(ids.public);
     expect(body).toContain(ids.private);
     expect(body).toContain("original");

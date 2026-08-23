@@ -1,6 +1,6 @@
 {
-  "name": "INF",
-  "short_name": "INF",
+  "name": "Infographics",
+  "short_name": "Infographics",
   "start_url": "/view/",
   "scope": "/view/",
   "display": "standalone",

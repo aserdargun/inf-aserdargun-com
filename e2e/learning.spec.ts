@@ -100,7 +100,7 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   const consoleErrors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   const health = {
-    schemaVersion: 1, application: { name: "INF", version: "0.1.0", runtimeVersion: "v22.0.0", usesAi: false },
+    schemaVersion: 1, application: { name: "Infographics", version: "0.1.0", runtimeVersion: "v22.0.0", usesAi: false },
     connectionHealth: { publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [{ id: "inbox", label: "Inbox", healthy: true }] }, privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [{ id: "events", label: "Events", healthy: true }] } },
     data: { total: 1, inbox: 0, library: 1, archive: 0, due: 0, reviewed: 0, seen: 1 },
     quarantine: { count: 2, reasons: [{ reason: "invalid-event", count: 1 }, { reason: "unsupported-image", count: 1 }], rejectedFiles: [
@@ -123,7 +123,7 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   await expect(healthy.first()).toHaveCSS("color", "rgb(22, 128, 106)");
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
   await expect(healthy.first()).toHaveCSS("color", "rgb(98, 198, 174)");
-  await expect(page.getByText("INF does not use AI.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Infographics does not use AI.", { exact: true })).toBeVisible();
   const rejectedFiles = page.getByRole("list", { name: "Rejected files" });
   await expect(rejectedFiles).toHaveAccessibleName("Rejected files");
   await expect(rejectedFiles.getByRole("listitem")).toHaveCount(2);
@@ -255,7 +255,7 @@ test("review keeps a confirmed save truthful when the next queue load fails", as
 
 test("Settings surfaces safe export failures", async ({ page }) => {
   await page.addInitScript(() => { URL.createObjectURL = (() => { throw new Error("download unavailable"); }) as typeof URL.createObjectURL; });
-  await page.route("**/api/settings/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ schemaVersion: 1, application: { name: "INF", version: "0.1.0", runtimeVersion: "v22.0.0", usesAi: false }, connectionHealth: { publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [] }, privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [] } }, data: { total: 0, inbox: 0, library: 0, archive: 0, due: 0, reviewed: 0, seen: 0 }, quarantine: { count: 0, reasons: [], rejectedFiles: [] }, recovery: { inventorySchemaVersion: 1, items: [] } }) }));
+  await page.route("**/api/settings/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ schemaVersion: 1, application: { name: "Infographics", version: "0.1.0", runtimeVersion: "v22.0.0", usesAi: false }, connectionHealth: { publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [] }, privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [] } }, data: { total: 0, inbox: 0, library: 0, archive: 0, due: 0, reviewed: 0, seen: 0 }, quarantine: { count: 0, reasons: [], rejectedFiles: [] }, recovery: { inventorySchemaVersion: 1, items: [] } }) }));
   await page.goto("/settings/");
   await page.getByRole("button", { name: "Export inventory JSON" }).click();
   await expect(page.getByText("The inventory could not be exported. Try again.", { exact: true })).toBeVisible();

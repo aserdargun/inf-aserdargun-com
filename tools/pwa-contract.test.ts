@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -13,6 +13,28 @@ function pngDimensions(bytes: Buffer) {
 }
 
 describe("public PWA contract", () => {
+  test("publishes the Infographics product name for installation", () => {
+    const manifest = JSON.parse(readFileSync(resolve(root, "public/manifest.webmanifest"), "utf8"));
+    expect(manifest.name).toBe("Infographics");
+    expect(manifest.short_name).toBe("Infographics");
+  });
+
+  test("ships a local SVG favicon that stays legible at browser-tab size", async () => {
+    const faviconPath = resolve(root, "public/favicon.svg");
+    expect(existsSync(faviconPath)).toBe(true);
+    const { data, info } = await sharp(faviconPath).resize(16, 16).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    expect(info).toMatchObject({ width: 16, height: 16, channels: 4 });
+    let bluePixels = 0;
+    let whitePixels = 0;
+    for (let offset = 0; offset < data.length; offset += 4) {
+      const [red, green, blue, alpha] = data.subarray(offset, offset + 4);
+      if (alpha > 192 && blue > red * 1.4 && blue > green * 1.15) bluePixels += 1;
+      if (alpha > 192 && red > 224 && green > 224 && blue > 224) whitePixels += 1;
+    }
+    expect(bluePixels).toBeGreaterThan(80);
+    expect(whitePixels).toBeGreaterThan(12);
+  });
+
   test("ships exactly the local install icons with valid PNG dimensions", async () => {
     const manifest = JSON.parse(readFileSync(resolve(root, "public/manifest.webmanifest"), "utf8"));
     expect(manifest).toMatchObject({ display: "standalone", start_url: "/view/", scope: "/view/", theme_color: "#ffffff", background_color: "#ffffff" });

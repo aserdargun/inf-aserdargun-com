@@ -29,6 +29,32 @@ test("owner sees Today navigation and primary learning actions", async ({ page }
   await expect(page.getByRole("link", { name: "Surprise me" })).toBeVisible();
 });
 
+test("uses Infographics as the document identity and browser favicon", async ({ page, request }) => {
+  await page.goto("/view/");
+
+  await expect(page).toHaveTitle("Infographics");
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");
+  const favicon = await request.get("/favicon.svg");
+  expect(favicon.status()).toBe(200);
+  expect(favicon.headers()["content-type"]).toContain("image/svg+xml");
+});
+
+test("renders the Infographics wordmark across owner, login, and public surfaces", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/");
+  await expect(page.locator(".sidebar .wordmark")).toHaveText("Infographics");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".mobile-topbar .wordmark")).toHaveText("Infographics");
+
+  await page.goto("/login/");
+  await expect(page.locator(".login-page__intro .wordmark")).toHaveText("Infographics");
+
+  await page.goto("/view/");
+  await expect(page.locator(".public-view__wordmark")).toHaveText("Infographics");
+  await expect(page.locator(".public-view__footer strong")).toHaveText("Infographics");
+});
+
 test("uses the editorial design system and a wide owner workspace", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1024 });
   await page.goto("/");

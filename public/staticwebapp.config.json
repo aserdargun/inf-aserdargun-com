@@ -24,6 +24,7 @@
     { "route": "/manifest.webmanifest", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=300, must-revalidate" } },
     { "route": "/theme-bootstrap.js", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=300, must-revalidate" } },
     { "route": "/icons/*", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=86400, must-revalidate" } },
+    { "route": "/favicon.svg", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=86400, must-revalidate" } },
     { "route": "/favicon.ico", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "public, max-age=86400, must-revalidate" } },
     { "route": "/.auth/login/aad", "statusCode": 404 },
     {

@@ -191,7 +191,7 @@ export function ownerSettingsHealth(request: RequestLike, deps: OwnerDependencie
     for (const entry of quarantine) reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
     const response = {
       schemaVersion: 1 as const,
-      application: { name: "INF" as const, version: "0.1.0", runtimeVersion: process.version, usesAi: false as const },
+      application: { name: "Infographics" as const, version: "0.1.0", runtimeVersion: process.version, usesAi: false as const },
       connectionHealth: { publicDrive, privateDrive },
       data: catalog.stats(snapshot, now(deps)),
       quarantine: {

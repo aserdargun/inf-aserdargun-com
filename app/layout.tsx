@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "INF",
+  title: "Infographics",
+  applicationName: "Infographics",
   description: "Personal infographic learning system",
+  icons: { icon: "/favicon.svg" },
   manifest: "/manifest.webmanifest",
 };
 

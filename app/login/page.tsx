@@ -13,8 +13,8 @@ export default function LoginPage() {
   }
 
   return <main className="login-page">
-    <section aria-label="About INF" className="login-page__intro">
-      <p className="wordmark">INF</p>
+    <section aria-label="About Infographics" className="login-page__intro">
+      <p className="wordmark">Infographics</p>
       <p>This private notebook is available to its owner.</p>
       <a className="login-public-link" href="/view/">View public collection<ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.75} /></a>
     </section>

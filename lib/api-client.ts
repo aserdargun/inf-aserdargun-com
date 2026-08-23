@@ -10,9 +10,9 @@ function isAbort(error: unknown, signal?: AbortSignal | null) {
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(path, { ...init, headers: { Accept: "application/json", ...init?.headers }, credentials: "same-origin" }); }
-  catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(0, "Unable to reach INF. Try again."); }
+  catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(0, "Unable to reach Infographics. Try again."); }
   if (!response.ok) throw new ApiClientError(response.status);
   if (response.status === 204) return undefined as T;
   try { return await response.json() as T; }
-  catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(response.status, "INF returned an invalid response. Try again."); }
+  catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(response.status, "Infographics returned an invalid response. Try again."); }
 }
