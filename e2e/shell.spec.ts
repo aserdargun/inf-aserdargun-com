@@ -150,6 +150,15 @@ test("login and public view keep their approved access boundaries", async ({ pag
   await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
 });
 
+test("login presents the shared INF identity and a safe return to the public collection", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/login/");
+
+  await expect(page.locator(".login-page__intro")).toBeVisible();
+  await expect(page.locator(".login-panel")).toBeVisible();
+  await expect(page.getByRole("link", { name: "View public collection" })).toHaveAttribute("href", "/view/");
+});
+
 test("public View Mode exposes an admin sign-in entrypoint", async ({ page }) => {
   await page.goto("/view/");
 
