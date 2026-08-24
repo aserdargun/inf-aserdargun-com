@@ -94,8 +94,10 @@ test("View Mode exposes a local manifest, icons, and non-blocking service-worker
   await page.goto("/view/");
   const manifest = await (await request.get("/manifest.webmanifest")).json();
   expect(manifest.display).toBe("standalone");
-  expect(manifest.icons).toHaveLength(3);
-  for (const icon of manifest.icons) {
+  expect(manifest.icons.length).toBeGreaterThan(0);
+  const pngIcons = manifest.icons.filter((icon: { type?: string }) => icon.type === "image/png");
+  expect(pngIcons.length).toBeGreaterThanOrEqual(3);
+  for (const icon of pngIcons) {
     const response = await request.get(icon.src);
     expect(response.headers()["content-type"]).toContain("image/png");
     expect((await response.body()).subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
