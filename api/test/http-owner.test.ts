@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { InfEvent } from "@inf/contracts";
 import { foldEvents, selectWeighted } from "@inf/domain";
-import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerStats, ownerSurprise, ownerSync, type OwnerDependencies } from "../src/functions/owner.js";
+import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerStats, ownerSuggestMetadata, ownerSurprise, ownerSync, type OwnerDependencies } from "../src/functions/owner.js";
+import { OpenAiService } from "../src/services/openai-service.js";
 import { MAX_MULTIPART_BYTES } from "../src/http/parse.js";
 import type { StoragePort, StoredFile, CreateFileInput } from "../src/storage/storage-port.js";
 
@@ -221,5 +222,52 @@ describe("owner HTTP API", () => {
     expect((await ownerDelete(request(`/api/infographics/${infographicId}`, { method: "DELETE", body: JSON.stringify({ confirm: true }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps)).status).toBe(204);
     expect(storage.trashed.sort()).toEqual(["original", "thumbnail"]);
     expect(events.at(-1)?.type).toBe("infographic.deleted");
+  });
+
+  test("AI suggestion requires owner auth, a multipart image, and the OPENAI service", async () => {
+    const { deps } = fixture();
+    const noService = await ownerSuggestMetadata(request("/api/infographics/suggest-metadata", { method: "POST", body: new FormData() }), deps);
+    expect(noService.status).toBe(503);
+    expect(await json(noService)).toMatchObject({ code: "AI_NOT_CONFIGURED" });
+
+    const missingPrincipal = await ownerSuggestMetadata(new Request("http://localhost/api/infographics/suggest-metadata", { method: "POST" }), { ...deps, openAiService: new OpenAiService({ apiKey: "sk-test-1234567890abcdef" }) });
+    expect(missingPrincipal.status).toBe(401);
+
+    const emptyForm = new FormData();
+    const withService = { ...deps, openAiService: new OpenAiService({ apiKey: "sk-test-1234567890abcdef" }) };
+    const empty = await ownerSuggestMetadata(request("/api/infographics/suggest-metadata", { method: "POST", body: emptyForm }), withService);
+    expect(empty.status).toBe(400);
+  });
+
+  test("AI suggestion returns a parsed envelope without persisting any event", async () => {
+    const { deps, events } = fixture();
+    const fetchImpl = (async () => new Response(JSON.stringify({
+      id: "chatcmpl-x", model: "gpt-4o-mini-2025-01-01",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+        title: "Spaced title", notes: "Plain note.", sourceUrl: "https://example.com", sourcePlatform: "twitter", sourceAuthor: "@example",
+        language: "en", topics: ["ai"], rationale: "Visible.", confidence: 0.81,
+      }) } }],
+    }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+    const openAiService = new OpenAiService({ apiKey: "sk-test-1234567890abcdef", fetchImpl, now: () => new Date("2026-08-24T10:00:00.000Z") });
+    const form = new FormData();
+    form.set("file", new File([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], "chart.png", { type: "image/png" }));
+    const response = await ownerSuggestMetadata(request("/api/infographics/suggest-metadata", { method: "POST", body: form }), { ...deps, openAiService });
+    expect(response.status).toBe(200);
+    expect(await json(response)).toMatchObject({
+      schemaVersion: 1, model: "gpt-4o-mini-2025-01-01", generatedAt: "2026-08-24T10:00:00.000Z",
+      suggestion: { title: "Spaced title", notes: "Plain note.", sourceUrl: "https://example.com", sourcePlatform: "twitter", sourceAuthor: "@example", language: "en", topics: ["ai"], rationale: "Visible.", confidence: 0.81 },
+    });
+    // The suggestion endpoint must not append any events; the catalog should remain untouched.
+    expect(events).toHaveLength(1);
+  });
+
+  test("AI suggestion returns 429 when OpenAI rate-limits the caller", async () => {
+    const { deps } = fixture();
+    const fetchImpl = (async () => new Response(JSON.stringify({ error: "rate limited" }), { status: 429, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+    const form = new FormData();
+    form.set("file", new File([Buffer.from("anything")], "chart.png", { type: "image/png" }));
+    const response = await ownerSuggestMetadata(request("/api/infographics/suggest-metadata", { method: "POST", body: form }), { ...deps, openAiService: new OpenAiService({ apiKey: "sk-test-1234567890abcdef", fetchImpl }) });
+    expect(response.status).toBe(429);
+    expect(await json(response)).toMatchObject({ code: "AI_RATE_LIMITED" });
   });
 });
