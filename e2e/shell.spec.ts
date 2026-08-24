@@ -235,3 +235,25 @@ test("login reports a pending GitHub sign-in immediately", async ({ page }) => {
   await page.goto("/login/?pending=github");
   await expect(page.getByRole("button", { name: "Signing in…" })).toBeDisabled();
 });
+
+test("owner shell exposes a sign-out entrypoint that targets the SWA logout endpoint", async ({ page }) => {
+  await mockToday(page, "empty");
+  await page.goto("/");
+
+  const signout = page.locator("[data-testid='sidebar-signout']");
+  await expect(signout).toBeVisible();
+  await expect(signout).toHaveAttribute("href", "/.auth/logout?post_logout_redirect_uri=/login/");
+  await expect(signout).toHaveAttribute("rel", "nofollow");
+  await expect(signout).toHaveText(/Sign out/);
+});
+
+test("mobile top bar exposes a sign-out entrypoint alongside Settings", async ({ page }) => {
+  await mockToday(page, "empty");
+  await page.setViewportSize({ width: 480, height: 720 });
+  await page.goto("/");
+
+  const signout = page.locator("[data-testid='mobile-signout']");
+  await expect(signout).toBeVisible();
+  await expect(signout).toHaveAttribute("href", "/.auth/logout?post_logout_redirect_uri=/login/");
+  await expect(signout).toHaveAttribute("aria-label", "Sign out");
+});
