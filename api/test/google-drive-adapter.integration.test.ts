@@ -152,18 +152,12 @@ describe("GoogleDriveAdapter mocked integration", () => {
     const fake = fakeDrive();
     const delays: number[] = [];
     let nowMs = 0;
-    const client = fake.client;
-    const wrapped: typeof client = {
-      files: {
-        async get(params, options) { await new Promise((r) => setTimeout(r, 5)); return client.files.get(params, options); },
-        async list(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.list(params); },
-        async create(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.create(params); },
-        async update(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.update(params); },
-        async generateIds(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.generateIds(params); },
-      },
-    };
+    // The fake Drive client returns immediately; the adapter's throttle is
+    // what should insert the gap between calls. listChildren drives one
+    // paginated list (2 pages) plus a folder-metadata get, so 3 calls = 9
+    // adapter-level requests and we expect 8 throttle gaps of exactly 120ms.
     const storage = new GoogleDriveAdapter({
-      client: wrapped,
+      client: fake.client,
       publicRootId: "public",
       privateRootId: "private",
       jitter: () => 0,
@@ -174,11 +168,8 @@ describe("GoogleDriveAdapter mocked integration", () => {
     await storage.listChildren("inbox");
     await storage.listChildren("inbox");
     await storage.listChildren("inbox");
-    // Only the back-pressure delays between calls should appear; the per-call
-    // wrappers simulate ~5ms of HTTP work which must NOT reset the throttle.
-    const onlyThrottle = delays.filter((ms) => ms >= 100);
-    expect(onlyThrottle.length).toBeGreaterThanOrEqual(2);
-    expect(onlyThrottle.every((ms) => ms >= 100 && ms <= 130)).toBe(true);
+    expect(delays.length).toBeGreaterThanOrEqual(5);
+    expect(delays.every((ms) => ms === 120)).toBe(true);
   });
 });
 
