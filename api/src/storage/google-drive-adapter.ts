@@ -41,17 +41,20 @@ export interface GoogleDriveAdapterOptions {
   client?: DriveClient;
   sleep?: (milliseconds: number) => Promise<void>;
   jitter?: (baseMilliseconds: number) => number;
-  /**
-   * Minimum wall-clock spacing between consecutive Drive API requests, in
-   * milliseconds. Defaults to 0 (no throttle). Production should set a value
-   * that keeps per-user request rate below Google's per-user quota so a
-   * burst of reads (sync, settings/health) does not trip 429/403 throttling
-   * and surface as "Today could not be loaded" on the next page load.
-   */
-  minRequestIntervalMs?: number;
   /** Test-only clock injection for the throttle scheduler. */
   now?: () => number;
 }
+
+/**
+ * Sliding-window rate limit. Google Drive documents a per-user "Read requests
+ * per minute per user" of 12,000, but the operational ceiling that actually
+ * trips 429/403 on a personal account is around 10 requests/second. We track
+ * the last second of requests and only insert a delay once the window is
+ * full — so a single page load (1-3 calls) stays fast, but a sync burst is
+ * paced automatically.
+ */
+const RATE_LIMIT_WINDOW_MS = 1000;
+const RATE_LIMIT_MAX_REQUESTS = 10;
 
 export function escapeDriveQueryLiteral(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -85,10 +88,8 @@ export class GoogleDriveAdapter implements StoragePort {
   private readonly roots: Set<string>;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly jitter: (baseMilliseconds: number) => number;
-  private readonly minRequestIntervalMs: number;
   private readonly now: () => number;
-  private lastRequestAt = 0;
-  private throttleChain: Promise<void> = Promise.resolve();
+  private readonly window: number[] = [];
 
   constructor(private readonly options: GoogleDriveAdapterOptions) {
     if (!options.publicRootId || !options.privateRootId || options.publicRootId === options.privateRootId) {
@@ -97,7 +98,6 @@ export class GoogleDriveAdapter implements StoragePort {
     this.roots = new Set([options.publicRootId, options.privateRootId]);
     this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.jitter = options.jitter ?? (() => 0);
-    this.minRequestIntervalMs = Math.max(0, options.minRequestIntervalMs ?? 0);
     this.now = options.now ?? (() => Date.now());
     this.client = options.client ?? this.realClient(options.credentials);
   }
@@ -308,22 +308,27 @@ export class GoogleDriveAdapter implements StoragePort {
   }
 
   /**
-   * Serial throttle that enforces a minimum wall-clock gap between consecutive
-   * Drive API requests. The chain ensures that even when callers fan out work
-   * through Promise.all, the underlying HTTP calls are released in order so the
-   * per-user quota is not blown by a single sync run.
+   * Sliding-window rate limiter for Drive API calls. Below the per-second
+   * budget, calls pass through immediately so a single page load does not
+   * pay any artificial latency. Once the window is full, the next call waits
+   * for the oldest entry to fall out, then proceeds — so a sync burst that
+   * fans out dozens of calls gets paced to Google's per-user limit instead of
+   * tripping 429/403.
+   *
+   * Each caller reserves its slot synchronously and then awaits any
+   * required delay. Concurrent callers may briefly oversubscribe the window
+   * before the first sleep completes, but the eventual ordering still
+   * observes the per-user quota on the wire.
    */
   private async throttle(): Promise<void> {
-    if (this.minRequestIntervalMs <= 0) return;
-    const min = this.minRequestIntervalMs;
-    const next = this.throttleChain.then(async () => {
-      const elapsed = this.now() - this.lastRequestAt;
-      if (elapsed < min) await this.sleep(min - elapsed);
-      this.lastRequestAt = this.now();
-    });
-    // Swallow rejection so one failed throttle does not poison the chain.
-    this.throttleChain = next.catch(() => undefined);
-    await next;
+    const now = this.now();
+    while (this.window.length > 0 && now - this.window[0] >= RATE_LIMIT_WINDOW_MS) this.window.shift();
+    this.window.push(now);
+    if (this.window.length <= RATE_LIMIT_MAX_REQUESTS) return;
+    const wait = RATE_LIMIT_WINDOW_MS - (this.now() - this.window[0]) + this.jitter(RATE_LIMIT_WINDOW_MS);
+    await this.sleep(Math.max(0, wait));
+    const after = this.now();
+    while (this.window.length > 0 && after - this.window[0] >= RATE_LIMIT_WINDOW_MS) this.window.shift();
   }
 }
 

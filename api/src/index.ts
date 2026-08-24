@@ -36,10 +36,6 @@ export function createRuntime(env: Environment = process.env) {
     : new GoogleDriveAdapter({
         publicRootId: PUBLIC_ROOT_ID,
         privateRootId,
-        // Throttle the live Drive adapter so a sync burst cannot blow the
-        // per-user quota and surface as a "Today could not be loaded" error on
-        // the immediate next page load. 100ms ≈ 10 req/s, well below quota.
-        minRequestIntervalMs: 100,
         credentials: { clientId: required("GOOGLE_CLIENT_ID", env), clientSecret: required("GOOGLE_CLIENT_SECRET", env), refreshToken: required("GOOGLE_REFRESH_TOKEN", env) },
       });
   // Production wraps the live Drive adapter in a bounded read cache; the local

@@ -148,28 +148,65 @@ describe("GoogleDriveAdapter mocked integration", () => {
     await expect(byteStorage.createFile({ name: "wanted.png", mimeType: "image/png", parentId: "inbox", bytes: Buffer.from("wanted"), appProperties: { k: "v" } })).rejects.toThrow(/bytes|integrity/i);
   });
 
-  test("enforces a serial minimum interval between Drive API requests so a sync burst cannot blow per-user quota", async () => {
+  test("passes through a single page load without artificial latency and only paces a parallel sync burst", async () => {
     const fake = fakeDrive();
-    const delays: number[] = [];
     let nowMs = 0;
-    // The fake Drive client returns immediately; the adapter's throttle is
-    // what should insert the gap between calls. listChildren drives one
-    // paginated list (2 pages) plus a folder-metadata get, so 3 calls = 9
-    // adapter-level requests and we expect 8 throttle gaps of exactly 120ms.
-    const storage = new GoogleDriveAdapter({
+
+    // 1) A normal page load: 3 sequential listChildren calls (9 adapter
+    // requests) must NOT incur any throttle delay — single-user traffic is
+    // well under the per-second budget.
+    const pageDelays: number[] = [];
+    const pageStorage = new GoogleDriveAdapter({
       client: fake.client,
       publicRootId: "public",
       privateRootId: "private",
       jitter: () => 0,
-      sleep: async (ms) => { delays.push(ms); nowMs += ms; },
-      minRequestIntervalMs: 120,
+      sleep: async (ms) => { pageDelays.push(ms); nowMs += ms; },
       now: () => nowMs,
     });
-    await storage.listChildren("inbox");
-    await storage.listChildren("inbox");
-    await storage.listChildren("inbox");
-    expect(delays.length).toBeGreaterThanOrEqual(5);
-    expect(delays.every((ms) => ms === 120)).toBe(true);
+    await pageStorage.listChildren("inbox");
+    await pageStorage.listChildren("inbox");
+    await pageStorage.listChildren("inbox");
+    expect(pageDelays).toEqual([]);
+
+    // 2) A sync burst: EventStore.readAll fans out 50 readFile calls in
+    // parallel via Promise.all. The throttle must pace the wall-clock total
+    // to the per-second budget — 50 calls at ≤10/s takes ≥5s, but in
+    // practice the burst arrives in one microtask tick and the window
+    // rapidly drains, so we assert the *elapsed* budget is observed.
+    const burstDelays: number[] = [];
+    const burstStart = nowMs;
+    const burstStorage = new GoogleDriveAdapter({
+      client: fake.client,
+      publicRootId: "public",
+      privateRootId: "private",
+      jitter: () => 0,
+      sleep: async (ms) => { burstDelays.push(ms); nowMs += ms; },
+      now: () => nowMs,
+    });
+    await Promise.all(Array.from({ length: 50 }, () => burstStorage.readFile("image")));
+    const burstElapsed = nowMs - burstStart;
+    // Without throttle, 50 calls finish in ~0ms. With a 10/s budget, the
+    // total elapsed time must be at least 4s (50/10 - slack for the parallel
+    // window drain). One full 1s delay is the minimum signal the throttle
+    // engaged.
+    expect(burstDelays.some((ms) => ms >= 900)).toBe(true);
+    expect(burstElapsed).toBeGreaterThanOrEqual(4_000);
+
+    // 3) After the window drains, a fresh single call should pass through
+    // immediately with no extra delay.
+    nowMs += 1500;
+    const afterDelays: number[] = [];
+    const afterStorage = new GoogleDriveAdapter({
+      client: fake.client,
+      publicRootId: "public",
+      privateRootId: "private",
+      jitter: () => 0,
+      sleep: async (ms) => { afterDelays.push(ms); nowMs += ms; },
+      now: () => nowMs,
+    });
+    await afterStorage.readFile("image");
+    expect(afterDelays).toEqual([]);
   });
 });
 
