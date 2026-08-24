@@ -7,6 +7,7 @@ import { optionalFormString, parseJson, parseMultipart, uuidPath, type RequestLi
 import { CaptureService } from "../services/capture-service.js";
 import { ImageProcessingError } from "../images/process-image.js";
 import { CatalogService, type CatalogSnapshot } from "../services/catalog-service.js";
+import { OpenAiService, openAiServiceFromEnv } from "../services/openai-service.js";
 import { ReviewService } from "../services/review-service.js";
 import { SyncService } from "../services/sync-service.js";
 import type { EventStore } from "../storage/event-store.js";
@@ -29,6 +30,8 @@ export interface OwnerDependencies {
   expectedLocalProxyToken?: string;
   now?: () => Date;
   uuid?: () => string;
+  /** Optional injected AI service; if absent the handler returns 503. */
+  openAiService?: OpenAiService | null;
 }
 
 const metadataKeys = ["title", "notes", "sourceUrl", "sourcePlatform", "sourceAuthor"] as const;
@@ -54,6 +57,28 @@ function httpError(error: unknown): AppError | unknown {
   return new AppError(error.code, status, error.message);
 }
 
+function aiHttpError(error: unknown): AppError | unknown {
+  if (!(error instanceof AppError)) return error;
+  switch (error.code) {
+    case "AI_NOT_CONFIGURED": return new AppError(error.code, 503, error.message);
+    case "AI_TIMEOUT":
+    case "AI_UNREACHABLE":
+    case "AI_UPSTREAM_ERROR": return new AppError(error.code, 504, error.message);
+    case "AI_RATE_LIMITED": return new AppError(error.code, 429, error.message);
+    case "AI_UNAUTHORIZED": return new AppError(error.code, 502, error.message);
+    case "AI_REFUSAL": return new AppError(error.code, 422, error.message);
+    case "AI_BAD_REQUEST": return new AppError(error.code, 400, error.message);
+    case "UNSUPPORTED_MIME": return new AppError(error.code, 415, error.message);
+    case "IMAGE_TOO_LARGE": return new AppError(error.code, 413, error.message);
+    case "INVALID_IMAGE_INPUT": return new AppError(error.code, 400, error.message);
+    case "AI_BAD_JSON":
+    case "AI_BAD_SHAPE":
+    case "AI_BAD_RESPONSE":
+    case "AI_EMPTY_RESPONSE": return new AppError(error.code, 502, error.message);
+    default: return error;
+  }
+}
+
 async function authorized(
   request: RequestLike,
   deps: OwnerDependencies,
@@ -63,6 +88,17 @@ async function authorized(
     const decision = authorize(request, deps);
     return await action(decision.mode);
   } catch (error) { return errorResponse(httpError(error)); }
+}
+
+async function authorizedAi(
+  request: RequestLike,
+  deps: OwnerDependencies,
+  action: (mode: "github" | "local-bypass") => Promise<HttpResponse>,
+): Promise<HttpResponse> {
+  try {
+    const decision = authorize(request, deps);
+    return await action(decision.mode);
+  } catch (error) { return errorResponse(aiHttpError(httpError(error))); }
 }
 
 async function owner(request: RequestLike, deps: OwnerDependencies, action: (snapshot: CatalogSnapshot, mode: "github" | "local-bypass") => Promise<HttpResponse>): Promise<HttpResponse> {
@@ -191,7 +227,7 @@ export function ownerSettingsHealth(request: RequestLike, deps: OwnerDependencie
     for (const entry of quarantine) reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
     const response = {
       schemaVersion: 1 as const,
-      application: { name: "Infographics" as const, version: "0.1.0", runtimeVersion: process.version, usesAi: false as const },
+      application: { name: "Infographics" as const, version: "0.1.0", runtimeVersion: process.version, usesAi: process.env.OPENAI_API_KEY !== undefined && process.env.OPENAI_API_KEY.length > 0 },
       connectionHealth: { publicDrive, privateDrive },
       data: catalog.stats(snapshot, now(deps)),
       quarantine: {
@@ -233,6 +269,19 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
     const metadata = metadataResult.data;
     const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata });
     return jsonResponse(captured, captured.kind === "created" ? 201 : 200);
+  });
+}
+
+/** Owner-only AI metadata suggestion. Returns a structured response derived from the uploaded image. */
+export function ownerSuggestMetadata(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
+  return authorizedAi(request, deps, async () => {
+    const service = deps.openAiService ?? openAiServiceFromEnv();
+    if (!service) throw new AppError("AI_NOT_CONFIGURED", 503, "AI suggestions are not configured on the server.");
+    const form = await parseMultipart(request); const file = form.get("file");
+    if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const suggestion = await service.suggestMetadata({ bytes, declaredMime: file.type, ...(file.name ? { filename: file.name } : {}) });
+    return jsonResponse(suggestion, 200);
   });
 }
 

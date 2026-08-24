@@ -45,6 +45,27 @@ export const InfographicPatchSchema = z.strictObject({
 export const ConfirmDeleteSchema = z.strictObject({ confirm: z.literal(true) });
 export const ReviewRequestSchema = z.strictObject({ rating: ReviewRatingSchema });
 
+export const AiMetadataSuggestionSchema = z.strictObject({
+  title: PublicSafeTitleSchema.nullable(),
+  notes: z.string().max(10_000).nullable(),
+  sourceUrl: z.url().nullable(),
+  sourcePlatform: z.string().trim().min(1).max(100).nullable(),
+  sourceAuthor: z.string().trim().min(1).max(200).nullable(),
+  language: z.string().trim().min(2).max(8).nullable(),
+  topics: z.array(z.string().trim().min(1).max(80)).max(10),
+  rationale: z.string().trim().min(1).max(500).nullable(),
+  confidence: z.number().min(0).max(1),
+});
+export type AiMetadataSuggestion = z.infer<typeof AiMetadataSuggestionSchema>;
+
+export const AiSuggestionResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  model: z.string().min(1),
+  generatedAt: UtcDateTimeSchema,
+  suggestion: AiMetadataSuggestionSchema,
+});
+export type AiSuggestionResponse = z.infer<typeof AiSuggestionResponseSchema>;
+
 export const SessionResponseSchema = z.strictObject({
   authenticated: z.literal(true),
   owner: z.string().min(1),
@@ -111,7 +132,7 @@ export const SettingsInventoryItemSchema = z.strictObject({
 
 export const SettingsHealthResponseSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  application: z.strictObject({ name: z.literal("Infographics"), version: z.string().min(1), runtimeVersion: z.string().min(1), usesAi: z.literal(false) }),
+  application: z.strictObject({ name: z.literal("Infographics"), version: z.string().min(1), runtimeVersion: z.string().min(1), usesAi: z.boolean() }),
   connectionHealth: z.strictObject({ publicDrive: DriveHealthSchema, privateDrive: DriveHealthSchema }),
   data: SettingsStatsResponseSchema,
   quarantine: z.strictObject({

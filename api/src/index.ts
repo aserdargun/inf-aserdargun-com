@@ -4,7 +4,8 @@ import { EventStore } from "./storage/event-store.js";
 import { GoogleDriveAdapter } from "./storage/google-drive-adapter.js";
 import { LocalDriveAdapter } from "./storage/local-drive-adapter.js";
 import { publicGet, publicImage, publicList, type PublicDependencies } from "./functions/public.js";
-import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSurprise, ownerSync, type OwnerDependencies } from "./functions/owner.js";
+import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSuggestMetadata, ownerSurprise, ownerSync, type OwnerDependencies } from "./functions/owner.js";
+import { openAiServiceFromEnv } from "./services/openai-service.js";
 import type { HttpResponse } from "./http/errors.js";
 
 const PUBLIC_ROOT_ID = "1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK";
@@ -42,7 +43,7 @@ export function createRuntime(env: Environment = process.env) {
   const common = { storage, events, publicRootId: PUBLIC_ROOT_ID };
   return {
     public: common,
-    owner: { ...common, privateRootId, eventsFolderId, inboxFolderId: local ? LOCAL.inboxFolderId : required("INF_INBOX_FOLDER_ID", env), libraryFolderId: local ? LOCAL.libraryFolderId : required("INF_LIBRARY_FOLDER_ID", env), thumbnailsFolderId: local ? LOCAL.thumbnailsFolderId : required("INF_THUMBNAILS_FOLDER_ID", env), duplicatesFolderId: local ? LOCAL.duplicatesFolderId : required("INF_DUPLICATES_FOLDER_ID", env), allowedGithubUser: env.INF_ALLOWED_GITHUB_USER, localAuthBypass: env.INF_LOCAL_AUTH_BYPASS, azureSiteName: env.WEBSITE_SITE_NAME, localProxyMode: env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: env.INF_LOCAL_PROXY_TOKEN },
+    owner: { ...common, privateRootId, eventsFolderId, inboxFolderId: local ? LOCAL.inboxFolderId : required("INF_INBOX_FOLDER_ID", env), libraryFolderId: local ? LOCAL.libraryFolderId : required("INF_LIBRARY_FOLDER_ID", env), thumbnailsFolderId: local ? LOCAL.thumbnailsFolderId : required("INF_THUMBNAILS_FOLDER_ID", env), duplicatesFolderId: local ? LOCAL.duplicatesFolderId : required("INF_DUPLICATES_FOLDER_ID", env), allowedGithubUser: env.INF_ALLOWED_GITHUB_USER, localAuthBypass: env.INF_LOCAL_AUTH_BYPASS, azureSiteName: env.WEBSITE_SITE_NAME, localProxyMode: env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: env.INF_LOCAL_PROXY_TOKEN, openAiService: openAiServiceFromEnv(env) },
   };
 }
 
@@ -70,3 +71,4 @@ app.http("surprise", { methods: ["GET"], authLevel: "anonymous", route: "surpris
 app.http("due-review", { methods: ["GET"], authLevel: "anonymous", route: "review", handler: async (request: HttpRequest) => response(await ownerDueReview(request, ownerDeps())) });
 app.http("settings-stats", { methods: ["GET"], authLevel: "anonymous", route: "settings/stats", handler: async (request: HttpRequest) => response(await ownerStats(request, ownerDeps())) });
 app.http("settings-health", { methods: ["GET"], authLevel: "anonymous", route: "settings/health", handler: async (request: HttpRequest) => response(await ownerSettingsHealth(request, ownerDeps())) });
+app.http("suggest-metadata", { methods: ["POST"], authLevel: "anonymous", route: "infographics/suggest-metadata", handler: async (request: HttpRequest) => response(await ownerSuggestMetadata(request, ownerDeps())) });

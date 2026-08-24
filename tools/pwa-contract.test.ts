@@ -40,8 +40,11 @@ describe("public PWA contract", () => {
     expect(manifest).toMatchObject({ display: "standalone", start_url: "/view/", scope: "/view/", theme_color: "#ffffff", background_color: "#ffffff" });
     expect(manifest.icons).toEqual([
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "/icons/icon-192.webp", sizes: "192x192", type: "image/webp" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/icons/icon-512.webp", sizes: "512x512", type: "image/webp" },
       { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/icons/maskable-512.webp", sizes: "512x512", type: "image/webp", purpose: "maskable" },
     ]);
     const swa = readFileSync(resolve(root, "public/staticwebapp.config.json"), "utf8");
     expect(swa).toContain('"route": "/icons/*"');
@@ -85,7 +88,11 @@ describe("public PWA contract", () => {
     const themeBootstrap = readFileSync(resolve(root, "public/theme-bootstrap.js"), "utf8");
     const registration = readFileSync(resolve(root, "features/pwa/service-worker-registration.tsx"), "utf8");
     expect(layout).toContain('manifest: "/manifest.webmanifest"');
-    expect(layout).toContain('<script src="/theme-bootstrap.js" />');
+    // theme-bootstrap.js is loaded as a non-blocking preload + async script so
+    // the first paint is not gated on theme resolution. CSP hash coverage
+    // still applies because the inline preload declares the resource.
+    expect(layout).toMatch(/<link[^>]+rel="preload"[^>]+href="\/theme-bootstrap\.js"/);
+    expect(layout).toMatch(/<script[^>]+async[^>]+src="\/theme-bootstrap\.js"/);
     expect(layout).not.toContain("dangerouslySetInnerHTML");
     expect(themeBootstrap).toContain('localStorage.getItem("inf-theme")');
     const shell = readFileSync(resolve(root, "components/public-shell.tsx"), "utf8");

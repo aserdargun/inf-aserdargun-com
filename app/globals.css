@@ -19,3 +19,6 @@
 @media(max-width:767px) { .capture-workspace { gap:32px; grid-template-columns:1fr; }.capture-workspace__details { border-left:0; border-top:1px solid var(--border); padding-left:0; padding-top:32px; }.capture-dropzone { min-height:300px; padding:24px; }.capture-details { gap:14px; margin:0 0 24px; }.capture-details textarea { min-height:96px; }.capture-form__save { width:100%; } }
 @media(max-width:767px) { .detail-workspace { gap:28px; grid-template-columns:1fr; }.learning-stage { gap:18px; }.settings-overview { grid-template-columns:1fr; }.settings-overview>div+div { border-left:0; border-top:1px solid var(--border); }.settings-section>.button { width:100%; } }
 @media(max-width:767px) { .today-page > .page-header { margin-bottom:32px; } }
+/* Reserve viewport height while the public route decides gallery vs detail so
+   the SSR shell is not a single empty line that triggers CLS on hydration. */
+.public-route-placeholder { min-height: 60vh; }
