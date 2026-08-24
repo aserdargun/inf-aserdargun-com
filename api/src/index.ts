@@ -33,7 +33,15 @@ export function createRuntime(env: Environment = process.env) {
   const privateRootId = local ? LOCAL.privateRootId : required("INF_PRIVATE_DRIVE_FOLDER_ID", env);
   const rawStorage = local
     ? new LocalDriveAdapter({ rootPath: required("INF_LOCAL_STORAGE_ROOT", env), folderPaths: { [PUBLIC_ROOT_ID]: "public", [LOCAL.privateRootId]: "private", [LOCAL.eventsFolderId]: "private/events", [LOCAL.inboxFolderId]: "public/Inbox", [LOCAL.libraryFolderId]: "public/Library", [LOCAL.thumbnailsFolderId]: "public/Thumbnails", [LOCAL.duplicatesFolderId]: "public/Duplicates" } })
-    : new GoogleDriveAdapter({ publicRootId: PUBLIC_ROOT_ID, privateRootId, credentials: { clientId: required("GOOGLE_CLIENT_ID", env), clientSecret: required("GOOGLE_CLIENT_SECRET", env), refreshToken: required("GOOGLE_REFRESH_TOKEN", env) } });
+    : new GoogleDriveAdapter({
+        publicRootId: PUBLIC_ROOT_ID,
+        privateRootId,
+        // Throttle the live Drive adapter so a sync burst cannot blow the
+        // per-user quota and surface as a "Today could not be loaded" error on
+        // the immediate next page load. 100ms ≈ 10 req/s, well below quota.
+        minRequestIntervalMs: 100,
+        credentials: { clientId: required("GOOGLE_CLIENT_ID", env), clientSecret: required("GOOGLE_CLIENT_SECRET", env), refreshToken: required("GOOGLE_REFRESH_TOKEN", env) },
+      });
   // Production wraps the live Drive adapter in a bounded read cache; the local
   // runtime leaves it raw so deterministic tests do not leak state across cases.
   const storage = local ? rawStorage : new CachedStorage(rawStorage, DEFAULT_CACHE_TTLS.storage);

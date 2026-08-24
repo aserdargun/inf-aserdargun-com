@@ -41,6 +41,16 @@ export interface GoogleDriveAdapterOptions {
   client?: DriveClient;
   sleep?: (milliseconds: number) => Promise<void>;
   jitter?: (baseMilliseconds: number) => number;
+  /**
+   * Minimum wall-clock spacing between consecutive Drive API requests, in
+   * milliseconds. Defaults to 0 (no throttle). Production should set a value
+   * that keeps per-user request rate below Google's per-user quota so a
+   * burst of reads (sync, settings/health) does not trip 429/403 throttling
+   * and surface as "Today could not be loaded" on the next page load.
+   */
+  minRequestIntervalMs?: number;
+  /** Test-only clock injection for the throttle scheduler. */
+  now?: () => number;
 }
 
 export function escapeDriveQueryLiteral(value: string): string {
@@ -75,6 +85,10 @@ export class GoogleDriveAdapter implements StoragePort {
   private readonly roots: Set<string>;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly jitter: (baseMilliseconds: number) => number;
+  private readonly minRequestIntervalMs: number;
+  private readonly now: () => number;
+  private lastRequestAt = 0;
+  private throttleChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: GoogleDriveAdapterOptions) {
     if (!options.publicRootId || !options.privateRootId || options.publicRootId === options.privateRootId) {
@@ -83,6 +97,8 @@ export class GoogleDriveAdapter implements StoragePort {
     this.roots = new Set([options.publicRootId, options.privateRootId]);
     this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.jitter = options.jitter ?? (() => 0);
+    this.minRequestIntervalMs = Math.max(0, options.minRequestIntervalMs ?? 0);
+    this.now = options.now ?? (() => Date.now());
     this.client = options.client ?? this.realClient(options.credentials);
   }
 
@@ -283,11 +299,31 @@ export class GoogleDriveAdapter implements StoragePort {
   private async retry<T>(operation: () => Promise<T>): Promise<T> {
     const delays = [250, 500, 1000];
     for (let attempt = 0; ; attempt += 1) {
+      await this.throttle();
       try { return await operation(); } catch (error) {
         if (attempt >= delays.length || !retryableStatuses.has(asErrorStatus(error) ?? -1)) throw error;
         await this.sleep(delays[attempt] + this.jitter(delays[attempt]));
       }
     }
+  }
+
+  /**
+   * Serial throttle that enforces a minimum wall-clock gap between consecutive
+   * Drive API requests. The chain ensures that even when callers fan out work
+   * through Promise.all, the underlying HTTP calls are released in order so the
+   * per-user quota is not blown by a single sync run.
+   */
+  private async throttle(): Promise<void> {
+    if (this.minRequestIntervalMs <= 0) return;
+    const min = this.minRequestIntervalMs;
+    const next = this.throttleChain.then(async () => {
+      const elapsed = this.now() - this.lastRequestAt;
+      if (elapsed < min) await this.sleep(min - elapsed);
+      this.lastRequestAt = this.now();
+    });
+    // Swallow rejection so one failed throttle does not poison the chain.
+    this.throttleChain = next.catch(() => undefined);
+    await next;
   }
 }
 

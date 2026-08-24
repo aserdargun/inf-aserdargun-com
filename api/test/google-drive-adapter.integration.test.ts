@@ -147,6 +147,39 @@ describe("GoogleDriveAdapter mocked integration", () => {
     const byteStorage = new GoogleDriveAdapter({ client: bytes.client, publicRootId: "public", privateRootId: "private", jitter: () => 0 });
     await expect(byteStorage.createFile({ name: "wanted.png", mimeType: "image/png", parentId: "inbox", bytes: Buffer.from("wanted"), appProperties: { k: "v" } })).rejects.toThrow(/bytes|integrity/i);
   });
+
+  test("enforces a serial minimum interval between Drive API requests so a sync burst cannot blow per-user quota", async () => {
+    const fake = fakeDrive();
+    const delays: number[] = [];
+    let nowMs = 0;
+    const client = fake.client;
+    const wrapped: typeof client = {
+      files: {
+        async get(params, options) { await new Promise((r) => setTimeout(r, 5)); return client.files.get(params, options); },
+        async list(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.list(params); },
+        async create(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.create(params); },
+        async update(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.update(params); },
+        async generateIds(params) { await new Promise((r) => setTimeout(r, 5)); return client.files.generateIds(params); },
+      },
+    };
+    const storage = new GoogleDriveAdapter({
+      client: wrapped,
+      publicRootId: "public",
+      privateRootId: "private",
+      jitter: () => 0,
+      sleep: async (ms) => { delays.push(ms); nowMs += ms; },
+      minRequestIntervalMs: 120,
+      now: () => nowMs,
+    });
+    await storage.listChildren("inbox");
+    await storage.listChildren("inbox");
+    await storage.listChildren("inbox");
+    // Only the back-pressure delays between calls should appear; the per-call
+    // wrappers simulate ~5ms of HTTP work which must NOT reset the throttle.
+    const onlyThrottle = delays.filter((ms) => ms >= 100);
+    expect(onlyThrottle.length).toBeGreaterThanOrEqual(2);
+    expect(onlyThrottle.every((ms) => ms >= 100 && ms <= 130)).toBe(true);
+  });
 });
 
 const task15LiveReady = process.env.INF_DRIVE_INTEGRATION === "1"
