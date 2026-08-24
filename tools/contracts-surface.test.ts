@@ -6,7 +6,7 @@ test("contracts barrel exports each module once and keeps the exact runtime surf
   const source = readFileSync("packages/contracts/src/index.ts", "utf8");
   expect(source.match(/export \* from "\.\/api";/g)).toHaveLength(1);
   expect(Object.keys(contracts).sort()).toEqual([
-    "ApiErrorSchema", "CaptureMetadataSchema", "CategorySchema", "ConfirmDeleteSchema", "DriveFolderStateSchema", "DriveHealthSchema",
+    "AiMetadataSuggestionSchema", "AiSuggestionResponseSchema", "ApiErrorSchema", "CaptureMetadataSchema", "CategorySchema", "ConfirmDeleteSchema", "DriveFolderStateSchema", "DriveHealthSchema",
     "DueReviewResponseSchema", "EVENT_SCHEMA_VERSION", "EmptyEventPayloadSchema", "FolderHealthSchema", "ImageMimeTypeSchema", "InfEventSchema",
     "InfographicArchivedEventSchema", "InfographicCategoriesAssignedEventSchema", "InfographicCategoriesAssignedPayloadSchema", "InfographicCreatedEventSchema",
     "InfographicCreatedPayloadSchema", "InfographicDeletedEventSchema", "InfographicFavoriteChangedEventSchema", "InfographicFavoriteChangedPayloadSchema",
