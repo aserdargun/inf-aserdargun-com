@@ -7,7 +7,7 @@ import test from "node:test";
 import { appSettings } from "../scripts/azure-static-web-app-release.mjs";
 
 test("Azure app settings use the exact server runtime names without a public-root setting", () => {
-  const env = Object.fromEntries(["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "INF_PRIVATE_DRIVE_FOLDER_ID", "INF_EVENTS_FOLDER_ID", "INF_INBOX_FOLDER_ID", "INF_LIBRARY_FOLDER_ID", "INF_THUMBNAILS_FOLDER_ID", "INF_DUPLICATES_FOLDER_ID"].map((key) => [key, `${key}-value`]));
+  const env = Object.fromEntries(["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "INF_PRIVATE_DRIVE_FOLDER_ID", "INF_EVENTS_FOLDER_ID", "INF_INBOX_FOLDER_ID", "INF_LIBRARY_FOLDER_ID", "INF_THUMBNAILS_FOLDER_ID", "INF_DUPLICATES_FOLDER_ID", "OPENAI_API_KEY"].map((key) => [key, `${key}-value`]));
   const settings = appSettings(env);
   assert.equal(settings.INF_ALLOWED_GITHUB_USER, "aserdargun"); assert.equal(settings.INF_PRIVATE_DRIVE_FOLDER_ID, "INF_PRIVATE_DRIVE_FOLDER_ID-value");
   assert.equal("INF_PUBLIC_DRIVE_ROOT_ID" in settings, false);
@@ -54,6 +54,7 @@ if (method === "post" && uri.includes("/listAppSettings?api-version=2025-05-01")
       "INF_LIBRARY_FOLDER_ID=library",
       "INF_THUMBNAILS_FOLDER_ID=thumbnails",
       "INF_DUPLICATES_FOLDER_ID=duplicates",
+      "OPENAI_API_KEY=openai-key",
     ].join("\n"), { mode: 0o600 });
     const result = spawnSync(process.execPath, ["scripts/azure-static-web-app-release.mjs", "settings", "--env-file", envPath, "--subscription", "sub", "--resource-group", "rg", "--name", "swa"], {
       encoding: "utf8",
@@ -70,7 +71,7 @@ if (method === "post" && uri.includes("/listAppSettings?api-version=2025-05-01")
     const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
     assert.equal(summary.preserved, "preserved");
     assert.ok(summary.keys.includes("GOOGLE_CLIENT_SECRET"));
-    assert.equal(summary.keys.length, 11);
+    assert.equal(summary.keys.length, 12);
     assert.throws(() => readFileSync(summary.bodyPath), /ENOENT/);
   } finally {
     rmSync(directory, { force: true, recursive: true });
