@@ -1,4 +1,5 @@
 import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
+import { CachedEventStore, CachedStorage, DEFAULT_CACHE_TTLS } from "./cache/index.js";
 import { EventStore } from "./storage/event-store.js";
 import { GoogleDriveAdapter } from "./storage/google-drive-adapter.js";
 import { LocalDriveAdapter } from "./storage/local-drive-adapter.js";
@@ -29,11 +30,15 @@ function localRuntimeEnabled(env: Environment): boolean {
 export function createRuntime(env: Environment = process.env) {
   const local = localRuntimeEnabled(env);
   const privateRootId = local ? LOCAL.privateRootId : required("INF_PRIVATE_DRIVE_FOLDER_ID", env);
-  const storage = local
+  const rawStorage = local
     ? new LocalDriveAdapter({ rootPath: required("INF_LOCAL_STORAGE_ROOT", env), folderPaths: { [PUBLIC_ROOT_ID]: "public", [LOCAL.privateRootId]: "private", [LOCAL.eventsFolderId]: "private/events", [LOCAL.inboxFolderId]: "public/Inbox", [LOCAL.libraryFolderId]: "public/Library", [LOCAL.thumbnailsFolderId]: "public/Thumbnails", [LOCAL.duplicatesFolderId]: "public/Duplicates" } })
     : new GoogleDriveAdapter({ publicRootId: PUBLIC_ROOT_ID, privateRootId, credentials: { clientId: required("GOOGLE_CLIENT_ID", env), clientSecret: required("GOOGLE_CLIENT_SECRET", env), refreshToken: required("GOOGLE_REFRESH_TOKEN", env) } });
+  // Production wraps the live Drive adapter in a bounded read cache; the local
+  // runtime leaves it raw so deterministic tests do not leak state across cases.
+  const storage = local ? rawStorage : new CachedStorage(rawStorage, DEFAULT_CACHE_TTLS.storage);
   const eventsFolderId = local ? LOCAL.eventsFolderId : required("INF_EVENTS_FOLDER_ID", env);
-  const events = new EventStore(storage, eventsFolderId, privateRootId);
+  const rawEvents = new EventStore(storage, eventsFolderId, privateRootId);
+  const events = local ? rawEvents : new CachedEventStore(rawEvents, DEFAULT_CACHE_TTLS.events);
   const common = { storage, events, publicRootId: PUBLIC_ROOT_ID };
   return {
     public: common,
