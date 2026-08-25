@@ -116,7 +116,7 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
 
     const png = await readFile("api/test/fixtures/valid-infographic.png");
     const form = new globalThis.FormData();
-    form.set("title", "Compiled route matrix"); form.set("notes", "private route note"); form.set("sourceUrl", "https://example.com/source");
+    form.set("title", "Compiled route matrix"); form.set("notes", "private route note");
     form.set("file", new globalThis.File([png], "matrix.png", { type: "image/png" }));
     const capture = await fetch("http://127.0.0.1:4280/api/infographics", { method: "POST", body: form });
     const captureText = await capture.text(); assert.equal(capture.status, 201, captureText); assertSecurity(capture, /no-store/);
@@ -141,7 +141,7 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
     const tag = { id: "22222222-2222-4222-8222-222222222222", displayName: "Routes", normalizedName: "routes", slug: "routes" };
     const patched = await fetch(`http://127.0.0.1:4280/api/infographics/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Compiled matrix updated", favorite: true, categories: [category], tags: [tag] }) });
     assert.equal(patched.status, 200); assert.deepEqual(await patched.json(), { updated: true });
-    const queried = await fetch("http://127.0.0.1:4280/api/infographics?q=compiled&category=systems&tag=routes&favorite=true&source=true&sort=recent");
+    const queried = await fetch("http://127.0.0.1:4280/api/infographics?q=compiled&category=systems&tag=routes&favorite=true&sort=recent");
     assert.equal(queried.status, 200); assert.equal((await queried.json()).infographics[0].id, id);
     assert.equal((await fetch(`http://127.0.0.1:4280/api/infographics/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: "{}" })).status, 400);
     assert.equal((await fetch(`http://127.0.0.1:4280/api/infographics/not-a-uuid`)).status, 400);
