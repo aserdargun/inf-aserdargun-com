@@ -202,11 +202,13 @@ export function ownerSuggestForInfographic(request: RequestLike, deps: OwnerDepe
     const service = deps.openAiService ?? openAiServiceFromEnv();
     if (!service) throw new AppError("AI_NOT_CONFIGURED", 503, "AI suggestions are not configured on the server.");
     const id = uuidPath({ ...request, url: request.url.replace(/\/suggest$/, "") }, "/api/infographics/");
-    const item = new CatalogService(deps.events).item(await new CatalogService(deps.events).snapshot(), id);
+    const snapshot = await new CatalogService(deps.events).snapshot();
+    const item = new CatalogService(deps.events).item(snapshot, id);
     let bytes: Buffer;
     try { bytes = await deps.storage.readFile(item.thumbnailDriveFileId); }
     catch { throw new AppError("THUMBNAIL_UNAVAILABLE", 502, "Thumbnail bytes could not be read for AI suggestion"); }
-    const response = await service.suggestMetadata({ bytes, declaredMime: "image/webp" });
+    const existingCategories = snapshot.catalog.categories.map((entry) => entry.displayName);
+    const response = await service.suggestMetadata({ bytes, declaredMime: "image/webp", existingCategories });
     return jsonResponse(AiSuggestionSchema.parse({ suggestion: response.suggestion }), 200);
   });
 }

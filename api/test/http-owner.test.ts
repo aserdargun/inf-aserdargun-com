@@ -245,7 +245,7 @@ describe("owner HTTP API", () => {
       id: "chatcmpl-x", model: "gpt-4o-mini-2025-01-01",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
         title: "Spaced title", notes: "Plain note.", sourceUrl: "https://example.com", sourcePlatform: "twitter", sourceAuthor: "@example",
-        language: "en", topics: ["ai"], rationale: "Visible.", confidence: 0.81,
+        language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.81,
       }) } }],
     }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
     const openAiService = new OpenAiService({ apiKey: "sk-test-1234567890abcdef", fetchImpl, now: () => new Date("2026-08-24T10:00:00.000Z") });
@@ -255,7 +255,7 @@ describe("owner HTTP API", () => {
     expect(response.status).toBe(200);
     expect(await json(response)).toMatchObject({
       schemaVersion: 1, model: "gpt-4o-mini-2025-01-01", generatedAt: "2026-08-24T10:00:00.000Z",
-      suggestion: { title: "Spaced title", notes: "Plain note.", sourceUrl: "https://example.com", sourcePlatform: "twitter", sourceAuthor: "@example", language: "en", topics: ["ai"], rationale: "Visible.", confidence: 0.81 },
+      suggestion: { title: "Spaced title", notes: "Plain note.", sourceUrl: "https://example.com", sourcePlatform: "twitter", sourceAuthor: "@example", language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.81 },
     });
     // The suggestion endpoint must not append any events; the catalog should remain untouched.
     expect(events).toHaveLength(1);
@@ -294,7 +294,7 @@ describe("owner HTTP API", () => {
       id: "chatcmpl-y", model: "gpt-4o-mini-2025-01-01",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
         title: "Inbox title", notes: "Inbox notes.", sourceUrl: "https://example.org",
-        sourcePlatform: "github", sourceAuthor: "@user", language: "en", topics: ["ai"],
+        sourcePlatform: "github", sourceAuthor: "@user", language: "en", category: "GPU", topics: ["ai"],
         rationale: "Visible.", confidence: 0.74,
       }) } }],
     }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
@@ -302,10 +302,30 @@ describe("owner HTTP API", () => {
     const response = await ownerSuggestForInfographic(request(`/api/infographics/${infographicId}/suggest`, { method: "POST" }), { ...deps, openAiService });
     expect(response.status).toBe(200);
     expect(await json(response)).toMatchObject({
-      suggestion: { title: "Inbox title", notes: "Inbox notes.", sourceUrl: "https://example.org", sourcePlatform: "github", sourceAuthor: "@user", language: "en", topics: ["ai"], rationale: "Visible.", confidence: 0.74 },
+      suggestion: { title: "Inbox title", notes: "Inbox notes.", sourceUrl: "https://example.org", sourcePlatform: "github", sourceAuthor: "@user", language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.74 },
     });
     // The per-infographic suggest endpoint must not append any events.
     expect(events).toHaveLength(1);
+  });
+
+  test("per-infographic AI suggestion injects existing category names into the OpenAI request", async () => {
+    const { deps, events, storage } = fixture();
+    events.push({ eventId: "00000000-0000-4000-8000-000000000050", schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: "2026-08-20T10:01:00.000Z", infographicId, payload: { categories: [{ id: "00000000-0000-4000-8000-0000000000a1", displayName: "GPU", normalizedName: "gpu", slug: "gpu" }, { id: "00000000-0000-4000-8000-0000000000a2", displayName: "CPU", normalizedName: "cpu", slug: "cpu" }] } });
+    storage.files.get("thumbnail")!.bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    let observedUserText: string | undefined;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { messages: Array<{ role: string; content: Array<{ type: string; text?: string }> | string }> };
+      observedUserText = (body.messages[1].content as Array<{ type: string; text?: string }>)[0]!.text;
+      return new Response(JSON.stringify({ id: "chatcmpl-z", model: "gpt-4o-mini-2025-01-01", choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+        title: "GPU memory", notes: "VRAM layout", sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
+        language: "en", category: "GPU", topics: ["memory"], rationale: "Reuse.", confidence: 0.9,
+      }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const openAiService = new OpenAiService({ apiKey: "sk-test-1234567890abcdef", fetchImpl, now: () => new Date("2026-08-25T10:00:00.000Z") });
+    const response = await ownerSuggestForInfographic(request(`/api/infographics/${infographicId}/suggest`, { method: "POST" }), { ...deps, openAiService });
+    expect(response.status).toBe(200);
+    expect(observedUserText).toContain("Existing library categories:");
+    expect(observedUserText).toContain('["GPU","CPU"]');
   });
 
   test("per-infographic AI suggestion returns 504 when the upstream AI service times out", async () => {

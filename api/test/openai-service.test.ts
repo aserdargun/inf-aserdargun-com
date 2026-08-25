@@ -41,6 +41,7 @@ describe("OpenAiService", () => {
           sourcePlatform: "Twitter",
           sourceAuthor: "@example",
           language: "en",
+          category: "GPU",
           topics: ["ai", "policy"],
           rationale: "Visible headline + handle.",
           confidence: 0.92,
@@ -64,6 +65,7 @@ describe("OpenAiService", () => {
     expect(user[0].type).toBe("text");
     expect(user[1].type).toBe("image_url");
     expect(user[1].image_url?.url).toMatch(/^data:image\/png;base64,/);
+    expect(user[0].text).toBe(`Analyse this infographic and return the metadata JSON. The file was uploaded as "x.png".`);
 
     expect(response.schemaVersion).toBe(1);
     expect(response.model).toBe("gpt-4o-mini-2025-01-01");
@@ -74,9 +76,42 @@ describe("OpenAiService", () => {
     expect(response.suggestion.sourcePlatform).toBe("Twitter");
     expect(response.suggestion.sourceAuthor).toBe("@example");
     expect(response.suggestion.language).toBe("en");
+    expect(response.suggestion.category).toBe("GPU");
     expect(response.suggestion.topics).toEqual(["ai", "policy"]);
     expect(response.suggestion.rationale).toBe("Visible headline + handle.");
     expect(response.suggestion.confidence).toBe(0.92);
+  });
+
+  it("includes existing categories in the user prompt and reuses an existing label when the model picks one", async () => {
+    const fetchImpl = vi.fn(async () => buildResponse({
+      id: "chatcmpl-3",
+      model: "gpt-4o-mini-2025-01-01",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+        title: "GPU memory layout", notes: "VRAM hierarchy.", sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
+        language: "en", category: "GPU", topics: ["memory"], rationale: "Existing label reused.", confidence: 0.88,
+      }) } }],
+    })) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const response = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png", existingCategories: ["GPU", "CPU", "Memory"] });
+    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as { messages: Array<{ role: string; content: Array<{ type: string; text?: string }> | string }> };
+    const userText = (body.messages[1].content as Array<{ type: string; text?: string }>)[0]!.text;
+    expect(userText).toContain("Existing library categories:");
+    expect(userText).toContain('["GPU","CPU","Memory"]');
+    expect(response.suggestion.category).toBe("GPU");
+  });
+
+  it("treats a missing or empty category in the model output as null", async () => {
+    const fetchImpl = vi.fn(async () => buildResponse({
+      id: "chatcmpl-4", model: "gpt-4o-mini-2025-01-01",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+        title: "Loose notes", notes: "no category", sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
+        language: "en", category: "", topics: [], rationale: "skip", confidence: 0.5,
+      }) } }],
+    })) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const response = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
+    expect(response.suggestion.category).toBeNull();
   });
 
   it("returns 422-equivalent AppError when the model refuses", async () => {
@@ -126,12 +161,169 @@ describe("OpenAiService", () => {
     await expect(service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" })).rejects.toMatchObject({ code: "AI_BAD_JSON", status: 502 });
   });
 
-  it("returns 502-equivalent AppError when fields fail validation", async () => {
+  it("returns 502-equivalent AppError when fields fail validation after coercion", async () => {
     const fetchImpl = vi.fn(async () => buildResponse({
-      id: "x", model: "gpt-4o-mini", choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ title: 12, confidence: "high" }) } }],
+      id: "x", model: "gpt-4o-mini",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+        title: "ok", notes: "ok", sourceUrl: "not a real url at all", sourcePlatform: "twitter",
+        sourceAuthor: "@user", language: "en", category: "ai", topics: ["a"],
+        rationale: "ok", confidence: 0.5,
+      }) } }],
     })) as unknown as typeof fetch;
     const service = new OpenAiService(baseOptions(fetchImpl));
     await expect(service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" })).rejects.toMatchObject({ code: "AI_BAD_SHAPE", status: 502 });
+  });
+
+  it("strips a markdown code fence before parsing the model JSON", async () => {
+    const fetchImpl = vi.fn(async () => buildResponse({
+      id: "x", model: "gpt-4o-mini",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "```json\n" + JSON.stringify({
+        title: "Markdown-wrapped title",
+        notes: "Notes survive the fence.",
+        sourceUrl: null,
+        sourcePlatform: "twitter",
+        sourceAuthor: "@user",
+        language: "en",
+        category: "AI",
+        topics: ["ai"],
+        rationale: "Visible.",
+        confidence: 0.81,
+      }) + "\n```" } }],
+    })) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const result = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
+    expect(result.suggestion.title).toBe("Markdown-wrapped title");
+    expect(result.suggestion.confidence).toBe(0.81);
+  });
+
+  it("extracts JSON embedded in stray prose", async () => {
+    const fetchImpl = vi.fn(async () => buildResponse({
+      id: "x", model: "gpt-4o-mini",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: 'Sure! Here you go:\n{"title":"Embedded","notes":"notes","sourceUrl":null,"sourcePlatform":null,"sourceAuthor":null,"language":null,"category":null,"topics":[],"rationale":"because","confidence":0.7}\nThanks.' } }],
+    })) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const result = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
+    expect(result.suggestion.title).toBe("Embedded");
+    expect(result.suggestion.confidence).toBe(0.7);
+  });
+
+  it("coerces word-form confidence values into a numeric 0-1 score", async () => {
+    const fetchImpl = vi.fn(async () => buildResponse({
+      id: "x", model: "gpt-4o-mini",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+        title: "Word-confidence title",
+        notes: null,
+        sourceUrl: null,
+        sourcePlatform: null,
+        sourceAuthor: null,
+        language: null,
+        category: null,
+        topics: [],
+        rationale: null,
+        confidence: "High",
+      }) } }],
+    })) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const result = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
+    expect(result.suggestion.confidence).toBe(0.9);
+  });
+
+  it("drops empty string fields and falls back to defaults instead of failing validation", async () => {
+    const fetchImpl = vi.fn(async () => buildResponse({
+      id: "x", model: "gpt-4o-mini",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+        title: "  ",
+        notes: "",
+        sourceUrl: "",
+        sourcePlatform: "",
+        sourceAuthor: null,
+        language: null,
+        category: null,
+        topics: ["  ", "ai", ""],
+        rationale: null,
+        confidence: 0.5,
+      }) } }],
+    })) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const result = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
+    expect(result.suggestion.title).toBeNull();
+    expect(result.suggestion.notes).toBeNull();
+    expect(result.suggestion.sourceUrl).toBeNull();
+    expect(result.suggestion.topics).toEqual(["ai"]);
+  });
+
+  it("retries transient upstream errors once and then succeeds", async () => {
+    let callCount = 0;
+    const fetchImpl = vi.fn(async () => {
+      callCount += 1;
+      if (callCount === 1) return new Response(JSON.stringify({ error: "boom" }), { status: 503, headers: { "content-type": "application/json" } });
+      return buildResponse({
+        id: "x", model: "gpt-4o-mini",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+          title: "Recovered title",
+          notes: null,
+          sourceUrl: null,
+          sourcePlatform: null,
+          sourceAuthor: null,
+          language: null,
+          category: null,
+          topics: [],
+          rationale: null,
+          confidence: 0.5,
+        }) } }],
+      });
+    }) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const result = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
+    expect(result.suggestion.title).toBe("Recovered title");
+    expect(callCount).toBe(2);
+  });
+
+  it("retries when the first response is malformed JSON, then succeeds", async () => {
+    let callCount = 0;
+    const fetchImpl = vi.fn(async () => {
+      callCount += 1;
+      if (callCount === 1) return buildResponse({
+        id: "x", model: "gpt-4o-mini",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "not json" } }],
+      });
+      return buildResponse({
+        id: "x", model: "gpt-4o-mini",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+          title: "Recovered", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
+          language: null, category: null, topics: [], rationale: null, confidence: 0.4,
+        }) } }],
+      });
+    }) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    const result = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
+    expect(result.suggestion.title).toBe("Recovered");
+    expect(callCount).toBe(2);
+  });
+
+  it("does not retry on permanent errors like a 4xx bad request", async () => {
+    let callCount = 0;
+    const fetchImpl = vi.fn(async () => {
+      callCount += 1;
+      return new Response(JSON.stringify({ error: "bad" }), { status: 400, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    await expect(service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" })).rejects.toMatchObject({ code: "AI_BAD_REQUEST" });
+    expect(callCount).toBe(1);
+  });
+
+  it("does not retry on AI_REFUSAL", async () => {
+    let callCount = 0;
+    const fetchImpl = vi.fn(async () => {
+      callCount += 1;
+      return buildResponse({
+        id: "x", model: "gpt-4o-mini",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", refusal: "I cannot help with that.", content: "" } }],
+      });
+    }) as unknown as typeof fetch;
+    const service = new OpenAiService(baseOptions(fetchImpl));
+    await expect(service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" })).rejects.toMatchObject({ code: "AI_REFUSAL" });
+    expect(callCount).toBe(1);
   });
 
   it("rejects construction with a too-short api key", () => {

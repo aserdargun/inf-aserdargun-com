@@ -48,7 +48,7 @@ test("uploads without metadata, then categorizes and tags in Inbox", async ({ pa
   await expect(page).toHaveURL(/\/inbox\//);
   await page.getByLabel("Category").fill("GPU");
   await page.getByLabel("Tags").fill(" Memory, cuda, MEMORY ");
-  await page.getByRole("button", { name: "Apply" }).click();
+  await page.getByRole("button", { name: "Move to Library" }).click();
   await expect(page.getByText("Moved to Library", { exact: true })).toBeVisible();
   expect(mock.patches).toEqual([{
     categories: [category],

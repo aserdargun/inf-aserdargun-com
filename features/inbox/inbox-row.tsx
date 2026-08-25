@@ -79,6 +79,7 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
     if (suggestion.sourceUrl) setSourceUrl(suggestion.sourceUrl);
     if (suggestion.sourcePlatform) setSourcePlatform(suggestion.sourcePlatform);
     if (suggestion.sourceAuthor) setSourceAuthor(suggestion.sourceAuthor);
+    if (suggestion.category) setCategory(suggestion.category);
     onAiApply(item.id, suggestion);
   }
 
@@ -177,7 +178,7 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
       {error ? <p aria-live="polite" className="form-message form-message--error" role="status">Changes could not be saved. Try again.</p> : null}
       {savedFlash === "saved" ? <p aria-live="polite" className="form-message form-message--success" role="status">Saved.</p> : null}
       <div className="inbox-row__actions">
-        <Button disabled={saving || deleting} onClick={() => void apply()}>{saving ? "Saving to Inbox…" : "Apply"}</Button>
+        <Button disabled={saving || deleting} onClick={() => void apply()}>{saving ? "Saving…" : category.trim() ? "Move to Library" : "Apply"}</Button>
         <Button disabled={saving || deleting} onClick={() => setConfirmDelete(true)} variant="quiet">
           <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} /> Delete
         </Button>

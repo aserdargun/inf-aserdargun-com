@@ -43,7 +43,7 @@ function buildItem(overrides: Partial<ManagedItem> = {}): ManagedItem {
 }
 
 interface MockOptions {
-  suggestions?: Record<string, { suggestion: { title?: string | null; notes?: string | null; sourceUrl?: string | null; sourcePlatform?: string | null; sourceAuthor?: string | null; confidence: number; rationale?: string | null; topics?: string[]; language?: string | null } }>;
+  suggestions?: Record<string, { suggestion: { title?: string | null; notes?: string | null; sourceUrl?: string | null; sourcePlatform?: string | null; sourceAuthor?: string | null; category?: string | null; confidence: number; rationale?: string | null; topics?: string[]; language?: string | null } }>;
   suggestionsFail?: number;
   replaceOk?: boolean;
   replaceFail?: number;
@@ -64,7 +64,7 @@ async function mockInboxManage(page: import("playwright/test").Page, items: Mana
     const id = segments[segments.length - 2]!;
     const override = options.suggestions?.[id];
     if (override) return route.fulfill({ contentType: "application/json", body: JSON.stringify(override) });
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Suggested title", notes: "Suggested notes", sourceUrl: null, sourcePlatform: null, sourceAuthor: null, language: "en", topics: ["learning"], rationale: "Visible", confidence: 0.7 } }) });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Suggested title", notes: "Suggested notes", sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: "GPU", language: "en", topics: ["learning"], rationale: "Visible", confidence: 0.7 } }) });
   });
   await page.route(/\/api\/infographics\/[^/]+\/image$/, async (route) => {
     state.replaceCount += 1;
@@ -116,7 +116,11 @@ test.describe("Inbox management", () => {
       buildItem({ id: "00000000-0000-4000-8000-000000000001", title: "GPU memory" }),
       buildItem({ id: "00000000-0000-4000-8000-000000000002", title: "CUDA warps" }),
     ];
-    const state = await mockInboxManage(page, items);
+    const state = await mockInboxManage(page, items, {
+      suggestions: {
+        "00000000-0000-4000-8000-000000000001": { suggestion: { title: "Suggested title", notes: "Suggested notes", sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: null, language: "en", topics: ["learning"], rationale: "Visible", confidence: 0.7 } },
+      },
+    });
     await page.goto("/inbox/");
     await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
     const firstRow = page.locator(".inbox-row").first();
@@ -182,9 +186,33 @@ test.describe("Inbox management", () => {
     await page.goto("/inbox/");
     const row = page.locator(".inbox-row").first();
     await row.getByLabel("Category").fill("GPU");
-    await row.getByRole("button", { name: "Apply", exact: true }).click();
+    await expect(row.getByRole("button", { name: "Move to Library" })).toBeVisible();
+    await row.getByRole("button", { name: "Move to Library" }).click();
     await expect(page.getByText("Moved to Library", { exact: true })).toBeVisible();
     await expect(row).toBeHidden();
     expect(state.patches.at(-1)).toMatchObject({ categories: [expect.objectContaining({ displayName: "GPU" })] });
+  });
+
+  test("AI-suggested category auto-fills the Category field and moves the row to Library on Apply", async ({ page }) => {
+    const items: ManagedItem[] = [buildItem({ id: "00000000-0000-4000-8000-000000000007", title: "GPU memory" })];
+    const state = await mockInboxManage(page, items, {
+      suggestions: {
+        "00000000-0000-4000-8000-000000000007": { suggestion: { title: "GPU memory layout", notes: "VRAM hierarchy", sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.85 } },
+      },
+    });
+    await page.goto("/inbox/");
+    const row = page.locator(".inbox-row").first();
+    await expect(row.locator(".ai-banner--ready")).toBeVisible();
+    await expect(row.getByText(/will move to/i)).toBeVisible();
+    await row.getByRole("button", { name: "Apply AI" }).click();
+    await expect(row.getByLabel("Title")).toHaveValue("GPU memory layout");
+    await expect(row.getByLabel("Category")).toHaveValue("GPU");
+    // The button now reflects the Library destination.
+    await expect(row.getByRole("button", { name: "Move to Library" })).toBeVisible();
+    await row.getByRole("button", { name: "Move to Library" }).click();
+    await expect(page.getByText("Moved to Library", { exact: true })).toBeVisible();
+    await expect(row).toBeHidden();
+    const lastPatch = state.patches.at(-1) as Record<string, unknown> | undefined;
+    expect(lastPatch).toMatchObject({ title: "GPU memory layout", categories: [expect.objectContaining({ displayName: "GPU" })] });
   });
 });

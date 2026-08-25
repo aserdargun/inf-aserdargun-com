@@ -26,12 +26,15 @@ export function AiSuggestBanner({ status, onApply, onDismiss, onRetry }: AiSugge
   }
   if (status.kind === "ready") {
     const { suggestion } = status;
-    const filled = [suggestion.title, suggestion.sourceUrl, suggestion.sourcePlatform, suggestion.sourceAuthor, suggestion.notes].filter((value) => typeof value === "string" && value.length > 0).length;
+    const filled = [suggestion.title, suggestion.sourceUrl, suggestion.sourcePlatform, suggestion.sourceAuthor, suggestion.notes, suggestion.category].filter((value) => typeof value === "string" && value.length > 0).length;
     const ratio = Math.round((suggestion.confidence ?? 0) * 100);
+    const headline = suggestion.category
+      ? <>AI suggested {filled} field{filled === 1 ? "" : "s"} (will move to <strong>{suggestion.category}</strong>).</>
+      : <>AI suggested {filled} field{filled === 1 ? "" : "s"}.</>;
     return <div aria-live="polite" className="ai-banner ai-banner--ready" role="status">
       <Sparkles aria-hidden="true" size={18} strokeWidth={1.75} />
       <div className="ai-banner__body">
-        <strong>AI suggested {filled} field{filled === 1 ? "" : "s"}.</strong>
+        <strong>{headline}</strong>
         {suggestion.rationale ? <span>{suggestion.rationale}</span> : null}
         <span className="ai-banner__meta">confidence {ratio}%</span>
         <div className="ai-banner__actions">
