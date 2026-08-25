@@ -79,9 +79,7 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
     if (aiStatus.kind !== "ready" || !aiStatus.autoApply) return;
     applyAi(aiStatus.suggestion);
     onAiApply(item.id, aiStatus.suggestion);
-    // applyAi, onAiApply, item.id, aiStatus.suggestion are stable within a single ready event.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiStatus]);
+  }, [aiStatus, applyAi, onAiApply, item.id]);
 
   function applyAi(suggestion: AiMetadataSuggestion) {
     if (suggestion.title) setTitle(suggestion.title);
