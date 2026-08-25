@@ -52,6 +52,13 @@ export const AiMetadataSuggestionSchema = z.strictObject({
   sourcePlatform: z.string().trim().min(1).max(100).nullable(),
   sourceAuthor: z.string().trim().min(1).max(200).nullable(),
   language: z.string().trim().min(2).max(8).nullable(),
+  /**
+   * A single primary category label that best classifies the infographic. The
+   * model is told the existing category names so it can reuse them instead of
+   * inventing near-duplicates (e.g. "GPU" vs "GPUs"). Null when the model is
+   * not confident enough to pick one.
+   */
+  category: z.string().trim().min(1).max(80).nullable(),
   topics: z.array(z.string().trim().min(1).max(80)).max(10),
   rationale: z.string().trim().min(1).max(500).nullable(),
   confidence: z.number().min(0).max(1),
