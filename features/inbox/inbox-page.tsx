@@ -61,17 +61,20 @@ export function InboxPage() {
     finally { setSyncing(false); }
   }, [load, syncing]);
 
-  const triggerAiFor = useCallback(async (items: readonly MaterializedInfographic[], force: boolean) => {
+  const triggerAiFor = useCallback(async (items: readonly MaterializedInfographic[], force: boolean, autoApply: boolean) => {
     if (items.length === 0) return;
     // We only request each item once per page load. The page-wide state reset
     // happens inside `load()`. Per-row retries are tracked explicitly via the
     // `force` flag (e.g. when the user clicks "Try again" on an error banner).
+    // `autoApply` is set when the user explicitly asked for a one-click fill
+    // (e.g. "AI ile doldur"), so the row applies the values as soon as the
+    // suggestion arrives without requiring a separate "Apply AI" confirmation.
     const pending = items.filter((item) => force || true);
     if (pending.length === 0) return;
     setAiStates((state) => {
       const next: AiState = { ...state };
       for (const item of pending) {
-        if (force || !next[item.id] || next[item.id]?.kind === "idle") next[item.id] = { kind: "loading" };
+        if (force || !next[item.id] || next[item.id]?.kind === "idle") next[item.id] = { kind: "loading", autoApply };
       }
       return next;
     });
@@ -83,7 +86,7 @@ export function InboxPage() {
           setAiErrors((errors) => ({ ...errors, [item.id]: "AI suggestion service returned an invalid response." }));
           return;
         }
-        setAiStates((state) => ({ ...state, [item.id]: { kind: "ready", suggestion: response.suggestion } }));
+        setAiStates((state) => ({ ...state, [item.id]: { kind: "ready", suggestion: response.suggestion, autoApply } }));
       } catch (cause) {
         const message = cause instanceof ApiClientError ? aiErrorMessage(cause.status, "AI suggestion failed. You can still fill the fields manually.") : "AI suggestion failed. You can still fill the fields manually.";
         setAiStates((state) => ({ ...state, [item.id]: { kind: "error", message } }));
@@ -94,7 +97,7 @@ export function InboxPage() {
 
   useEffect(() => {
     if (state !== "success" || !catalog) return;
-    void triggerAiFor(catalog.infographics, false);
+    void triggerAiFor(catalog.infographics, false, false);
   }, [state, catalog, triggerAiFor]);
 
   const onAiApply = useCallback((id: string, _suggestion: AiMetadataSuggestion) => {
@@ -106,12 +109,14 @@ export function InboxPage() {
   const onAiRetry = useCallback((id: string) => {
     const item = catalog?.infographics.find((candidate) => candidate.id === id);
     if (!item) return;
-    void triggerAiFor([item], true);
+    void triggerAiFor([item], true, false);
   }, [catalog, triggerAiFor]);
   const onAiTrigger = useCallback((id: string) => {
     const item = catalog?.infographics.find((candidate) => candidate.id === id);
     if (!item) return;
-    void triggerAiFor([item], true);
+    // "AI ile doldur" is a one-click intent: the row should auto-apply the
+    // suggestion as soon as it arrives, without waiting for an "Apply AI" tap.
+    void triggerAiFor([item], true, true);
   }, [catalog, triggerAiFor]);
 
   const onMoved = useCallback((next: MaterializedInfographic) => {

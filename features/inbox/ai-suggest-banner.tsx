@@ -5,8 +5,8 @@ import { Sparkles, X } from "lucide-react";
 
 export type AiRowStatus =
   | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "ready"; suggestion: AiMetadataSuggestion }
+  | { kind: "loading"; autoApply?: boolean }
+  | { kind: "ready"; suggestion: AiMetadataSuggestion; autoApply?: boolean }
   | { kind: "error"; message: string };
 
 interface AiSuggestBannerProps {
@@ -25,7 +25,7 @@ export function AiSuggestBanner({ status, onApply, onDismiss, onRetry }: AiSugge
     </div>;
   }
   if (status.kind === "ready") {
-    const { suggestion } = status;
+    const { suggestion, autoApply } = status;
     const filled = [suggestion.title, suggestion.notes, suggestion.category].filter((value) => typeof value === "string" && value.length > 0).length;
     const ratio = Math.round((suggestion.confidence ?? 0) * 100);
     const headline = suggestion.category
@@ -36,11 +36,11 @@ export function AiSuggestBanner({ status, onApply, onDismiss, onRetry }: AiSugge
       <div className="ai-banner__body">
         <strong>{headline}</strong>
         {suggestion.rationale ? <span>{suggestion.rationale}</span> : null}
-        <span className="ai-banner__meta">confidence {ratio}%</span>
-        <div className="ai-banner__actions">
+        <span className="ai-banner__meta">{autoApply ? "filling the fields automatically" : `confidence ${ratio}%`}</span>
+        {!autoApply ? <div className="ai-banner__actions">
           <button className="button button--primary" onClick={() => onApply(suggestion)} type="button">Apply AI</button>
           {onRetry ? <button className="button button--quiet" onClick={onRetry} type="button">Try again</button> : null}
-        </div>
+        </div> : null}
       </div>
       <button aria-label="Discard AI suggestion" className="ai-banner__dismiss" onClick={onDismiss} type="button"><X aria-hidden="true" size={16} strokeWidth={1.75} /></button>
     </div>;

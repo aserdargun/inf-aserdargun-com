@@ -71,6 +71,18 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
     return () => clearTimeout(timer);
   }, [savedFlash]);
 
+  // When the user invokes "AI ile doldur", the page flags the response with
+  // `autoApply: true`. The first time the row sees a ready suggestion with
+  // that flag, it applies the values and clears the AI state so the banner
+  // does not keep nagging the user to confirm.
+  useEffect(() => {
+    if (aiStatus.kind !== "ready" || !aiStatus.autoApply) return;
+    applyAi(aiStatus.suggestion);
+    onAiApply(item.id, aiStatus.suggestion);
+    // applyAi, onAiApply, item.id, aiStatus.suggestion are stable within a single ready event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiStatus]);
+
   function applyAi(suggestion: AiMetadataSuggestion) {
     if (suggestion.title) setTitle(suggestion.title);
     if (suggestion.notes) setNotes(suggestion.notes);

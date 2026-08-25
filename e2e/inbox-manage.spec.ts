@@ -234,13 +234,13 @@ test.describe("Inbox management", () => {
     ]));
   });
 
-  test("'AI ile doldur' button manually re-triggers AI when the first attempt failed", async ({ page }) => {
+  test("'AI ile doldur' button auto-fills the fields when the AI returns", async ({ page }) => {
     const items: ManagedItem[] = [buildItem({ id: "00000000-0000-4000-8000-000000000009", title: "Retry me" })];
     let suggestCount = 0;
     await page.route(/\/api\/infographics\/[^/]+\/suggest$/, async (route) => {
       suggestCount += 1;
       if (suggestCount === 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "AI_NOT_CONFIGURED" }) });
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Retry title", notes: null,category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.7 } }) });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Retry title", notes: null, category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.7 } }) });
     });
     await page.route("**/api/infographics", async (route) => {
       if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: items, categories: [], tags: [] }) });
@@ -250,8 +250,8 @@ test.describe("Inbox management", () => {
     const row = page.locator(".inbox-row").first();
     await expect(row.locator(".ai-banner--error")).toBeVisible();
     await row.getByRole("button", { name: "AI ile doldur" }).click();
-    await expect(row.locator(".ai-banner--ready")).toBeVisible();
-    await row.getByRole("button", { name: "Apply AI" }).click();
+    // The button is a one-click action: values are applied as soon as the
+    // suggestion returns, no separate "Apply AI" confirmation is needed.
     await expect(row.getByLabel("Title")).toHaveValue("Retry title");
     await expect(row.getByLabel("Tags")).toHaveValue("memory");
     expect(suggestCount).toBe(2);
