@@ -108,6 +108,11 @@ export function InboxPage() {
     if (!item) return;
     void triggerAiFor([item], true);
   }, [catalog, triggerAiFor]);
+  const onAiTrigger = useCallback((id: string) => {
+    const item = catalog?.infographics.find((candidate) => candidate.id === id);
+    if (!item) return;
+    void triggerAiFor([item], true);
+  }, [catalog, triggerAiFor]);
 
   const onMoved = useCallback((next: MaterializedInfographic) => {
     setMoved(true);
@@ -136,6 +141,6 @@ export function InboxPage() {
   if (state === "empty") return <section className="inbox-page">{heading}{syncing ? <p className="form-message" role="status">Syncing Drive…</p> : null}{syncError ? <p className="form-message form-message--error" role="status">Drive could not be synced. Try again.</p> : null}{moved ? <p className="form-message form-message--success" role="status">Moved to Library</p> : null}<PageState action={<a className="button button--primary" href={routes.add}>Add infographic</a>} description="Paste an image or sync Drive to begin." kind="empty" title="Inbox is empty." /></section>;
   return <section className="inbox-page">{heading}{syncing ? <p className="form-message" role="status">Syncing Drive…</p> : null}{syncError ? <p className="form-message form-message--error" role="status">Drive could not be synced. Try again.</p> : null}{moved ? <p className="form-message form-message--success" role="status">Moved to Library</p> : null}
     {aiErrorList.length === 0 ? null : <p className="form-message" role="status">AI suggestions could not be generated for {aiErrorList.length} item{aiErrorList.length === 1 ? "" : "s"}.</p>}
-    <div className="inbox-list">{catalog!.infographics.map((item) => <InboxRow aiStatus={aiStates[item.id] ?? { kind: "idle" }} categories={catalog!.categories} item={item} key={item.id} onAiApply={onAiApply} onAiDismiss={onAiDismiss} onAiRetry={onAiRetry} onDeleted={onDeleted} onMoved={onMoved} onUpdated={onUpdated} tags={catalog!.tags} />)}</div>
+    <div className="inbox-list">{catalog!.infographics.map((item) => <InboxRow aiStatus={aiStates[item.id] ?? { kind: "idle" }} categories={catalog!.categories} item={item} key={item.id} onAiApply={onAiApply} onAiDismiss={onAiDismiss} onAiRetry={onAiRetry} onAiTrigger={onAiTrigger} onDeleted={onDeleted} onMoved={onMoved} onUpdated={onUpdated} tags={catalog!.tags} />)}</div>
   </section>;
 }

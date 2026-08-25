@@ -59,6 +59,103 @@ test("uploads without metadata, then categorizes and tags in Inbox", async ({ pa
   }]);
 });
 
+test("fills Category and Tags via OpenAI on image add, then PATCHes them after capture", async ({ page }) => {
+  const knownCategory = { id: "00000000-0000-4000-8000-000000000021", displayName: "AI & Machine Learning", normalizedName: "ai & machine learning", slug: "ai-machine-learning" };
+  const knownTag = { id: "00000000-0000-4000-8000-000000000022", displayName: "memory", normalizedName: "memory", slug: "memory" };
+  let capturedId: string | null = null;
+  const patches: { categories?: unknown[]; tags?: unknown[] }[] = [];
+  await page.route("**/api/infographics/suggest-metadata", async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        schemaVersion: 1,
+        model: "gpt-4o-mini",
+        generatedAt: "2026-08-24T08:00:00.000Z",
+        suggestion: {
+          title: "Understanding LLM inference",
+          notes: "How transformers process tokens.",
+          sourceUrl: "https://example.com/llm",
+          sourcePlatform: "twitter",
+          sourceAuthor: "@example",
+          language: "en",
+          category: "AI & Machine Learning",
+          topics: ["memory", "cuda"],
+          rationale: "Visible headline + handle.",
+          confidence: 0.91,
+        },
+      }),
+    });
+  });
+  await page.route("**/api/infographics**", async (route) => {
+    if (route.request().method() === "POST" && new URL(route.request().url()).pathname === "/api/infographics") {
+      capturedId = item.id;
+      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ kind: "created", infographicId: item.id, title: item.title, original: { id: "original" }, thumbnail: { id: "thumbnail" } }) });
+    }
+    if (route.request().method() === "GET") {
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [knownCategory], tags: [knownTag] }) });
+    }
+    if (route.request().method() === "PATCH") {
+      const patch = route.request().postDataJSON() as { categories?: unknown[]; tags?: unknown[] };
+      patches.push(patch);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ updated: true }) });
+    }
+    return route.fallback();
+  });
+
+  await page.goto("/add/");
+  await page.getByLabel("Choose infographic").setInputFiles(imageUpload);
+  await expect(page.getByRole("img", { name: "Infographic preview" })).toBeVisible();
+  await expect(page.locator(".ai-banner--ready")).toBeVisible();
+  await expect(page.getByText(/will move to/i)).toBeVisible();
+  await expect(page.getByLabel("Title")).toHaveValue("Understanding LLM inference");
+  await expect(page.getByLabel("Source URL")).toHaveValue("https://example.com/llm");
+  await expect(page.getByLabel("Platform")).toHaveValue("twitter");
+  await expect(page.getByLabel("Category")).toHaveValue("AI & Machine Learning");
+  await expect(page.getByLabel("Tags")).toHaveValue("memory, cuda");
+  await expect(page.getByLabel("Notes")).toHaveValue("How transformers process tokens.");
+  await page.getByRole("button", { name: "Save to Inbox" }).click();
+  await expect(page).toHaveURL(/\/inbox\//);
+  expect(capturedId).toBe(item.id);
+  expect(patches).toEqual([{
+    categories: [expect.objectContaining({ displayName: "AI & Machine Learning" })],
+    tags: [
+      expect.objectContaining({ displayName: "memory" }),
+      expect.objectContaining({ displayName: "cuda" }),
+    ],
+  }]);
+});
+
+test("retries AI filling from the capture form error banner when suggest-metadata fails", async ({ page }) => {
+  let attempts = 0;
+  await page.route("**/api/infographics/suggest-metadata", async (route) => {
+    attempts += 1;
+    if (attempts === 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "AI_NOT_CONFIGURED" }) });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        schemaVersion: 1,
+        model: "gpt-4o-mini",
+        generatedAt: "2026-08-24T08:00:00.000Z",
+        suggestion: { title: "Retry title", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null, language: "en", category: null, topics: [], rationale: null, confidence: 0.4 },
+      }),
+    });
+  });
+  await page.route("**/api/infographics**", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [], tags: [] }) });
+    return route.fallback();
+  });
+  await page.goto("/add/");
+  await page.getByLabel("Choose infographic").setInputFiles(imageUpload);
+  await expect(page.getByRole("img", { name: "Infographic preview" })).toBeVisible();
+  await expect(page.locator(".ai-banner--error")).toBeVisible();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.locator(".ai-banner--ready")).toBeVisible();
+  await expect(page.getByLabel("Title")).toHaveValue("Retry title");
+  expect(attempts).toBe(2);
+});
+
 test("keeps capture media visible beside details on desktop and stacks the workflow on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1024 });
   await page.goto("/add/");

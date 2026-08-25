@@ -215,4 +215,50 @@ test.describe("Inbox management", () => {
     const lastPatch = state.patches.at(-1) as Record<string, unknown> | undefined;
     expect(lastPatch).toMatchObject({ title: "GPU memory layout", categories: [expect.objectContaining({ displayName: "GPU" })] });
   });
+
+  test("AI-suggested topics auto-fill the Tags field and PATCH persists them on Apply", async ({ page }) => {
+    const items: ManagedItem[] = [buildItem({ id: "00000000-0000-4000-8000-000000000008", title: "Transformer memory" })];
+    const state = await mockInboxManage(page, items, {
+      suggestions: {
+        "00000000-0000-4000-8000-000000000008": { suggestion: { title: "Transformer memory layout", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: null, language: "en", topics: ["memory", "cuda", "transformer"], rationale: "Visible", confidence: 0.8 } },
+      },
+    });
+    await page.goto("/inbox/");
+    const row = page.locator(".inbox-row").first();
+    await expect(row.locator(".ai-banner--ready")).toBeVisible();
+    await row.getByRole("button", { name: "Apply AI" }).click();
+    await expect(row.getByLabel("Tags")).toHaveValue("memory, cuda, transformer");
+    // Without a category, Apply is the action and only the tags are sent.
+    await row.getByRole("button", { name: "Apply" }).click();
+    await expect(row.getByText("Saved.", { exact: true })).toBeVisible();
+    const lastPatch = state.patches.at(-1) as Record<string, unknown> | undefined;
+    expect(lastPatch?.tags).toEqual(expect.arrayContaining([
+      expect.objectContaining({ displayName: "memory" }),
+      expect.objectContaining({ displayName: "cuda" }),
+      expect.objectContaining({ displayName: "transformer" }),
+    ]));
+  });
+
+  test("'AI ile doldur' button manually re-triggers AI when the first attempt failed", async ({ page }) => {
+    const items: ManagedItem[] = [buildItem({ id: "00000000-0000-4000-8000-000000000009", title: "Retry me" })];
+    let suggestCount = 0;
+    await page.route(/\/api\/infographics\/[^/]+\/suggest$/, async (route) => {
+      suggestCount += 1;
+      if (suggestCount === 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "AI_NOT_CONFIGURED" }) });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Retry title", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.7 } }) });
+    });
+    await page.route("**/api/infographics", async (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: items, categories: [], tags: [] }) });
+      return route.fallback();
+    });
+    await page.goto("/inbox/");
+    const row = page.locator(".inbox-row").first();
+    await expect(row.locator(".ai-banner--error")).toBeVisible();
+    await row.getByRole("button", { name: "AI ile doldur" }).click();
+    await expect(row.locator(".ai-banner--ready")).toBeVisible();
+    await row.getByRole("button", { name: "Apply AI" }).click();
+    await expect(row.getByLabel("Title")).toHaveValue("Retry title");
+    await expect(row.getByLabel("Tags")).toHaveValue("memory");
+    expect(suggestCount).toBe(2);
+  });
 });

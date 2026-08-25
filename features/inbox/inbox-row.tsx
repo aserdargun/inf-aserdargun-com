@@ -1,7 +1,7 @@
 "use client";
 
 import type { AiMetadataSuggestion, Category, InfographicPatch, MaterializedInfographic, Tag } from "@inf/contracts";
-import { ImagePlus, LoaderCircle, Trash2 } from "lucide-react";
+import { ImagePlus, LoaderCircle, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { ApiClientError, apiRequest, apiRequestForm } from "../../lib/api-client";
@@ -17,6 +17,7 @@ interface InboxRowProps {
   onAiApply: (id: string, suggestion: AiMetadataSuggestion) => void;
   onAiDismiss: (id: string) => void;
   onAiRetry: (id: string) => void;
+  onAiTrigger?: (id: string) => void;
   onMoved: (next: MaterializedInfographic) => void;
   onUpdated: (next: MaterializedInfographic) => void;
   onDeleted: (id: string) => void;
@@ -50,7 +51,7 @@ export function parseTags(value: string, known: readonly Tag[]): Tag[] {
 const MAX_IMAGE_BYTES = 20_000_000;
 const supportedImageMimes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]);
 
-export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDismiss, onAiRetry, onMoved, onUpdated, onDeleted }: InboxRowProps) {
+export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDismiss, onAiRetry, onAiTrigger, onMoved, onUpdated, onDeleted }: InboxRowProps) {
   const [title, setTitle] = useState(item.title);
   const [notes, setNotes] = useState(item.notes ?? "");
   const [sourceUrl, setSourceUrl] = useState(item.sourceUrl ?? "");
@@ -80,6 +81,14 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
     if (suggestion.sourcePlatform) setSourcePlatform(suggestion.sourcePlatform);
     if (suggestion.sourceAuthor) setSourceAuthor(suggestion.sourceAuthor);
     if (suggestion.category) setCategory(suggestion.category);
+    if (Array.isArray(suggestion.topics) && suggestion.topics.length > 0) {
+      // Topics are returned as a string array; the tag editor consumes a comma-separated string.
+      const nextTags = suggestion.topics
+        .map((topic) => topic.normalize("NFKC").trim())
+        .filter(Boolean)
+        .join(", ");
+      if (nextTags) setTagText(nextTags);
+    }
     onAiApply(item.id, suggestion);
   }
 
@@ -178,6 +187,9 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
       {error ? <p aria-live="polite" className="form-message form-message--error" role="status">Changes could not be saved. Try again.</p> : null}
       {savedFlash === "saved" ? <p aria-live="polite" className="form-message form-message--success" role="status">Saved.</p> : null}
       <div className="inbox-row__actions">
+        {onAiTrigger ? <Button disabled={saving || deleting || aiStatus.kind === "loading"} onClick={() => onAiTrigger(item.id)} variant="secondary">
+          <Sparkles aria-hidden="true" size={16} strokeWidth={1.75} /> {aiStatus.kind === "loading" ? "Filling with AI…" : "AI ile doldur"}
+        </Button> : null}
         <Button disabled={saving || deleting} onClick={() => void apply()}>{saving ? "Saving…" : category.trim() ? "Move to Library" : "Apply"}</Button>
         <Button disabled={saving || deleting} onClick={() => setConfirmDelete(true)} variant="quiet">
           <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} /> Delete
