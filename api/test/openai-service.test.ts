@@ -37,9 +37,6 @@ describe("OpenAiService", () => {
         message: { role: "assistant", content: JSON.stringify({
           title: "  Spaced title  ",
           notes: "Concise notes.",
-          sourceUrl: "https://example.com/post",
-          sourcePlatform: "Twitter",
-          sourceAuthor: "@example",
           language: "en",
           category: "GPU",
           topics: ["ai", "policy"],
@@ -72,9 +69,6 @@ describe("OpenAiService", () => {
     expect(response.generatedAt).toBe("2026-08-24T08:00:00.000Z");
     expect(response.suggestion.title).toBe("Spaced title");
     expect(response.suggestion.notes).toBe("Concise notes.");
-    expect(response.suggestion.sourceUrl).toBe("https://example.com/post");
-    expect(response.suggestion.sourcePlatform).toBe("Twitter");
-    expect(response.suggestion.sourceAuthor).toBe("@example");
     expect(response.suggestion.language).toBe("en");
     expect(response.suggestion.category).toBe("GPU");
     expect(response.suggestion.topics).toEqual(["ai", "policy"]);
@@ -165,8 +159,7 @@ describe("OpenAiService", () => {
     const fetchImpl = vi.fn(async () => buildResponse({
       id: "x", model: "gpt-4o-mini",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
-        title: "ok", notes: "ok", sourceUrl: "not a real url at all", sourcePlatform: "twitter",
-        sourceAuthor: "@user", language: "en", category: "ai", topics: ["a"],
+        title: "ok", notes: "ok", language: "en", category: "ai", topics: ["x".repeat(81)],
         rationale: "ok", confidence: 0.5,
       }) } }],
     })) as unknown as typeof fetch;
@@ -180,9 +173,6 @@ describe("OpenAiService", () => {
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "```json\n" + JSON.stringify({
         title: "Markdown-wrapped title",
         notes: "Notes survive the fence.",
-        sourceUrl: null,
-        sourcePlatform: "twitter",
-        sourceAuthor: "@user",
         language: "en",
         category: "AI",
         topics: ["ai"],
@@ -213,9 +203,6 @@ describe("OpenAiService", () => {
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
         title: "Word-confidence title",
         notes: null,
-        sourceUrl: null,
-        sourcePlatform: null,
-        sourceAuthor: null,
         language: null,
         category: null,
         topics: [],
@@ -234,9 +221,6 @@ describe("OpenAiService", () => {
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
         title: "  ",
         notes: "",
-        sourceUrl: "",
-        sourcePlatform: "",
-        sourceAuthor: null,
         language: null,
         category: null,
         topics: ["  ", "ai", ""],
@@ -248,7 +232,6 @@ describe("OpenAiService", () => {
     const result = await service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" });
     expect(result.suggestion.title).toBeNull();
     expect(result.suggestion.notes).toBeNull();
-    expect(result.suggestion.sourceUrl).toBeNull();
     expect(result.suggestion.topics).toEqual(["ai"]);
   });
 
@@ -262,9 +245,6 @@ describe("OpenAiService", () => {
         choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
           title: "Recovered title",
           notes: null,
-          sourceUrl: null,
-          sourcePlatform: null,
-          sourceAuthor: null,
           language: null,
           category: null,
           topics: [],

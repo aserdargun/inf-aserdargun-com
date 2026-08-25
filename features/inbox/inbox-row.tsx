@@ -54,9 +54,6 @@ const supportedImageMimes = new Set(["image/png", "image/jpeg", "image/webp", "i
 export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDismiss, onAiRetry, onAiTrigger, onMoved, onUpdated, onDeleted }: InboxRowProps) {
   const [title, setTitle] = useState(item.title);
   const [notes, setNotes] = useState(item.notes ?? "");
-  const [sourceUrl, setSourceUrl] = useState(item.sourceUrl ?? "");
-  const [sourcePlatform, setSourcePlatform] = useState(item.sourcePlatform ?? "");
-  const [sourceAuthor, setSourceAuthor] = useState(item.sourceAuthor ?? "");
   const [category, setCategory] = useState("");
   const [tagText, setTagText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -77,9 +74,6 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
   function applyAi(suggestion: AiMetadataSuggestion) {
     if (suggestion.title) setTitle(suggestion.title);
     if (suggestion.notes) setNotes(suggestion.notes);
-    if (suggestion.sourceUrl) setSourceUrl(suggestion.sourceUrl);
-    if (suggestion.sourcePlatform) setSourcePlatform(suggestion.sourcePlatform);
-    if (suggestion.sourceAuthor) setSourceAuthor(suggestion.sourceAuthor);
     if (suggestion.category) setCategory(suggestion.category);
     if (Array.isArray(suggestion.topics) && suggestion.topics.length > 0) {
       // Topics are returned as a string array; the tag editor consumes a comma-separated string.
@@ -97,9 +91,6 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
     const patch: InfographicPatch = {};
     if (title.trim() && title.trim() !== item.title) patch.title = title.trim();
     if (notes.trim() !== (item.notes ?? "")) patch.notes = notes.trim() ? notes.trim() : null;
-    if (sourceUrl.trim() !== (item.sourceUrl ?? "")) patch.sourceUrl = sourceUrl.trim() ? sourceUrl.trim() : null;
-    if (sourcePlatform.trim() !== (item.sourcePlatform ?? "")) patch.sourcePlatform = sourcePlatform.trim() ? sourcePlatform.trim() : null;
-    if (sourceAuthor.trim() !== (item.sourceAuthor ?? "")) patch.sourceAuthor = sourceAuthor.trim() ? sourceAuthor.trim() : null;
     if (category.trim()) patch.categories = [createTaxonomy<Category>(category, categories)];
     if (tagText.trim()) patch.tags = parseTags(tagText, tags);
     if (Object.keys(patch).length === 0) return;
@@ -110,9 +101,9 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
       setCategory(""); setTagText("");
       if (patch.categories?.length) {
         // Move the row to Library; the next catalog refresh will reflect this.
-        onMoved({ ...item, ...(patch.title !== undefined ? { title: patch.title } : {}), ...(patch.notes !== undefined ? { notes: patch.notes } : {}), ...(patch.sourceUrl !== undefined ? { sourceUrl: patch.sourceUrl } : {}), ...(patch.sourcePlatform !== undefined ? { sourcePlatform: patch.sourcePlatform } : {}), ...(patch.sourceAuthor !== undefined ? { sourceAuthor: patch.sourceAuthor } : {}) });
+        onMoved({ ...item, ...(patch.title !== undefined ? { title: patch.title } : {}), ...(patch.notes !== undefined ? { notes: patch.notes } : {}) });
       } else {
-        const next: MaterializedInfographic = { ...item, ...(patch.title !== undefined ? { title: patch.title } : {}), ...(patch.notes !== undefined ? { notes: patch.notes } : {}), ...(patch.sourceUrl !== undefined ? { sourceUrl: patch.sourceUrl } : {}), ...(patch.sourcePlatform !== undefined ? { sourcePlatform: patch.sourcePlatform } : {}), ...(patch.sourceAuthor !== undefined ? { sourceAuthor: patch.sourceAuthor } : {}) };
+        const next: MaterializedInfographic = { ...item, ...(patch.title !== undefined ? { title: patch.title } : {}), ...(patch.notes !== undefined ? { notes: patch.notes } : {}) };
         onUpdated(next);
         setSavedFlash("saved");
         setSaving(false);
@@ -178,9 +169,6 @@ export function InboxRow({ item, categories, tags, aiStatus, onAiApply, onAiDism
       <div className="inbox-row__fields">
         <label className="inbox-editor__field">Title<input aria-label="Title" maxLength={200} onChange={(event) => setTitle(event.currentTarget.value)} value={title} /></label>
         <label className="inbox-editor__field">Notes<textarea aria-label="Notes" maxLength={10000} onChange={(event) => setNotes(event.currentTarget.value)} rows={3} value={notes} /></label>
-        <label className="inbox-editor__field">Source URL<input aria-label="Source URL" onChange={(event) => setSourceUrl(event.currentTarget.value)} placeholder="https://" type="url" value={sourceUrl} /></label>
-        <label className="inbox-editor__field">Platform<input aria-label="Platform" maxLength={100} onChange={(event) => setSourcePlatform(event.currentTarget.value)} value={sourcePlatform} /></label>
-        <label className="inbox-editor__field">Source author<input aria-label="Source author" maxLength={200} onChange={(event) => setSourceAuthor(event.currentTarget.value)} value={sourceAuthor} /></label>
         <CategoryEditor categories={categories} onChange={setCategory} value={category} />
         <TagEditor onChange={setTagText} tags={tags} value={tagText} />
       </div>

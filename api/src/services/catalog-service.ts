@@ -30,7 +30,6 @@ export class CatalogService {
       .filter((item) => categoryIds === undefined || item.categoryIds.some((id) => categoryIds.has(id)))
       .filter((item) => tagIds === undefined || item.tagIds.some((id) => tagIds.has(id)))
       .filter((item) => query.favorite === undefined || item.favorite === query.favorite)
-      .filter((item) => query.source === undefined || (query.source ? item.sourceUrl !== null : item.sourceUrl === null))
       .sort((left, right) => query.sort === "least-seen"
         ? (left.lastSeenAt ?? "").localeCompare(right.lastSeenAt ?? "") || left.id.localeCompare(right.id)
         : right.capturedAt.localeCompare(left.capturedAt) || left.id.localeCompare(right.id));

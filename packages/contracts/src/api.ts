@@ -25,17 +25,11 @@ export const SyncRequestSchema = z.strictObject({
 export const CaptureMetadataSchema = z.strictObject({
   title: PublicSafeTitleSchema.optional(),
   notes: z.string().max(10_000).nullable().optional(),
-  sourceUrl: z.url().nullable().optional(),
-  sourcePlatform: z.string().trim().min(1).max(100).nullable().optional(),
-  sourceAuthor: z.string().trim().min(1).max(200).nullable().optional(),
 });
 
 export const InfographicPatchSchema = z.strictObject({
   title: PublicSafeTitleSchema.optional(),
   notes: z.string().max(10_000).nullable().optional(),
-  sourceUrl: z.url().nullable().optional(),
-  sourcePlatform: z.string().trim().min(1).max(100).nullable().optional(),
-  sourceAuthor: z.string().trim().min(1).max(200).nullable().optional(),
   favorite: z.boolean().optional(),
   archived: z.boolean().optional(),
   categories: z.array(CategorySchema).optional(),
@@ -48,9 +42,6 @@ export const ReviewRequestSchema = z.strictObject({ rating: ReviewRatingSchema }
 export const AiMetadataSuggestionSchema = z.strictObject({
   title: PublicSafeTitleSchema.nullable(),
   notes: z.string().max(10_000).nullable(),
-  sourceUrl: z.url().nullable(),
-  sourcePlatform: z.string().trim().min(1).max(100).nullable(),
-  sourceAuthor: z.string().trim().min(1).max(200).nullable(),
   language: z.string().trim().min(2).max(8).nullable(),
   /**
    * A single primary category label that best classifies the infographic. The
@@ -101,7 +92,6 @@ export const OwnerCatalogQuerySchema = z.strictObject({
   category: CatalogQuerySlugSchema.optional(),
   tag: CatalogQuerySlugSchema.optional(),
   favorite: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
-  source: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   sort: z.enum(["recent", "least-seen"]).optional(),
 });
 

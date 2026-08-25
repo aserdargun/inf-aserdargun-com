@@ -16,9 +16,6 @@ export const EVENT_SCHEMA_VERSION = 1 as const;
 
 const PrivateMetadataFields = {
   notes: z.string().max(10_000).nullable().optional(),
-  sourceUrl: z.url().nullable().optional(),
-  sourcePlatform: z.string().trim().min(1).max(100).nullable().optional(),
-  sourceAuthor: z.string().trim().min(1).max(200).nullable().optional(),
 };
 
 export const InfographicCreatedPayloadSchema = z.strictObject({

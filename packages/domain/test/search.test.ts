@@ -21,9 +21,6 @@ function itemFixture(): MaterializedInfographic {
     id: "11111111-1111-4111-8111-111111111111",
     title: "CUDA cache diagram",
     notes: "Coalesced kernel access reduces stalls.",
-    sourceUrl: "https://developer.nvidia.com/cuda-guide",
-    sourcePlatform: "NVIDIA",
-    sourceAuthor: "Ada Lovelace",
     originalDriveFileId: "original-1",
     thumbnailDriveFileId: "thumbnail-1",
     sha256: "a".repeat(64),
@@ -52,8 +49,6 @@ describe("searchCatalog", () => {
   test.each([
     ["title", "cuda"],
     ["notes", "coalesced kernel"],
-    ["source author", "ada lovelace"],
-    ["source URL", "nvidia.com/cuda"],
     ["resolved tag display name", "gpu memory"],
     ["resolved tag normalized name", "memory hierarchy"],
     ["resolved category display name", "visual computing"],

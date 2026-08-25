@@ -1,8 +1,7 @@
 import { expect, test } from "playwright/test";
 
 const item = {
-  id: "00000000-0000-4000-8000-000000000001", title: "GPU memory hierarchy", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
-  originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
+  id: "00000000-0000-4000-8000-000000000001", title: "GPU memory hierarchy", notes: null,  originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
   favorite: false, archived: false, createdAt: "2026-08-20T10:00:00.000Z", capturedAt: "2026-08-20T10:00:00.000Z", processedAt: null, lastSeenAt: null,
   seenCount: 0, categoryIds: [], tagIds: [], folderState: "Inbox", reviewCount: 0, lastReviewedAt: null, reviewDueAt: "2026-08-21T10:00:00.000Z",
 };

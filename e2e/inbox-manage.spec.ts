@@ -8,9 +8,6 @@ interface ManagedItem {
   id: string;
   title: string;
   notes: string | null;
-  sourceUrl: string | null;
-  sourcePlatform: string | null;
-  sourceAuthor: string | null;
   originalDriveFileId: string;
   thumbnailDriveFileId: string;
   sha256: string;
@@ -34,8 +31,7 @@ interface ManagedItem {
 
 function buildItem(overrides: Partial<ManagedItem> = {}): ManagedItem {
   return {
-    id: "00000000-0000-4000-8000-000000000010", title: "Learning loop", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
-    originalDriveFileId: "original-1", thumbnailDriveFileId: "thumbnail-1", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
+    id: "00000000-0000-4000-8000-000000000010", title: "Learning loop", notes: null,    originalDriveFileId: "original-1", thumbnailDriveFileId: "thumbnail-1", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
     favorite: false, archived: false, createdAt: "2026-08-25T10:00:00.000Z", capturedAt: "2026-08-25T10:00:00.000Z", processedAt: null, lastSeenAt: null,
     seenCount: 0, categoryIds: [], tagIds: [], folderState: "Inbox", reviewCount: 0, lastReviewedAt: null, reviewDueAt: null,
     ...overrides,
@@ -43,7 +39,7 @@ function buildItem(overrides: Partial<ManagedItem> = {}): ManagedItem {
 }
 
 interface MockOptions {
-  suggestions?: Record<string, { suggestion: { title?: string | null; notes?: string | null; sourceUrl?: string | null; sourcePlatform?: string | null; sourceAuthor?: string | null; category?: string | null; confidence: number; rationale?: string | null; topics?: string[]; language?: string | null } }>;
+  suggestions?: Record<string, { suggestion: { title?: string | null; notes?: string | null; category?: string | null; confidence: number; rationale?: string | null; topics?: string[]; language?: string | null } }>;
   suggestionsFail?: number;
   replaceOk?: boolean;
   replaceFail?: number;
@@ -64,7 +60,7 @@ async function mockInboxManage(page: import("playwright/test").Page, items: Mana
     const id = segments[segments.length - 2]!;
     const override = options.suggestions?.[id];
     if (override) return route.fulfill({ contentType: "application/json", body: JSON.stringify(override) });
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Suggested title", notes: "Suggested notes", sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: "GPU", language: "en", topics: ["learning"], rationale: "Visible", confidence: 0.7 } }) });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Suggested title", notes: "Suggested notes",category: "GPU", language: "en", topics: ["learning"], rationale: "Visible", confidence: 0.7 } }) });
   });
   await page.route(/\/api\/infographics\/[^/]+\/image$/, async (route) => {
     state.replaceCount += 1;
@@ -90,7 +86,7 @@ async function mockInboxManage(page: import("playwright/test").Page, items: Mana
       if (item && Array.isArray(patch.categories) && patch.categories.length > 0) {
         state.items = state.items.filter((candidate) => candidate.id !== id);
       } else if (item) {
-        const merged: ManagedItem = { ...item, title: typeof patch.title === "string" ? patch.title : item.title, notes: patch.notes === null ? null : (typeof patch.notes === "string" ? patch.notes : item.notes), sourceUrl: patch.sourceUrl === null ? null : (typeof patch.sourceUrl === "string" ? patch.sourceUrl : item.sourceUrl), sourcePlatform: patch.sourcePlatform === null ? null : (typeof patch.sourcePlatform === "string" ? patch.sourcePlatform : item.sourcePlatform), sourceAuthor: patch.sourceAuthor === null ? null : (typeof patch.sourceAuthor === "string" ? patch.sourceAuthor : item.sourceAuthor) };
+        const merged: ManagedItem = { ...item, title: typeof patch.title === "string" ? patch.title : item.title, notes: patch.notes === null ? null : (typeof patch.notes === "string" ? patch.notes : item.notes) };
         state.items = state.items.map((candidate) => candidate.id === id ? merged : candidate);
       }
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ updated: true }) });
@@ -118,7 +114,7 @@ test.describe("Inbox management", () => {
     ];
     const state = await mockInboxManage(page, items, {
       suggestions: {
-        "00000000-0000-4000-8000-000000000001": { suggestion: { title: "Suggested title", notes: "Suggested notes", sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: null, language: "en", topics: ["learning"], rationale: "Visible", confidence: 0.7 } },
+        "00000000-0000-4000-8000-000000000001": { suggestion: { title: "Suggested title", notes: "Suggested notes",category: null, language: "en", topics: ["learning"], rationale: "Visible", confidence: 0.7 } },
       },
     });
     await page.goto("/inbox/");
@@ -130,11 +126,10 @@ test.describe("Inbox management", () => {
     await firstRow.getByRole("button", { name: "Apply AI" }).click();
     await expect(firstRow.getByLabel("Title")).toHaveValue("Suggested title");
     await firstRow.getByLabel("Notes").fill("My own notes");
-    await firstRow.getByLabel("Source URL").fill("https://example.com/loop");
     await firstRow.getByRole("button", { name: "Apply" }).click();
     await expect(firstRow.getByText("Saved.", { exact: true })).toBeVisible();
     const lastPatch = state.patches.at(-1) as Record<string, unknown> | undefined;
-    expect(lastPatch).toMatchObject({ title: "Suggested title", notes: "My own notes", sourceUrl: "https://example.com/loop" });
+    expect(lastPatch).toMatchObject({ title: "Suggested title", notes: "My own notes" });
     expect(state.suggestCount).toBeGreaterThanOrEqual(2);
   });
 
@@ -197,7 +192,7 @@ test.describe("Inbox management", () => {
     const items: ManagedItem[] = [buildItem({ id: "00000000-0000-4000-8000-000000000007", title: "GPU memory" })];
     const state = await mockInboxManage(page, items, {
       suggestions: {
-        "00000000-0000-4000-8000-000000000007": { suggestion: { title: "GPU memory layout", notes: "VRAM hierarchy", sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.85 } },
+        "00000000-0000-4000-8000-000000000007": { suggestion: { title: "GPU memory layout", notes: "VRAM hierarchy",category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.85 } },
       },
     });
     await page.goto("/inbox/");
@@ -220,7 +215,7 @@ test.describe("Inbox management", () => {
     const items: ManagedItem[] = [buildItem({ id: "00000000-0000-4000-8000-000000000008", title: "Transformer memory" })];
     const state = await mockInboxManage(page, items, {
       suggestions: {
-        "00000000-0000-4000-8000-000000000008": { suggestion: { title: "Transformer memory layout", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: null, language: "en", topics: ["memory", "cuda", "transformer"], rationale: "Visible", confidence: 0.8 } },
+        "00000000-0000-4000-8000-000000000008": { suggestion: { title: "Transformer memory layout", notes: null,category: null, language: "en", topics: ["memory", "cuda", "transformer"], rationale: "Visible", confidence: 0.8 } },
       },
     });
     await page.goto("/inbox/");
@@ -245,7 +240,7 @@ test.describe("Inbox management", () => {
     await page.route(/\/api\/infographics\/[^/]+\/suggest$/, async (route) => {
       suggestCount += 1;
       if (suggestCount === 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "AI_NOT_CONFIGURED" }) });
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Retry title", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null, category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.7 } }) });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ suggestion: { title: "Retry title", notes: null,category: "GPU", language: "en", topics: ["memory"], rationale: "Visible", confidence: 0.7 } }) });
     });
     await page.route("**/api/infographics", async (route) => {
       if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: items, categories: [], tags: [] }) });

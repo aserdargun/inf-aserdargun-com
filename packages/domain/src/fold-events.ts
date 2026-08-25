@@ -94,9 +94,6 @@ function applyCreated(state: FoldState, event: Extract<InfEvent, { type: "infogr
     id: event.infographicId,
     title: payload.title,
     notes: payload.notes ?? null,
-    sourceUrl: payload.sourceUrl ?? null,
-    sourcePlatform: payload.sourcePlatform ?? null,
-    sourceAuthor: payload.sourceAuthor ?? null,
     originalDriveFileId: payload.originalDriveFileId,
     thumbnailDriveFileId: payload.thumbnailDriveFileId,
     sha256: payload.sha256,
@@ -131,9 +128,6 @@ function applyMetadataUpdated(
   const payload = event.payload;
   if (payload.title !== undefined) item.title = payload.title;
   if (payload.notes !== undefined) item.notes = payload.notes;
-  if (payload.sourceUrl !== undefined) item.sourceUrl = payload.sourceUrl;
-  if (payload.sourcePlatform !== undefined) item.sourcePlatform = payload.sourcePlatform;
-  if (payload.sourceAuthor !== undefined) item.sourceAuthor = payload.sourceAuthor;
 }
 
 function applyCategoriesAssigned(

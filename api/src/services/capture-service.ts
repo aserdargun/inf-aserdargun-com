@@ -21,9 +21,6 @@ export interface CaptureInput {
   name?: string;
   title?: string;
   notes?: string | null;
-  sourceUrl?: string | null;
-  sourcePlatform?: string | null;
-  sourceAuthor?: string | null;
 }
 
 export type CaptureResult =
@@ -70,7 +67,7 @@ export class CaptureService {
     const infographicId = this.uuid();
     const title = publicSafeTitle(input.title ?? input.name);
     const timestamp = this.now().toISOString();
-    InfographicCreatedPayloadSchema.parse({ originalDriveFileId: "pending", thumbnailDriveFileId: "pending", sha256: image.sha256, detectedMimeType: image.detectedMime, width: image.width, height: image.height, title, notes: input.notes, sourceUrl: input.sourceUrl, sourcePlatform: input.sourcePlatform, sourceAuthor: input.sourceAuthor, capturedAt: timestamp, createdAt: timestamp, folderState: "Inbox" });
+    InfographicCreatedPayloadSchema.parse({ originalDriveFileId: "pending", thumbnailDriveFileId: "pending", sha256: image.sha256, detectedMimeType: image.detectedMime, width: image.width, height: image.height, title, notes: input.notes, capturedAt: timestamp, createdAt: timestamp, folderState: "Inbox" });
     const created: StoredFile[] = [];
     try {
       const original = await this.options.storage.createFile({
@@ -94,7 +91,7 @@ export class CaptureService {
         payload: {
           originalDriveFileId: original.id, thumbnailDriveFileId: thumbnail.id, sha256: image.sha256,
           detectedMimeType: image.detectedMime, width: image.width, height: image.height, title,
-          ...(input.notes !== undefined ? { notes: input.notes } : {}), ...(input.sourceUrl !== undefined ? { sourceUrl: input.sourceUrl } : {}), ...(input.sourcePlatform !== undefined ? { sourcePlatform: input.sourcePlatform } : {}), ...(input.sourceAuthor !== undefined ? { sourceAuthor: input.sourceAuthor } : {}),
+          ...(input.notes !== undefined ? { notes: input.notes } : {}),
           capturedAt: timestamp, createdAt: timestamp, folderState: "Inbox",
         },
       });

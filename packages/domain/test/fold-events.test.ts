@@ -35,9 +35,6 @@ function createdPayload() {
     height: 900,
     title: "CUDA diagram",
     notes: "Private learning note",
-    sourceUrl: "https://developer.nvidia.com/example",
-    sourcePlatform: "NVIDIA",
-    sourceAuthor: "NVIDIA Developer",
     capturedAt: "2026-08-20T09:59:00.000Z",
     createdAt: "2026-08-20T10:00:00.000Z",
     folderState: "Inbox",
@@ -169,7 +166,6 @@ describe("foldEvents", () => {
       event("infographic.metadataUpdated", "00000002-0000-4000-8000-000000000002", "2026-08-20T10:01:00.000Z", {
         title: "Memory coalescing",
         notes: null,
-        sourceAuthor: "A. Researcher",
       }),
       event("infographic.categoriesAssigned", "00000003-0000-4000-8000-000000000003", "2026-08-20T10:02:00.000Z", { categories: [CATEGORY] }),
       event("infographic.categoriesAssigned", "00000004-0000-4000-8000-000000000004", "2026-08-20T10:03:00.000Z", { categories: [SECOND_CATEGORY] }),
@@ -196,7 +192,6 @@ describe("foldEvents", () => {
     expect(result.catalog.infographics[0]).toMatchObject({
       title: "Memory coalescing",
       notes: null,
-      sourceAuthor: "A. Researcher",
       categoryIds: [SECOND_CATEGORY_ID],
       tagIds: [TAG_ID],
       favorite: true,

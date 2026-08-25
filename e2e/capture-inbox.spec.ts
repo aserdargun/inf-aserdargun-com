@@ -4,8 +4,7 @@ import { expect, test } from "playwright/test";
 const image = readFileSync("api/test/fixtures/valid-infographic.png");
 const imageUpload = { name: "learning-loop.png", mimeType: "image/png", buffer: image };
 const item = {
-  id: "00000000-0000-4000-8000-000000000010", title: "Learning loop", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
-  originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
+  id: "00000000-0000-4000-8000-000000000010", title: "Learning loop", notes: null,  originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
   favorite: false, archived: false, createdAt: "2026-08-20T10:00:00.000Z", capturedAt: "2026-08-20T10:00:00.000Z", processedAt: null, lastSeenAt: null,
   seenCount: 0, categoryIds: [], tagIds: [], folderState: "Inbox", reviewCount: 0, lastReviewedAt: null, reviewDueAt: null,
 };
@@ -75,9 +74,6 @@ test("fills Category and Tags via OpenAI on image add, then PATCHes them after c
         suggestion: {
           title: "Understanding LLM inference",
           notes: "How transformers process tokens.",
-          sourceUrl: "https://example.com/llm",
-          sourcePlatform: "twitter",
-          sourceAuthor: "@example",
           language: "en",
           category: "AI & Machine Learning",
           topics: ["memory", "cuda"],
@@ -109,8 +105,6 @@ test("fills Category and Tags via OpenAI on image add, then PATCHes them after c
   await expect(page.locator(".ai-banner--ready")).toBeVisible();
   await expect(page.getByText(/will move to/i)).toBeVisible();
   await expect(page.getByLabel("Title")).toHaveValue("Understanding LLM inference");
-  await expect(page.getByLabel("Source URL")).toHaveValue("https://example.com/llm");
-  await expect(page.getByLabel("Platform")).toHaveValue("twitter");
   await expect(page.getByLabel("Category")).toHaveValue("AI & Machine Learning");
   await expect(page.getByLabel("Tags")).toHaveValue("memory, cuda");
   await expect(page.getByLabel("Notes")).toHaveValue("How transformers process tokens.");
@@ -138,7 +132,7 @@ test("retries AI filling from the capture form error banner when suggest-metadat
         schemaVersion: 1,
         model: "gpt-4o-mini",
         generatedAt: "2026-08-24T08:00:00.000Z",
-        suggestion: { title: "Retry title", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null, language: "en", category: null, topics: [], rationale: null, confidence: 0.4 },
+        suggestion: { title: "Retry title", notes: null,language: "en", category: null, topics: [], rationale: null, confidence: 0.4 },
       }),
     });
   });
@@ -188,7 +182,7 @@ test("uses one 44px native picker with keyboard, drop, and clipboard image paths
   const choose = page.getByLabel("Choose infographic");
   await expect(page.getByRole("button", { name: "Choose image" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Choose infographic" })).toHaveCount(1);
-  for (const control of [paste, choose, page.getByLabel("Title"), page.getByLabel("Source URL"), page.getByLabel("Platform"), page.getByLabel("Notes"), page.getByRole("button", { name: "Save to Inbox" })]) {
+  for (const control of [paste, choose, page.getByLabel("Title"), page.getByLabel("Notes"), page.getByRole("button", { name: "Save to Inbox" })]) {
     const box = await control.boundingBox();
     expect(box?.height).toBeGreaterThanOrEqual(44);
   }

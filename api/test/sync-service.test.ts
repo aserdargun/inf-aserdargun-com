@@ -61,12 +61,13 @@ describe("capture and manual Inbox sync", () => {
   test("validates complete optional capture metadata before writes and persists explicit nulls", async () => {
     const f = await fixture();
     const bytes = await fixtureImage();
-    await expect(f.capture.capture({ bytes, declaredMime: "image/png", name: "file.png", title: "A separate title", notes: null, sourceUrl: null, sourcePlatform: undefined, sourceAuthor: null }))
+    await expect(f.capture.capture({ bytes, declaredMime: "image/png", name: "file.png", title: "A separate title", notes: null }))
       .resolves.toMatchObject({ kind: "created", title: "A separate title" });
-    expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ title: "A separate title", notes: null, sourceUrl: null, sourceAuthor: null }) }));
+    expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ title: "A separate title", notes: null }) }));
 
     const invalid = await fixture();
-    await expect(invalid.capture.capture({ bytes, declaredMime: "image/png", name: "file.png", sourceUrl: "not-a-url" }))
+    // Image processing rejects undecodable bytes before any storage or event side effect runs.
+    await expect(invalid.capture.capture({ bytes: Buffer.from("not an image"), declaredMime: "image/png", name: "file.png" }))
       .rejects.toThrow();
     expect(await invalid.storage.listChildren(ids.inbox)).toEqual([]);
     expect(await invalid.storage.listChildren(ids.thumbnails)).toEqual([]);

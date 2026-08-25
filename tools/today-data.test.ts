@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { formatDueTiming, recentInfographics, reviewNextInfographics } from "../lib/today-data";
 
 function item(overrides: Partial<MaterializedInfographic>): MaterializedInfographic {
-  return { id: "00000000-0000-4000-8000-000000000001", title: "Diagram", notes: null, sourceUrl: null, sourcePlatform: null, sourceAuthor: null, originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1600, height: 400, favorite: false, archived: false, createdAt: "2026-08-20T10:00:00.000Z", capturedAt: "2026-08-20T10:00:00.000Z", processedAt: null, lastSeenAt: null, seenCount: 0, categoryIds: [], tagIds: [], folderState: "Inbox", reviewCount: 0, lastReviewedAt: null, reviewDueAt: null, ...overrides };
+  return { id: "00000000-0000-4000-8000-000000000001", title: "Diagram", notes: null, originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1600, height: 400, favorite: false, archived: false, createdAt: "2026-08-20T10:00:00.000Z", capturedAt: "2026-08-20T10:00:00.000Z", processedAt: null, lastSeenAt: null, seenCount: 0, categoryIds: [], tagIds: [], folderState: "Inbox", reviewCount: 0, lastReviewedAt: null, reviewDueAt: null, ...overrides };
 }
 
 describe("Today data", () => {

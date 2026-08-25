@@ -35,7 +35,7 @@ export interface OwnerDependencies {
   openAiService?: OpenAiService | null;
 }
 
-const metadataKeys = ["title", "notes", "sourceUrl", "sourcePlatform", "sourceAuthor"] as const;
+const metadataKeys = ["title", "notes"] as const;
 
 function now(deps: OwnerDependencies): Date { return (deps.now ?? (() => new Date()))(); }
 function uuid(deps: OwnerDependencies): string { return (deps.uuid ?? randomUUID)(); }
@@ -298,7 +298,7 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
   return authorized(request, deps, async () => {
     const form = await parseMultipart(request); const file = form.get("file");
     if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
-    const metadataResult = CaptureMetadataSchema.safeParse({ title: optionalFormString(form, "title"), notes: optionalFormString(form, "notes"), sourceUrl: optionalFormString(form, "sourceUrl"), sourcePlatform: optionalFormString(form, "sourcePlatform"), sourceAuthor: optionalFormString(form, "sourceAuthor") });
+    const metadataResult = CaptureMetadataSchema.safeParse({ title: optionalFormString(form, "title"), notes: optionalFormString(form, "notes") });
     if (!metadataResult.success) throw new AppError("INVALID_MULTIPART", 400, "Multipart metadata is invalid");
     const metadata = metadataResult.data;
     const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata });

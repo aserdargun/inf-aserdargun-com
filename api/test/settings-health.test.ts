@@ -18,7 +18,7 @@ class Storage implements StoragePort {
 }
 
 function deps(): OwnerDependencies {
-  const events: InfEvent[] = [{ eventId: "00000000-0000-4000-8000-000000000032", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-20T10:00:00.000Z", infographicId, payload: { originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "Safe title", notes: "private note", sourceUrl: "https://private.example", capturedAt: "2026-08-20T10:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Inbox" } }];
+  const events: InfEvent[] = [{ eventId: "00000000-0000-4000-8000-000000000032", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-20T10:00:00.000Z", infographicId, payload: { originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "Safe title", notes: "private note", capturedAt: "2026-08-20T10:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Inbox" } }];
   return { storage: new Storage(), events: { readAll: async () => events, append: async () => {} }, publicRootId: ids.public, privateRootId: ids.private, eventsFolderId: ids.events, inboxFolderId: ids.inbox, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates, allowedGithubUser: "aserdargun", now: () => new Date("2026-08-21T10:00:00.000Z") };
 }
 

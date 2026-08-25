@@ -30,7 +30,7 @@ class MemoryStorage implements StoragePort {
   async isDescendant() { return true; }
 }
 
-function createdEvent(): InfEvent { return { eventId: "00000000-0000-4000-8000-000000000002", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-20T10:00:00.000Z", infographicId, payload: { originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU guide", notes: "private", sourceUrl: "https://example.com", capturedAt: "2026-08-20T09:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Inbox" } }; }
+function createdEvent(): InfEvent { return { eventId: "00000000-0000-4000-8000-000000000002", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-20T10:00:00.000Z", infographicId, payload: { originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU guide", notes: "private", capturedAt: "2026-08-20T09:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Inbox" } }; }
 
 const category = { id: "00000000-0000-4000-8000-000000000099", displayName: "GPU", normalizedName: "gpu", slug: "gpu" };
 
@@ -91,11 +91,11 @@ describe("owner HTTP API", () => {
       { eventId: "00000000-0000-4000-8000-000000000090", schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: "2026-08-20T10:01:00.000Z", infographicId, payload: { categories: [category] } },
       { eventId: "00000000-0000-4000-8000-000000000091", schemaVersion: 1, type: "infographic.tagsAssigned", occurredAt: "2026-08-20T10:02:00.000Z", infographicId, payload: { tags: [tag] } },
       { eventId: "00000000-0000-4000-8000-000000000092", schemaVersion: 1, type: "infographic.favoriteChanged", occurredAt: "2026-08-20T10:03:00.000Z", infographicId, payload: { favorite: true } },
-      { eventId: "00000000-0000-4000-8000-000000000093", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: "b".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU reference", notes: null, sourceUrl: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Inbox" } },
+      { eventId: "00000000-0000-4000-8000-000000000093", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: "b".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU reference", notes: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Inbox" } },
       { eventId: "00000000-0000-4000-8000-000000000094", schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: "2026-08-21T10:01:00.000Z", infographicId: secondId, payload: { categories: [category] } },
       { eventId: "00000000-0000-4000-8000-000000000095", schemaVersion: 1, type: "infographic.seen", occurredAt: "2026-08-21T10:02:00.000Z", infographicId: secondId, payload: {} },
     );
-    const response = await ownerList(request("/api/infographics?q=%20GPU%20&category=gpu&tag=memory&favorite=true&source=true&sort=least-seen"), deps);
+    const response = await ownerList(request("/api/infographics?q=%20GPU%20&category=gpu&tag=memory&favorite=true&sort=least-seen"), deps);
     expect(response.status).toBe(200);
     expect(await json(response)).toMatchObject({ infographics: [expect.objectContaining({ id: infographicId, favorite: true, notes: "private" })], categories: [category], tags: [tag] });
     expect((await json(await ownerList(request("/api/infographics?category=gpu&sort=recent"), deps))).infographics.map((entry: { id: string }) => entry.id)).toEqual([secondId, infographicId]);
@@ -123,8 +123,6 @@ describe("owner HTTP API", () => {
     expect(response.status).toBe(201); expect(await json(response)).toMatchObject({ kind: "created", title: "Captured chart" });
     expect(events.at(-1)).toMatchObject({ type: "infographic.created", payload: { notes: "private note" } });
 
-    const invalid = new FormData(); invalid.set("sourceUrl", "not a url"); invalid.set("file", new File([Buffer.from("x")], "chart.png", { type: "image/png" }));
-    expect((await ownerCapture(request("/api/infographics", { method: "POST", body: invalid }), deps)).status).toBe(400);
     const undecodable = new FormData(); undecodable.set("file", new File([Buffer.from("not an image")], "chart.png", { type: "image/png" }));
     expect((await ownerCapture(request("/api/infographics", { method: "POST", body: undecodable }), deps)).status).toBe(400);
   });
@@ -244,7 +242,7 @@ describe("owner HTTP API", () => {
     const fetchImpl = (async () => new Response(JSON.stringify({
       id: "chatcmpl-x", model: "gpt-4o-mini-2025-01-01",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
-        title: "Spaced title", notes: "Plain note.", sourceUrl: "https://example.com", sourcePlatform: "twitter", sourceAuthor: "@example",
+        title: "Spaced title", notes: "Plain note.",
         language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.81,
       }) } }],
     }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
@@ -255,7 +253,7 @@ describe("owner HTTP API", () => {
     expect(response.status).toBe(200);
     expect(await json(response)).toMatchObject({
       schemaVersion: 1, model: "gpt-4o-mini-2025-01-01", generatedAt: "2026-08-24T10:00:00.000Z",
-      suggestion: { title: "Spaced title", notes: "Plain note.", sourceUrl: "https://example.com", sourcePlatform: "twitter", sourceAuthor: "@example", language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.81 },
+      suggestion: { title: "Spaced title", notes: "Plain note.", language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.81 },
     });
     // The suggestion endpoint must not append any events; the catalog should remain untouched.
     expect(events).toHaveLength(1);
@@ -293,8 +291,7 @@ describe("owner HTTP API", () => {
     const fetchImpl = (async () => new Response(JSON.stringify({
       id: "chatcmpl-y", model: "gpt-4o-mini-2025-01-01",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
-        title: "Inbox title", notes: "Inbox notes.", sourceUrl: "https://example.org",
-        sourcePlatform: "github", sourceAuthor: "@user", language: "en", category: "GPU", topics: ["ai"],
+        title: "Inbox title", notes: "Inbox notes.", language: "en", category: "GPU", topics: ["ai"],
         rationale: "Visible.", confidence: 0.74,
       }) } }],
     }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
@@ -302,7 +299,7 @@ describe("owner HTTP API", () => {
     const response = await ownerSuggestForInfographic(request(`/api/infographics/${infographicId}/suggest`, { method: "POST" }), { ...deps, openAiService });
     expect(response.status).toBe(200);
     expect(await json(response)).toMatchObject({
-      suggestion: { title: "Inbox title", notes: "Inbox notes.", sourceUrl: "https://example.org", sourcePlatform: "github", sourceAuthor: "@user", language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.74 },
+      suggestion: { title: "Inbox title", notes: "Inbox notes.", language: "en", category: "GPU", topics: ["ai"], rationale: "Visible.", confidence: 0.74 },
     });
     // The per-infographic suggest endpoint must not append any events.
     expect(events).toHaveLength(1);
@@ -317,8 +314,7 @@ describe("owner HTTP API", () => {
       const body = JSON.parse(String(init.body)) as { messages: Array<{ role: string; content: Array<{ type: string; text?: string }> | string }> };
       observedUserText = (body.messages[1].content as Array<{ type: string; text?: string }>)[0]!.text;
       return new Response(JSON.stringify({ id: "chatcmpl-z", model: "gpt-4o-mini-2025-01-01", choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
-        title: "GPU memory", notes: "VRAM layout", sourceUrl: null, sourcePlatform: null, sourceAuthor: null,
-        language: "en", category: "GPU", topics: ["memory"], rationale: "Reuse.", confidence: 0.9,
+        title: "GPU memory", notes: "VRAM layout", language: "en", category: "GPU", topics: ["memory"], rationale: "Reuse.", confidence: 0.9,
       }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
     }) as unknown as typeof fetch;
     const openAiService = new OpenAiService({ apiKey: "sk-test-1234567890abcdef", fetchImpl, now: () => new Date("2026-08-25T10:00:00.000Z") });
@@ -381,7 +377,7 @@ describe("owner HTTP API", () => {
     const firstBody = await json(firstResponse) as { sha256: string };
     // Synthesize a second infographic event for a different id that has the same sha in the event stream.
     const secondId = "00000000-0000-4000-8000-000000000020";
-    events.push({ eventId: "00000000-0000-4000-8000-000000000021", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: firstBody.sha256, detectedMimeType: "image/png", width: 20, height: 10, title: "GPU same image", notes: null, sourceUrl: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Inbox" } });
+    events.push({ eventId: "00000000-0000-4000-8000-000000000021", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: firstBody.sha256, detectedMimeType: "image/png", width: 20, height: 10, title: "GPU same image", notes: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Inbox" } });
     storage.files.set("second-original", { file: { id: "second-original", name: "b.png", mimeType: "image/png", createdTime: "2026-08-21T09:00:00.000Z", parentIds: [ids.inbox], appProperties: { infSha256: firstBody.sha256, infId: secondId }, trashed: false }, bytes: Buffer.from("image") });
     storage.files.set("second-thumbnail", { file: { id: "second-thumbnail", name: "b.webp", mimeType: "image/webp", createdTime: "2026-08-21T09:00:00.000Z", parentIds: [ids.thumbnails], appProperties: { infSha256: firstBody.sha256, infId: secondId }, trashed: false }, bytes: Buffer.from("thumbnail") });
     const form = new FormData();
@@ -408,13 +404,13 @@ describe("owner HTTP API", () => {
     expect(events.at(-1)).toMatchObject({ type: "infographic.imageReplaced", payload: { detectedMimeType: item.detectedMimeType, width: item.width, height: item.height, sha256: item.sha256 } });
   });
 
-  test("PATCH extends metadata with notes, sourceUrl, sourcePlatform, and sourceAuthor on a single call", async () => {
+  test("PATCH extends metadata with notes on a single call", async () => {
     const { deps, events } = fixture();
-    const response = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ title: "Renamed", notes: "now with notes", sourceUrl: "https://example.org/x", sourcePlatform: "github", sourceAuthor: "@user" }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
+    const response = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ title: "Renamed", notes: "now with notes" }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
     expect(response.status).toBe(200);
     const updateEvents = events.filter((event) => event.type === "infographic.metadataUpdated");
     expect(updateEvents).toHaveLength(1);
-    expect(updateEvents[0].payload).toEqual({ title: "Renamed", notes: "now with notes", sourceUrl: "https://example.org/x", sourcePlatform: "github", sourceAuthor: "@user" });
+    expect(updateEvents[0].payload).toEqual({ title: "Renamed", notes: "now with notes" });
   });
 
   test("PATCH nullifies notes by sending null explicitly", async () => {
@@ -502,22 +498,13 @@ describe("owner HTTP API", () => {
     expect(storage.trashed).toEqual([]);
   });
 
-  test("PATCH rejects malformed sourceUrl and oversize sourcePlatform with 400", async () => {
+  test("PATCH records title alongside notes in the same metadataUpdated event", async () => {
     const { deps, events } = fixture();
-    const badUrl = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ sourceUrl: "not a url" }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
-    expect(badUrl.status).toBe(400);
-    const oversizePlatform = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ sourcePlatform: "x".repeat(101) }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
-    expect(oversizePlatform.status).toBe(400);
-    expect(events).toHaveLength(1);
-  });
-
-  test("PATCH records title alongside private fields in the same metadataUpdated event", async () => {
-    const { deps, events } = fixture();
-    const response = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ title: "With title", sourceAuthor: "@author", notes: "concrete notes" }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
+    const response = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ title: "With title", notes: "concrete notes" }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
     expect(response.status).toBe(200);
     const updateEvents = events.filter((event) => event.type === "infographic.metadataUpdated");
     expect(updateEvents).toHaveLength(1);
-    expect(updateEvents[0].payload).toEqual({ title: "With title", sourceAuthor: "@author", notes: "concrete notes" });
+    expect(updateEvents[0].payload).toEqual({ title: "With title", notes: "concrete notes" });
   });
 
   test("PATCH rejects an empty body that has no patch fields", async () => {

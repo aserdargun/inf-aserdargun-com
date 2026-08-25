@@ -17,9 +17,6 @@ type CaptureError = "Choose an image file." | "This image is too large. Choose a
 interface AiSuggestion {
   title: string | null;
   notes: string | null;
-  sourceUrl: string | null;
-  sourcePlatform: string | null;
-  sourceAuthor: string | null;
   language: string | null;
   category: string | null;
   topics: string[];
@@ -29,7 +26,7 @@ interface AiSuggestion {
 
 type AiStatus = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; suggestion: AiSuggestion } | { kind: "error"; message: string };
 
-const fieldKeys = ["title", "sourceUrl", "sourcePlatform", "sourceAuthor", "notes", "category", "tags"] as const;
+const fieldKeys = ["title", "notes", "category", "tags"] as const;
 type FieldKey = (typeof fieldKeys)[number];
 
 interface CaptureResponse { kind: "created" | "duplicate"; infographicId?: string; title?: string; }
@@ -94,9 +91,6 @@ export function CaptureForm() {
       const { suggestion } = data;
       const applied: FieldKey[] = [];
       if (suggestion.title) { setFieldValue("title", suggestion.title); applied.push("title"); }
-      if (suggestion.sourceUrl) { setFieldValue("sourceUrl", suggestion.sourceUrl); applied.push("sourceUrl"); }
-      if (suggestion.sourcePlatform) { setFieldValue("sourcePlatform", suggestion.sourcePlatform); applied.push("sourcePlatform"); }
-      if (suggestion.sourceAuthor) { setFieldValue("sourceAuthor", suggestion.sourceAuthor); applied.push("sourceAuthor"); }
       if (suggestion.notes) { setFieldValue("notes", suggestion.notes); applied.push("notes"); }
       if (suggestion.category) { setFieldValue("category", suggestion.category); applied.push("category"); }
       if (Array.isArray(suggestion.topics) && suggestion.topics.length > 0) {
@@ -209,8 +203,6 @@ export function CaptureForm() {
         <AiStatusBanner status={aiStatus} onClear={clearSuggestion} onRetry={retryAi} />
         <section aria-labelledby="optional-details-title" className="capture-details"><h2 id="optional-details-title">Optional details</h2>
           <label>Title<input maxLength={200} name="title" /></label>
-          <label>Source URL<input name="sourceUrl" type="url" /></label>
-          <label>Platform<input maxLength={100} name="sourcePlatform" /></label>
           <label>Category<input autoComplete="off" maxLength={80} name="category" placeholder="e.g. AI & Machine Learning" /></label>
           <label>Tags<input autoComplete="off" maxLength={500} name="tags" placeholder="memory, cuda" /></label>
           <label>Notes<textarea maxLength={10000} name="notes" rows={4} /></label>
@@ -229,7 +221,7 @@ function AiStatusBanner({ status, onClear, onRetry }: { status: AiStatus; onClea
   }
   if (status.kind === "ready") {
     const { suggestion } = status;
-    const filled = [suggestion.title, suggestion.sourceUrl, suggestion.sourcePlatform, suggestion.sourceAuthor, suggestion.notes, suggestion.category, ...(Array.isArray(suggestion.topics) ? suggestion.topics : [])].filter((value) => typeof value === "string" && value.length > 0).length;
+    const filled = [suggestion.title, suggestion.notes, suggestion.category, ...(Array.isArray(suggestion.topics) ? suggestion.topics : [])].filter((value) => typeof value === "string" && value.length > 0).length;
     const ratio = Math.round((suggestion.confidence ?? 0) * 100);
     const headline = suggestion.category
       ? <>AI suggested {filled} field{filled === 1 ? "" : "s"} (will move to <strong>{suggestion.category}</strong>).</>

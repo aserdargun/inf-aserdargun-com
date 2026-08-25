@@ -31,8 +31,6 @@ function searchableText(item: MaterializedInfographic, taxonomy: SearchTaxonomy)
   return [
     item.title,
     item.notes,
-    item.sourceAuthor,
-    item.sourceUrl,
     ...taxonomyNames(item.categoryIds, taxonomy.categories),
     ...taxonomyNames(item.tagIds, taxonomy.tags),
   ]

@@ -4,8 +4,7 @@ import { expect, test } from "playwright/test";
 const category = { id: "00000000-0000-4000-8000-000000000021", displayName: "GPU", normalizedName: "gpu", slug: "gpu" };
 const tag = { id: "00000000-0000-4000-8000-000000000022", displayName: "Memory", normalizedName: "memory", slug: "memory" };
 const item = {
-  id: "00000000-0000-4000-8000-000000000020", title: "Memory hierarchy", notes: "A concise memory map.", sourceUrl: "https://example.com/memory", sourcePlatform: "Example", sourceAuthor: "Ada",
-  originalDriveFileId: "original-memory", thumbnailDriveFileId: "thumbnail-memory", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1600, height: 900,
+  id: "00000000-0000-4000-8000-000000000020", title: "Memory hierarchy", notes: "A concise memory map.",  originalDriveFileId: "original-memory", thumbnailDriveFileId: "thumbnail-memory", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1600, height: 900,
   favorite: false, archived: false, createdAt: "2026-08-20T10:00:00.000Z", capturedAt: "2026-08-20T10:00:00.000Z", processedAt: "2026-08-20T10:01:00.000Z", lastSeenAt: "2026-08-20T10:02:00.000Z",
   seenCount: 3, categoryIds: [category.id], tagIds: [tag.id], folderState: "Library", reviewCount: 2, lastReviewedAt: "2026-08-20T10:03:00.000Z", reviewDueAt: "2026-08-21T10:00:00.000Z",
 };
