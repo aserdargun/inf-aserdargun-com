@@ -37,3 +37,25 @@
 .ai-banner__dismiss:hover { background:var(--surface-hover); color:var(--text-primary); }
 .ai-banner__dismiss:focus-visible { border-color:var(--focus-ring); outline:2px solid var(--focus-ring); outline-offset:1px; }
 @media(max-width:767px) { .ai-banner { margin:0 0 18px; } }
+.inbox-row { align-items:start; }
+.inbox-row__media { display:grid; gap:12px; min-width:0; }
+.inbox-row__media-actions { display:grid; gap:8px; }
+.inbox-row__replace { align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--text-primary); cursor:pointer; display:inline-flex; font:650 14px/20px inherit; gap:8px; justify-content:center; min-height:44px; padding:0 14px; transition:background-color 160ms ease,border-color 160ms ease,color 160ms ease; }
+.inbox-row__replace:hover:not(:disabled) { background:var(--surface-hover); border-color:var(--border-strong); }
+.inbox-row__replace:focus-visible { border-color:var(--focus-ring); outline:2px solid var(--focus-ring); outline-offset:1px; }
+.inbox-row__replace:disabled { color:var(--text-disabled); cursor:default; }
+.inbox-row__fields { display:grid; gap:12px; grid-template-columns:1fr 1fr; margin-bottom:18px; }
+.inbox-row__fields > .inbox-editor__field { display:grid; }
+.inbox-row__fields textarea { min-height:96px; padding:10px 12px; resize:vertical; width:100%; }
+.inbox-row__fields input[type="url"] { padding:10px 12px; }
+.inbox-row__actions { align-items:center; display:flex; flex-wrap:wrap; gap:12px; }
+.inbox-row__actions .button { min-height:44px; }
+.ai-banner__actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+.ai-banner__actions .button { min-height:36px; padding:0 14px; }
+.delete-dialog { align-items:center; display:flex; inset:0; justify-content:center; position:fixed; z-index:50; }
+.delete-dialog__scrim { background:rgba(10,12,9,.55); inset:0; position:absolute; }
+.delete-dialog__panel { background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:0 24px 60px -24px rgba(0,0,0,.45); display:grid; gap:16px; max-width:440px; padding:24px; position:relative; width:calc(100vw - 40px); }
+.delete-dialog__panel h2 { font-size:20px; line-height:26px; }
+.delete-dialog__panel p { color:var(--text-secondary); font-size:15px; line-height:24px; }
+.delete-dialog__actions { display:flex; flex-wrap:wrap; gap:12px; justify-content:flex-end; }
+@media(max-width:767px) { .inbox-row__fields { grid-template-columns:1fr; } .delete-dialog__actions { flex-direction:column-reverse; } .delete-dialog__actions .button { width:100%; } }

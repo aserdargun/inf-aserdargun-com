@@ -214,6 +214,14 @@ function applyMutation(state: FoldState, event: Exclude<InfEvent, { type: "infog
       state.infographics.delete(event.infographicId);
       state.deletedInfographicIds.add(event.infographicId);
       break;
+    case "infographic.imageReplaced":
+      item.originalDriveFileId = event.payload.originalDriveFileId;
+      item.thumbnailDriveFileId = event.payload.thumbnailDriveFileId;
+      item.sha256 = event.payload.sha256;
+      item.detectedMimeType = event.payload.detectedMimeType;
+      item.width = event.payload.width;
+      item.height = event.payload.height;
+      break;
     case "infographic.seen":
       item.seenCount += 1;
       item.lastSeenAt = event.occurredAt;

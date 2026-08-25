@@ -6,14 +6,14 @@ test("contracts barrel exports each module once and keeps the exact runtime surf
   const source = readFileSync("packages/contracts/src/index.ts", "utf8");
   expect(source.match(/export \* from "\.\/api";/g)).toHaveLength(1);
   expect(Object.keys(contracts).sort()).toEqual([
-    "AiMetadataSuggestionSchema", "AiSuggestionResponseSchema", "ApiErrorSchema", "CaptureMetadataSchema", "CategorySchema", "ConfirmDeleteSchema", "DriveFolderStateSchema", "DriveHealthSchema",
+    "AiMetadataSuggestionSchema", "AiSuggestionResponseSchema", "AiSuggestionSchema", "ApiErrorSchema", "CaptureMetadataSchema", "CategorySchema", "ConfirmDeleteSchema", "DriveFolderStateSchema", "DriveHealthSchema",
     "DueReviewResponseSchema", "EVENT_SCHEMA_VERSION", "EmptyEventPayloadSchema", "FolderHealthSchema", "ImageMimeTypeSchema", "InfEventSchema",
     "InfographicArchivedEventSchema", "InfographicCategoriesAssignedEventSchema", "InfographicCategoriesAssignedPayloadSchema", "InfographicCreatedEventSchema",
     "InfographicCreatedPayloadSchema", "InfographicDeletedEventSchema", "InfographicFavoriteChangedEventSchema", "InfographicFavoriteChangedPayloadSchema",
-    "InfographicMetadataUpdatedEventSchema", "InfographicMetadataUpdatedPayloadSchema", "InfographicPatchSchema", "InfographicSeenEventSchema",
-    "InfographicTagsAssignedEventSchema", "InfographicTagsAssignedPayloadSchema", "MaterializedCatalogSchema", "MaterializedInfographicSchema", "MimeTypeSchema",
-    "OwnerCatalogQuerySchema", "OwnerCatalogResponseSchema", "PublicCatalogResponseSchema", "PublicInfographicSchema", "PublicSafeTitleSchema",
-    "RejectedFileSchema", "ReviewRatingSchema", "ReviewRecordSchema", "ReviewRecordedEventSchema", "ReviewRecordedPayloadSchema", "ReviewRequestSchema",
+    "InfographicImageReplacedEventSchema", "InfographicImageReplacedPayloadSchema", "InfographicMetadataUpdatedEventSchema", "InfographicMetadataUpdatedPayloadSchema",
+    "InfographicPatchSchema", "InfographicSeenEventSchema", "InfographicTagsAssignedEventSchema", "InfographicTagsAssignedPayloadSchema",
+    "MaterializedCatalogSchema", "MaterializedInfographicSchema", "MimeTypeSchema", "OwnerCatalogQuerySchema", "OwnerCatalogResponseSchema", "PublicCatalogResponseSchema", "PublicInfographicSchema",
+    "PublicSafeTitleSchema", "RejectedFileSchema", "ReviewRatingSchema", "ReviewRecordSchema", "ReviewRecordedEventSchema", "ReviewRecordedPayloadSchema", "ReviewRequestSchema",
     "ReviewResponseSchema", "SessionResponseSchema", "SettingsHealthResponseSchema", "SettingsInventoryItemSchema", "SettingsStatsResponseSchema",
     "Sha256Schema", "SurpriseResponseSchema", "SyncFileRejectedEventSchema", "SyncFileRejectedPayloadSchema", "SyncRequestSchema", "TagSchema",
     "UtcDateTimeSchema", "UuidSchema",

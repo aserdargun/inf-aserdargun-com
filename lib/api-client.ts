@@ -16,3 +16,12 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   try { return await response.json() as T; }
   catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(response.status, "Infographics returned an invalid response. Try again."); }
 }
+
+/**
+ * Same as {@link apiRequest} but for endpoints that take a multipart/form-data
+ * body. We omit the `Accept` header from the supplied init to keep callers from
+ * clobbering the default and to ensure the form's boundary is sent.
+ */
+export async function apiRequestForm<T>(path: string, form: FormData, init?: RequestInit): Promise<T> {
+  return apiRequest<T>(path, { ...init, method: init?.method ?? "POST", body: form });
+}

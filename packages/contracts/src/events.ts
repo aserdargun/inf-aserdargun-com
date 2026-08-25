@@ -116,6 +116,20 @@ export const InfographicDeletedEventSchema = infographicEvent(
   "infographic.deleted",
   EmptyEventPayloadSchema,
 );
+export const InfographicImageReplacedPayloadSchema = z.strictObject({
+  previousOriginalDriveFileId: z.string().min(1),
+  previousThumbnailDriveFileId: z.string().min(1),
+  originalDriveFileId: z.string().min(1),
+  thumbnailDriveFileId: z.string().min(1),
+  sha256: Sha256Schema,
+  detectedMimeType: ImageMimeTypeSchema,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+export const InfographicImageReplacedEventSchema = infographicEvent(
+  "infographic.imageReplaced",
+  InfographicImageReplacedPayloadSchema,
+);
 export const InfographicSeenEventSchema = infographicEvent(
   "infographic.seen",
   EmptyEventPayloadSchema,
@@ -139,6 +153,7 @@ export const InfEventSchema = z.discriminatedUnion("type", [
   InfographicFavoriteChangedEventSchema,
   InfographicArchivedEventSchema,
   InfographicDeletedEventSchema,
+  InfographicImageReplacedEventSchema,
   InfographicSeenEventSchema,
   ReviewRecordedEventSchema,
   SyncFileRejectedEventSchema,
@@ -158,6 +173,8 @@ export type InfographicTagsAssignedEvent = z.infer<typeof InfographicTagsAssigne
 export type InfographicFavoriteChangedEvent = z.infer<typeof InfographicFavoriteChangedEventSchema>;
 export type InfographicArchivedEvent = z.infer<typeof InfographicArchivedEventSchema>;
 export type InfographicDeletedEvent = z.infer<typeof InfographicDeletedEventSchema>;
+export type InfographicImageReplacedPayload = z.infer<typeof InfographicImageReplacedPayloadSchema>;
+export type InfographicImageReplacedEvent = z.infer<typeof InfographicImageReplacedEventSchema>;
 export type InfographicSeenEvent = z.infer<typeof InfographicSeenEventSchema>;
 export type ReviewRecordedEvent = z.infer<typeof ReviewRecordedEventSchema>;
 export type SyncFileRejectedEvent = z.infer<typeof SyncFileRejectedEventSchema>;

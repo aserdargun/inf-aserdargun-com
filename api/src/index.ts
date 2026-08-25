@@ -4,7 +4,7 @@ import { EventStore } from "./storage/event-store.js";
 import { GoogleDriveAdapter } from "./storage/google-drive-adapter.js";
 import { LocalDriveAdapter } from "./storage/local-drive-adapter.js";
 import { publicGet, publicImage, publicList, type PublicDependencies } from "./functions/public.js";
-import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSuggestMetadata, ownerSurprise, ownerSync, type OwnerDependencies } from "./functions/owner.js";
+import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReplaceImage, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSuggestForInfographic, ownerSuggestMetadata, ownerSurprise, ownerSync, type OwnerDependencies } from "./functions/owner.js";
 import { openAiServiceFromEnv } from "./services/openai-service.js";
 import type { HttpResponse } from "./http/errors.js";
 
@@ -69,8 +69,10 @@ app.http("capture-infographic", { methods: ["POST"], authLevel: "anonymous", rou
 app.http("infographic", { methods: ["GET"], authLevel: "anonymous", route: "infographics/{id}", handler: async (request: HttpRequest) => response(await ownerGet(request, ownerDeps())) });
 app.http("patch-infographic", { methods: ["PATCH"], authLevel: "anonymous", route: "infographics/{id}", handler: async (request: HttpRequest) => response(await ownerPatch(request, ownerDeps())) });
 app.http("delete-infographic", { methods: ["DELETE"], authLevel: "anonymous", route: "infographics/{id}", handler: async (request: HttpRequest) => response(await ownerDelete(request, ownerDeps())) });
+app.http("replace-image-infographic", { methods: ["POST"], authLevel: "anonymous", route: "infographics/{id}/image", handler: async (request: HttpRequest) => response(await ownerReplaceImage(request, ownerDeps())) });
 app.http("seen-infographic", { methods: ["POST"], authLevel: "anonymous", route: "infographics/{id}/seen", handler: async (request: HttpRequest) => response(await ownerSeen(request, ownerDeps())) });
 app.http("review-infographic", { methods: ["POST"], authLevel: "anonymous", route: "infographics/{id}/reviews", handler: async (request: HttpRequest) => response(await ownerReview(request, ownerDeps())) });
+app.http("suggest-for-infographic", { methods: ["POST"], authLevel: "anonymous", route: "infographics/{id}/suggest", handler: async (request: HttpRequest) => response(await ownerSuggestForInfographic(request, ownerDeps())) });
 app.http("surprise", { methods: ["GET"], authLevel: "anonymous", route: "surprise", handler: async (request: HttpRequest) => response(await ownerSurprise(request, ownerDeps())) });
 app.http("due-review", { methods: ["GET"], authLevel: "anonymous", route: "review", handler: async (request: HttpRequest) => response(await ownerDueReview(request, ownerDeps())) });
 app.http("settings-stats", { methods: ["GET"], authLevel: "anonymous", route: "settings/stats", handler: async (request: HttpRequest) => response(await ownerStats(request, ownerDeps())) });

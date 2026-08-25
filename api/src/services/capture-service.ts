@@ -41,6 +41,8 @@ function safeFileName(name: string | undefined, fallback: string): string {
   return (normalized || fallback).slice(0, 220);
 }
 
+export { safeFileName };
+
 function createdHashes(inputs: unknown[]): Set<string> {
   const hashes = new Set<string>();
   for (const input of inputs) {

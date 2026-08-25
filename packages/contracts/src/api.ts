@@ -66,6 +66,16 @@ export const AiSuggestionResponseSchema = z.strictObject({
 });
 export type AiSuggestionResponse = z.infer<typeof AiSuggestionResponseSchema>;
 
+/**
+ * Per-infographic AI suggestion: the owner-only POST /api/infographics/{id}/suggest
+ * endpoint returns the suggestion payload directly. Capture uses the richer
+ * {@link AiSuggestionResponseSchema} envelope and is intentionally untouched.
+ */
+export const AiSuggestionSchema = z.strictObject({
+  suggestion: AiMetadataSuggestionSchema,
+});
+export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
+
 export const SessionResponseSchema = z.strictObject({
   authenticated: z.literal(true),
   owner: z.string().min(1),

@@ -75,6 +75,11 @@ describe("InfEventSchema", () => {
       event("infographic.favoriteChanged", "00000005-0000-4000-8000-000000000005", "2026-08-20T10:00:04.000Z", { favorite: true }),
       event("infographic.archived", "00000006-0000-4000-8000-000000000006", "2026-08-20T10:00:05.000Z", {}),
       event("infographic.deleted", "00000007-0000-4000-8000-000000000007", "2026-08-20T10:00:06.000Z", {}),
+      event("infographic.imageReplaced", "0000000c-0000-4000-8000-00000000000c", "2026-08-20T10:00:06.500Z", {
+        previousOriginalDriveFileId: "old-original", previousThumbnailDriveFileId: "old-thumbnail",
+        originalDriveFileId: "new-original", thumbnailDriveFileId: "new-thumbnail",
+        sha256: "b".repeat(64), detectedMimeType: "image/png", width: 1600, height: 900,
+      }),
       event("infographic.seen", "00000008-0000-4000-8000-000000000008", "2026-08-20T10:00:07.000Z", {}),
       event("review.recorded", "00000009-0000-4000-8000-000000000009", "2026-08-20T10:00:08.000Z", {
         reviewId: REVIEW_ID,
@@ -93,7 +98,7 @@ describe("InfEventSchema", () => {
     ];
 
     expect(samples.map((sample) => InfEventSchema.safeParse(sample).success)).toEqual([
-      true, true, true, true, true, true, true, true, true, true,
+      true, true, true, true, true, true, true, true, true, true, true,
     ]);
   });
 

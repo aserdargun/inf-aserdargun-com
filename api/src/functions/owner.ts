@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, OwnerCatalogQuerySchema, ReviewRequestSchema, SettingsHealthResponseSchema, SyncRequestSchema, type Category, type OwnerCatalogQuery } from "@inf/contracts";
+import { AiSuggestionSchema, CaptureMetadataSchema, ConfirmDeleteSchema, InfEventSchema, InfographicPatchSchema, OwnerCatalogQuerySchema, ReviewRequestSchema, SettingsHealthResponseSchema, SyncRequestSchema, type Category, type OwnerCatalogQuery } from "@inf/contracts";
 import { foldEvents } from "@inf/domain";
 import { authorizeOwner } from "../auth/authorize.js";
 import { AppError, emptyResponse, errorResponse, jsonResponse, type HttpResponse } from "../http/errors.js";
@@ -7,6 +7,7 @@ import { optionalFormString, parseJson, parseMultipart, uuidPath, type RequestLi
 import { CaptureService } from "../services/capture-service.js";
 import { ImageProcessingError } from "../images/process-image.js";
 import { CatalogService, type CatalogSnapshot } from "../services/catalog-service.js";
+import { ImageReplaceService } from "../services/image-replace-service.js";
 import { OpenAiService, openAiServiceFromEnv } from "../services/openai-service.js";
 import { ReviewService } from "../services/review-service.js";
 import { SyncService } from "../services/sync-service.js";
@@ -176,6 +177,37 @@ export function ownerDelete(request: RequestLike, deps: OwnerDependencies): Prom
     await deps.storage.trashFile(item.originalDriveFileId); await deps.storage.trashFile(item.thumbnailDriveFileId);
     await deps.events.append(event(deps, "infographic.deleted", id, {}));
     return emptyResponse();
+  });
+}
+
+export function ownerReplaceImage(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
+  return authorized(request, deps, async () => {
+    const id = uuidPath({ ...request, url: request.url.replace(/\/image$/, "") }, "/api/infographics/");
+    const snapshot = await new CatalogService(deps.events).snapshot();
+    const item = new CatalogService(deps.events).item(snapshot, id);
+    if (item.archived) throw new AppError("ARCHIVED", 409, "Archived infographics cannot be replaced");
+    const form = await parseMultipart(request);
+    const file = form.get("file");
+    if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) {
+      throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
+    }
+    const service = new ImageReplaceService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) });
+    const result = await service.replace({ infographicId: id, bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name });
+    return jsonResponse(result.infographic, 200);
+  });
+}
+
+export function ownerSuggestForInfographic(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
+  return authorizedAi(request, deps, async () => {
+    const service = deps.openAiService ?? openAiServiceFromEnv();
+    if (!service) throw new AppError("AI_NOT_CONFIGURED", 503, "AI suggestions are not configured on the server.");
+    const id = uuidPath({ ...request, url: request.url.replace(/\/suggest$/, "") }, "/api/infographics/");
+    const item = new CatalogService(deps.events).item(await new CatalogService(deps.events).snapshot(), id);
+    let bytes: Buffer;
+    try { bytes = await deps.storage.readFile(item.thumbnailDriveFileId); }
+    catch { throw new AppError("THUMBNAIL_UNAVAILABLE", 502, "Thumbnail bytes could not be read for AI suggestion"); }
+    const response = await service.suggestMetadata({ bytes, declaredMime: "image/webp" });
+    return jsonResponse(AiSuggestionSchema.parse({ suggestion: response.suggestion }), 200);
   });
 }
 
