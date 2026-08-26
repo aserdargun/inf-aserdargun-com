@@ -10,14 +10,19 @@ const item = {
 };
 const image = readFileSync("api/test/fixtures/valid-infographic.png");
 
-function publicPage(items: typeof item[] | [], overrides: { page?: number; pageSize?: number } = {}) {
+function publicPage(items: typeof item[] | [], overrides: { page?: number; pageSize?: number; totalItems?: number; totalPages?: number } = {}) {
   const page = overrides.page ?? 1;
   const pageSize = overrides.pageSize ?? 12;
-  return { items, page, pageSize, totalItems: items.length, totalPages: items.length === 0 ? 0 : Math.ceil(items.length / pageSize) };
+  const totalItems = overrides.totalItems ?? items.length;
+  const totalPages = overrides.totalPages ?? (items.length === 0 ? 0 : Math.ceil(items.length / pageSize));
+  return { items, page, pageSize, totalItems, totalPages };
 }
 
 async function mockPublic(page: import("playwright/test").Page, mode: "success" | "empty" | "error" | "paginated" = "success") {
-  await page.route("**/api/public/infographics**", (route) => {
+  // A function matcher reliably handles the trailing query string that
+  // accompanies `?page=2` requests; the previous `**/...` glob dropped those
+  // because Playwright's URL glob stops at the `?` query delimiter.
+  await page.route((url) => url.pathname === "/api/public/infographics" || /^\/api\/public\/infographics\/[0-9a-f-]+$/i.test(url.pathname), (route) => {
     const url = new URL(route.request().url());
     if (mode === "error") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
     if (url.pathname.endsWith(item.id)) return route.fulfill({ status: mode === "empty" ? 404 : 200, contentType: "application/json", body: JSON.stringify(item) });
@@ -27,9 +32,11 @@ async function mockPublic(page: import("playwright/test").Page, mode: "success" 
       const first = { ...item, id: "00000000-0000-4000-8000-000000000101", title: "Page 1 item", publishedAt: "2024-05-12T00:00:00.000Z" };
       const second = { ...item, id: "00000000-0000-4000-8000-000000000102", title: "Page 2 item", publishedAt: "2024-05-11T00:00:00.000Z" };
       const third = { ...item, id: "00000000-0000-4000-8000-000000000103", title: "Page 2 item second", publishedAt: "2024-05-10T00:00:00.000Z" };
-      if (requestedPage <= 1) return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([first, second], { page: 1 })) });
-      if (requestedPage === 2) return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([third], { page: 2 })) });
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([], { page: requestedPage })) });
+      // The pager is shown only when totalPages > 1. The test expects exactly two
+      // pages and a "2 infographics" status, so pin both numbers explicitly.
+      if (requestedPage <= 1) return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([first], { page: 1, pageSize: 1, totalItems: 2, totalPages: 2 })) });
+      if (requestedPage === 2) return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([third], { page: 2, pageSize: 1, totalItems: 2, totalPages: 2 })) });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([], { page: requestedPage, pageSize: 1, totalItems: 2, totalPages: 2 })) });
     }
     return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([item])) });
   });
@@ -92,6 +99,11 @@ test("public View Mode is responsive, keyboard reachable, and console-clean", as
 });
 
 test("public gallery paginates with stable URLs, deep links, and an accessible status", async ({ page }) => {
+  // The /view/ service worker intercepts /api/public/infographics and bypasses
+  // the page.route mock for the second request, so disable it for this test.
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "serviceWorker", { configurable: true, value: undefined });
+  });
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await mockPublic(page, "paginated");

@@ -2,7 +2,7 @@
 
 import type { AiMetadataSuggestion, InfographicPatch, MaterializedInfographic, OwnerCatalogResponse } from "@inf/contracts";
 import { Archive, ArrowLeft, Heart, LoaderCircle, Pencil, Sparkles, Star, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";
@@ -276,8 +276,6 @@ export function InfographicDetail() {
   const names = (ids: readonly string[], entries: readonly { id: string; displayName: string }[]) => ids.map((entry) => entries.find((candidate) => candidate.id === entry)?.displayName).filter((entry): entry is string => entry !== undefined).join(", ") || "—";
   const isEditing = editState.kind !== "view";
   const draft = activeDraft(editState);
-  const editingCategories = useMemo(() => taxonomy.categories, [taxonomy.categories]);
-  const editingTags = useMemo(() => taxonomy.tags, [taxonomy.tags]);
 
   return <section className="detail-page">
     <a className="detail-back" href={routes.library}><ArrowLeft aria-hidden="true" size={20} strokeWidth={1.75} />Back to Library</a>
@@ -291,11 +289,11 @@ export function InfographicDetail() {
             <div><dt>Tags</dt><dd>{names(current.tagIds, taxonomy.tags)}</dd></div>
             <div><dt>Notes</dt><dd>{current.notes ?? "—"}</dd></div>
           </dl> : draft ? <EditMetadataForm
-            categories={editingCategories}
+            categories={taxonomy.categories}
             disabled={isEditLocked(editState)}
             draft={draft}
             onChange={updateDraft}
-            tags={editingTags}
+            tags={taxonomy.tags}
           /> : <p aria-live="polite" className="form-message" role="status">{editState.kind === "aiLoading" ? "Reading the image and drafting metadata…" : "Saving…"}</p>}
         </section>
         <aside aria-label="Infographic actions" className="detail-actions">
