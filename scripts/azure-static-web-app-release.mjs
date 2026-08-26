@@ -44,12 +44,17 @@ async function verify(options) {
   const resourceGroup = required(options, "resource-group"); const name = required(options, "name");
   const hostname = await az(["staticwebapp", "show", "--resource-group", resourceGroup, "--name", name, "--query", "defaultHostname", "--output", "tsv"]); if (!hostname) throw new Error("Generated hostname is empty.");
   const base = `https://${hostname}`;
+  // The site root intentionally serves the public collection so anonymous
+  // visitors land on the curated gallery instead of the login redirect.
+  const home = await globalThis.fetch(base); if (home.status !== 200 || !home.headers.get("content-type")?.includes("text/html")) throw new Error(`Home verification failed: ${home.status}`);
   const view = await globalThis.fetch(`${base}/view/`); if (view.status !== 200 || !view.headers.get("content-type")?.includes("text/html")) throw new Error(`View verification failed: ${view.status}`);
   const catalog = await globalThis.fetch(`${base}/api/public/infographics`); if (catalog.status !== 200 || !catalog.headers.get("cache-control")?.includes("public") || catalog.headers.get("x-content-type-options") !== "nosniff") throw new Error(`Public API/header verification failed: ${catalog.status}`);
-  const items = await catalog.json(); if (items[0]?.thumbnailUrl) { const image = await globalThis.fetch(new URL(items[0].thumbnailUrl, base)); if (image.status !== 200 || !image.headers.get("content-type")?.startsWith("image/")) throw new Error("Public image verification failed."); }
-  const owner = await globalThis.fetch(base, { redirect: "manual" }); if (![302, 401].includes(owner.status)) throw new Error(`Owner auth boundary verification failed: ${owner.status}`);
+  const page = await catalog.json(); const item = page?.items?.[0]; if (item?.thumbnailUrl) { const image = await globalThis.fetch(new URL(item.thumbnailUrl, base)); if (image.status !== 200 || !image.headers.get("content-type")?.startsWith("image/")) throw new Error("Public image verification failed."); }
+  // The owner shell now lives at /today/; the home page is anonymous so the
+  // owner boundary check has to follow the dedicated admin path.
+  const owner = await globalThis.fetch(`${base}/today/`, { redirect: "manual" }); if (![302, 401].includes(owner.status)) throw new Error(`Owner auth boundary verification failed: ${owner.status}`);
   const hostnames = JSON.parse(await az(["staticwebapp", "hostname", "list", "--resource-group", resourceGroup, "--name", name, "--output", "json"])); if (hostnames.length !== 0) throw new Error("Custom hostname list is not empty; stop before custom-domain work.");
-  process.stdout.write(`${JSON.stringify({ hostname, view: view.status, publicApi: catalog.status, ownerBoundary: owner.status, customHostnames: 0 }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ hostname, home: home.status, view: view.status, publicApi: catalog.status, ownerBoundary: owner.status, customHostnames: 0 }, null, 2)}\n`);
 }
 async function main() {
   const options = args(process.argv.slice(2)); if (!options.command || ["--help", "help"].includes(options.command)) { process.stdout.write(help); return; }
