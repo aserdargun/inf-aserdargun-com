@@ -71,6 +71,7 @@ describe("InfEventSchema", () => {
       event("infographic.tagsAssigned", "00000004-0000-4000-8000-000000000004", "2026-08-20T10:00:03.000Z", { tags: [TAG] }),
       event("infographic.favoriteChanged", "00000005-0000-4000-8000-000000000005", "2026-08-20T10:00:04.000Z", { favorite: true }),
       event("infographic.archived", "00000006-0000-4000-8000-000000000006", "2026-08-20T10:00:05.000Z", {}),
+      event("infographic.promotedToLibrary", "00000013-0000-4000-8000-000000000013", "2026-08-20T10:00:05.500Z", {}),
       event("infographic.deleted", "00000007-0000-4000-8000-000000000007", "2026-08-20T10:00:06.000Z", {}),
       event("infographic.imageReplaced", "0000000c-0000-4000-8000-00000000000c", "2026-08-20T10:00:06.500Z", {
         previousOriginalDriveFileId: "old-original", previousThumbnailDriveFileId: "old-thumbnail",
@@ -95,7 +96,7 @@ describe("InfEventSchema", () => {
     ];
 
     expect(samples.map((sample) => InfEventSchema.safeParse(sample).success)).toEqual([
-      true, true, true, true, true, true, true, true, true, true, true,
+      true, true, true, true, true, true, true, true, true, true, true, true,
     ]);
   });
 
@@ -217,6 +218,31 @@ describe("foldEvents", () => {
       driveFileId: "bad-drive-file",
       reason: "unsupported image type",
     })]);
+  });
+
+  test("promotes a stale Inbox item to Library when the backfill event arrives", () => {
+    const result = foldEvents([
+      event("infographic.created", "00000001-0000-4000-8000-000000000001", "2026-08-20T10:00:00.000Z", createdPayload()),
+      event("infographic.promotedToLibrary", "00000014-0000-4000-8000-000000000014", "2026-08-20T10:30:00.000Z", {}),
+    ]);
+
+    expect(result.catalog.infographics[0]).toMatchObject({
+      folderState: "Library",
+      processedAt: "2026-08-20T10:30:00.000Z",
+    });
+  });
+
+  test("ignores promotedToLibrary on archived items", () => {
+    const result = foldEvents([
+      event("infographic.created", "00000001-0000-4000-8000-000000000001", "2026-08-20T10:00:00.000Z", createdPayload()),
+      event("infographic.archived", "00000006-0000-4000-8000-000000000006", "2026-08-20T10:01:00.000Z", {}),
+      event("infographic.promotedToLibrary", "00000014-0000-4000-8000-000000000014", "2026-08-20T10:30:00.000Z", {}),
+    ]);
+
+    expect(result.catalog.infographics[0]).toMatchObject({
+      folderState: "Archive",
+      archived: true,
+    });
   });
 
   test("removes deleted items while retaining review history and a rebuildable tombstone", () => {

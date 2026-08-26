@@ -8,9 +8,9 @@ import { EventStore } from "../src/storage/event-store.js";
 import { LocalDriveAdapter } from "../src/storage/local-drive-adapter.js";
 import type { CreateFileInput, StoragePort, StoredFile } from "../src/storage/storage-port.js";
 
-const ids = { public: "public", inbox: "inbox", duplicates: "duplicates", thumbnails: "thumbnails", private: "private", events: "events" };
+const ids = { public: "public", inbox: "inbox", library: "library", duplicates: "duplicates", thumbnails: "thumbnails", private: "private", events: "events" };
 const folders = new Map([
-  [ids.public, "public"], [ids.inbox, "public/Inbox"], [ids.duplicates, "public/Duplicates"],
+  [ids.public, "public"], [ids.inbox, "public/Inbox"], [ids.library, "public/Library"], [ids.duplicates, "public/Duplicates"],
   [ids.thumbnails, "public/Thumbnails"], [ids.private, "private"], [ids.events, "private/events"],
 ]);
 const apiRoot = process.cwd().endsWith("/api") ? process.cwd() : resolve(process.cwd(), "api");
@@ -40,7 +40,7 @@ async function fixture(failOnCreate?: number) {
   const local = new LocalDriveAdapter({ rootPath: root, folderPaths: folders });
   const storage = failOnCreate === undefined ? local : new FailingStorage(local, failOnCreate);
   const events = new EventStore(storage, ids.events, ids.private);
-  const common = { storage, events, publicRootId: ids.public, inboxFolderId: ids.inbox, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates,
+  const common = { storage, events, publicRootId: ids.public, inboxFolderId: ids.inbox, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates,
     now: () => new Date("2026-08-21T10:00:00.000Z"),
     uuid: (() => { let serial = 0; return () => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}`; })(),
   };
@@ -52,7 +52,7 @@ describe("capture and manual Inbox sync", () => {
     const f = await fixture();
     const bytes = await fixtureImage();
     const created = await f.capture.capture({ bytes, declaredMime: "image/png", name: "  GPU\nchart.png " });
-    expect(created).toMatchObject({ kind: "created", title: "GPU chart", original: { parentIds: [ids.inbox] }, thumbnail: { parentIds: [ids.thumbnails], mimeType: "image/webp" } });
+    expect(created).toMatchObject({ kind: "created", title: "GPU chart", original: { parentIds: [ids.library] }, thumbnail: { parentIds: [ids.thumbnails], mimeType: "image/webp" } });
     expect(await f.storage.readFile((created as Extract<typeof created, { kind: "created" }>).original.id)).toEqual(bytes);
     expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ type: "infographic.created" }));
     await expect(f.capture.capture({ bytes, declaredMime: "image/png", name: "again.png" })).resolves.toMatchObject({ kind: "duplicate" });
@@ -69,7 +69,7 @@ describe("capture and manual Inbox sync", () => {
     // Image processing rejects undecodable bytes before any storage or event side effect runs.
     await expect(invalid.capture.capture({ bytes: Buffer.from("not an image"), declaredMime: "image/png", name: "file.png" }))
       .rejects.toThrow();
-    expect(await invalid.storage.listChildren(ids.inbox)).toEqual([]);
+    expect(await invalid.storage.listChildren(ids.library)).toEqual([]);
     expect(await invalid.storage.listChildren(ids.thumbnails)).toEqual([]);
   });
 
@@ -78,7 +78,9 @@ describe("capture and manual Inbox sync", () => {
     const manual = await f.storage.createFile({ name: "diagram.png", mimeType: "image/png", parentId: ids.inbox, bytes: await fixtureImage() });
     await expect(f.sync.syncInbox()).resolves.toEqual({ imported: 1, duplicates: 0, rejected: 0 });
     expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ type: "infographic.created", payload: expect.objectContaining({ originalDriveFileId: manual.id }) }));
-    expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ capturedAt: manual.createdTime, createdAt: "2026-08-21T10:00:00.000Z" }) }));
+    expect(await f.events.readAll()).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ capturedAt: manual.createdTime, createdAt: "2026-08-21T10:00:00.000Z", folderState: "Library" }) }));
+    expect(await f.storage.listChildren(ids.inbox)).toEqual([]);
+    expect(await f.storage.listChildren(ids.library)).toEqual([expect.objectContaining({ id: manual.id })]);
     expect(await f.storage.listChildren(ids.thumbnails)).toHaveLength(1);
   });
 
@@ -87,7 +89,7 @@ describe("capture and manual Inbox sync", () => {
     const bytes = await fixtureImage();
     const results = await Promise.all([f.capture.capture({ bytes, declaredMime: "image/png", name: "one.png" }), f.capture.capture({ bytes, declaredMime: "image/png", name: "two.png" })]);
     expect(results.map((result) => result.kind).sort()).toEqual(["created", "duplicate"]);
-    expect(await f.storage.listChildren(ids.inbox)).toHaveLength(1);
+    expect(await f.storage.listChildren(ids.library)).toHaveLength(1);
     expect(await f.events.readAll()).toHaveLength(1);
   });
 
@@ -95,7 +97,8 @@ describe("capture and manual Inbox sync", () => {
     const f = await fixture();
     const manual = await f.storage.createFile({ name: "manual.png", mimeType: "image/png", parentId: ids.inbox, bytes: await fixtureImage() });
     await Promise.all([f.sync.syncInbox(), f.sync.syncInbox()]);
-    expect(await f.storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: manual.id })]);
+    expect(await f.storage.listChildren(ids.inbox)).toEqual([]);
+    expect(await f.storage.listChildren(ids.library)).toEqual([expect.objectContaining({ id: manual.id })]);
     expect(await f.storage.listChildren(ids.duplicates)).toEqual([]);
     expect(await f.storage.listChildren(ids.thumbnails)).toHaveLength(1);
     expect((await f.events.readAll()).filter((event) => (event as { type?: string }).type === "infographic.created")).toHaveLength(1);
@@ -114,9 +117,8 @@ describe("capture and manual Inbox sync", () => {
     const invalid = await f.storage.createFile({ name: "not-image.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("not an image") });
     await expect(f.sync.syncInbox()).resolves.toEqual({ imported: 0, duplicates: 1, rejected: 1 });
     expect(await f.storage.listChildren(ids.duplicates)).toEqual([expect.objectContaining({ id: duplicate.id })]);
-    expect(await f.storage.listChildren(ids.inbox)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: original.id }), expect.objectContaining({ id: invalid.id }),
-    ]));
+    expect(await f.storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: invalid.id })]);
+    expect(await f.storage.listChildren(ids.library)).toEqual([expect.objectContaining({ id: original.id })]);
     await expect(f.sync.syncInbox()).resolves.toEqual({ imported: 0, duplicates: 0, rejected: 0 });
   });
 

@@ -204,6 +204,12 @@ function applyMutation(state: FoldState, event: Exclude<InfEvent, { type: "infog
       item.archived = true;
       item.folderState = "Archive";
       break;
+    case "infographic.promotedToLibrary":
+      if (!item.archived && item.folderState !== "Library") {
+        item.folderState = "Library";
+        if (item.processedAt === null) item.processedAt = event.occurredAt;
+      }
+      break;
     case "infographic.deleted":
       state.infographics.delete(event.infographicId);
       state.deletedInfographicIds.add(event.infographicId);

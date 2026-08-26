@@ -63,7 +63,7 @@ describe("ImageReplaceService", () => {
     expect(result.infographic.thumbnailDriveFileId).not.toBe(created.thumbnail.id);
     expect(result.infographic.sha256).toBe(sha256(differentBytes));
     expect(await f.local.listChildren(ids.thumbnails)).toHaveLength(1);
-    expect(await f.local.listChildren(ids.inbox)).toHaveLength(1);
+    expect(await f.local.listChildren(ids.library)).toHaveLength(1);
     const events = await f.events.readAll();
     expect(events.at(-1)).toMatchObject({ type: "infographic.imageReplaced", infographicId: id, payload: expect.objectContaining({ originalDriveFileId: result.original.id, thumbnailDriveFileId: result.thumbnail.id, previousOriginalDriveFileId: created.original.id, previousThumbnailDriveFileId: created.thumbnail.id, sha256: sha256(differentBytes) }) });
   });
@@ -104,7 +104,7 @@ describe("ImageReplaceService", () => {
     const first = await f.capture.capture({ bytes, declaredMime: "image/png", name: "a.png" });
     if (first.kind !== "created") throw new Error("expected created");
     await expect(f.replace.replace({ infographicId: first.infographicId, bytes: Buffer.from("not an image"), declaredMime: "image/png", name: "bad.png" })).rejects.toMatchObject({ code: "IMAGE_DECODE_FAILED" });
-    expect(await f.local.listChildren(ids.inbox)).toHaveLength(1);
+    expect(await f.local.listChildren(ids.library)).toHaveLength(1);
     expect(await f.local.listChildren(ids.thumbnails)).toHaveLength(1);
   });
 
@@ -114,11 +114,11 @@ describe("ImageReplaceService", () => {
     const first = await f.capture.capture({ bytes, declaredMime: "image/png", name: "a.png" });
     if (first.kind !== "created") throw new Error("expected created");
     const failing = new FailingStorage(f.local, 1);
-    const replace = new ImageReplaceService({ storage: failing, events: f.events, publicRootId: ids.public, inboxFolderId: ids.inbox, thumbnailsFolderId: ids.thumbnails, now: () => new Date("2026-08-25T10:00:00.000Z"), uuid: (() => { let serial = 100; return () => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}`; })() });
+    const replace = new ImageReplaceService({ storage: failing, events: f.events, publicRootId: ids.public, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, now: () => new Date("2026-08-25T10:00:00.000Z"), uuid: (() => { let serial = 100; return () => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}`; })() });
     const differentBytes = Buffer.concat([bytes, Buffer.from([3])]);
     await expect(replace.replace({ infographicId: first.infographicId, bytes: differentBytes, declaredMime: "image/png", name: "different.png" })).rejects.toThrow(/planned create failure/);
     expect(await failing.listChildren(ids.thumbnails)).toHaveLength(1);
-    expect(await failing.listChildren(ids.inbox)).toHaveLength(1);
+    expect(await failing.listChildren(ids.library)).toHaveLength(1);
   });
 
   test("reflects a sequence of imageReplaced events in the materialized catalog", async () => {
@@ -143,21 +143,21 @@ describe("ImageReplaceService", () => {
     if (first.kind !== "created") throw new Error("expected created");
     const differentBytes = Buffer.concat([bytes, Buffer.from([9])]);
     await f.replace.replace({ infographicId: first.infographicId, bytes: differentBytes, declaredMime: "image/png", name: "/etc/passwd" });
-    const inbox = await f.local.listChildren(ids.inbox);
-    const replacement = inbox.find((file) => file.id !== first.original.id);
+    const library = await f.local.listChildren(ids.library);
+    const replacement = library.find((file) => file.id !== first.original.id);
     expect(replacement).toBeDefined();
     expect(replacement?.name).not.toContain("/");
     expect(replacement?.appProperties).toMatchObject({ infId: first.infographicId, infSha256: sha256(differentBytes) });
   });
 
-  test("inherits an Inbox-folder parent for the new original even if the previous original moved to Library", async () => {
+  test("places the new original in the Library folder regardless of the previous original's parent", async () => {
     const f = await setup();
     const bytes = await fixtureImage();
     const first = await f.capture.capture({ bytes, declaredMime: "image/png", name: "a.png" });
     if (first.kind !== "created") throw new Error("expected created");
     const differentBytes = Buffer.concat([bytes, Buffer.from([11])]);
-    await f.storage.moveFile(first.original.id, ids.inbox, ids.library);
+    await f.storage.moveFile(first.original.id, ids.library, ids.inbox);
     const result = await f.replace.replace({ infographicId: first.infographicId, bytes: differentBytes, declaredMime: "image/png", name: "after-move.png" });
-    expect(result.original.parentIds).toEqual([ids.inbox]);
+    expect(result.original.parentIds).toEqual([ids.library]);
   });
 });

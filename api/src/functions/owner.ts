@@ -13,6 +13,7 @@ import { ReviewService } from "../services/review-service.js";
 import { SyncService } from "../services/sync-service.js";
 import type { EventStore } from "../storage/event-store.js";
 import type { StoragePort } from "../storage/storage-port.js";
+import type { AutoTrimConfig } from "../images/trim-options.js";
 
 export interface OwnerDependencies {
   storage: StoragePort;
@@ -33,6 +34,8 @@ export interface OwnerDependencies {
   uuid?: () => string;
   /** Optional injected AI service; if absent the handler returns 503. */
   openAiService?: OpenAiService | null;
+  /** Auto-trim configuration for capture/replace. Defaults to disabled when absent. */
+  trim?: AutoTrimConfig;
 }
 
 const metadataKeys = ["title", "notes"] as const;
@@ -148,7 +151,7 @@ export function ownerGet(request: RequestLike, deps: OwnerDependencies): Promise
 export function ownerSync(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
   return owner(request, deps, async () => {
     const input = await parseJson(request, SyncRequestSchema);
-    const service = new SyncService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, duplicatesFolderId: deps.duplicatesFolderId, now: () => now(deps), uuid: () => uuid(deps) });
+    const service = new SyncService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, duplicatesFolderId: deps.duplicatesFolderId, now: () => now(deps), uuid: () => uuid(deps) });
     return jsonResponse(await service.syncInbox(input));
   });
 }
@@ -191,7 +194,7 @@ export function ownerReplaceImage(request: RequestLike, deps: OwnerDependencies)
     if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) {
       throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
     }
-    const service = new ImageReplaceService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) });
+    const service = new ImageReplaceService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) });
     const result = await service.replace({ infographicId: id, bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name });
     return jsonResponse(result.infographic, 200);
   });
@@ -301,7 +304,7 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
     const metadataResult = CaptureMetadataSchema.safeParse({ title: optionalFormString(form, "title"), notes: optionalFormString(form, "notes") });
     if (!metadataResult.success) throw new AppError("INVALID_MULTIPART", 400, "Multipart metadata is invalid");
     const metadata = metadataResult.data;
-    const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata });
+    const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata });
     return jsonResponse(captured, captured.kind === "created" ? 201 : 200);
   });
 }

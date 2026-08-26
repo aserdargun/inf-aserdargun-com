@@ -9,7 +9,7 @@ export interface CaptureServiceOptions {
   storage: StoragePort;
   events: EventStore;
   publicRootId: string;
-  inboxFolderId: string;
+  libraryFolderId: string;
   thumbnailsFolderId: string;
   now?: () => Date;
   uuid?: () => string;
@@ -67,13 +67,18 @@ export class CaptureService {
     const infographicId = this.uuid();
     const title = publicSafeTitle(input.title ?? input.name);
     const timestamp = this.now().toISOString();
-    InfographicCreatedPayloadSchema.parse({ originalDriveFileId: "pending", thumbnailDriveFileId: "pending", sha256: image.sha256, detectedMimeType: image.detectedMime, width: image.width, height: image.height, title, notes: input.notes, capturedAt: timestamp, createdAt: timestamp, folderState: "Inbox" });
+    // New uploads land directly in Library: the Inbox concept has been
+    // removed and the "uncategorized" backlog is a client-side filter on
+    // `categoryIds.length === 0`. Drive file placement matches the canonical
+    // state so replacement, public view, and backfill all read the same
+    // folder hierarchy.
+    InfographicCreatedPayloadSchema.parse({ originalDriveFileId: "pending", thumbnailDriveFileId: "pending", sha256: image.sha256, detectedMimeType: image.detectedMime, width: image.width, height: image.height, title, notes: input.notes, capturedAt: timestamp, createdAt: timestamp, folderState: "Library" });
     const created: StoredFile[] = [];
     try {
       const original = await this.options.storage.createFile({
         name: safeFileName(input.name, `${infographicId}.image`),
         mimeType: image.detectedMime,
-        parentId: this.options.inboxFolderId,
+        parentId: this.options.libraryFolderId,
         bytes: image.originalBytes,
         appProperties: { infSha256: image.sha256, infId: infographicId },
       });
@@ -92,7 +97,7 @@ export class CaptureService {
           originalDriveFileId: original.id, thumbnailDriveFileId: thumbnail.id, sha256: image.sha256,
           detectedMimeType: image.detectedMime, width: image.width, height: image.height, title,
           ...(input.notes !== undefined ? { notes: input.notes } : {}),
-          capturedAt: timestamp, createdAt: timestamp, folderState: "Inbox",
+          capturedAt: timestamp, createdAt: timestamp, folderState: "Library",
         },
       });
       await this.options.events.append(event);

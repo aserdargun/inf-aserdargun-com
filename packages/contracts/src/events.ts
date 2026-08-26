@@ -30,9 +30,6 @@ export const InfographicCreatedPayloadSchema = z.strictObject({
   capturedAt: UtcDateTimeSchema,
   createdAt: UtcDateTimeSchema,
   folderState: DriveFolderStateSchema,
-}).refine((payload) => payload.folderState === "Inbox", {
-  message: "New infographics must begin in Inbox",
-  path: ["folderState"],
 });
 
 export const InfographicMetadataUpdatedPayloadSchema = z.strictObject({
@@ -109,6 +106,10 @@ export const InfographicArchivedEventSchema = infographicEvent(
   "infographic.archived",
   EmptyEventPayloadSchema,
 );
+export const InfographicPromotedToLibraryEventSchema = infographicEvent(
+  "infographic.promotedToLibrary",
+  EmptyEventPayloadSchema,
+);
 export const InfographicDeletedEventSchema = infographicEvent(
   "infographic.deleted",
   EmptyEventPayloadSchema,
@@ -149,6 +150,7 @@ export const InfEventSchema = z.discriminatedUnion("type", [
   InfographicTagsAssignedEventSchema,
   InfographicFavoriteChangedEventSchema,
   InfographicArchivedEventSchema,
+  InfographicPromotedToLibraryEventSchema,
   InfographicDeletedEventSchema,
   InfographicImageReplacedEventSchema,
   InfographicSeenEventSchema,
@@ -169,6 +171,7 @@ export type InfographicCategoriesAssignedEvent = z.infer<typeof InfographicCateg
 export type InfographicTagsAssignedEvent = z.infer<typeof InfographicTagsAssignedEventSchema>;
 export type InfographicFavoriteChangedEvent = z.infer<typeof InfographicFavoriteChangedEventSchema>;
 export type InfographicArchivedEvent = z.infer<typeof InfographicArchivedEventSchema>;
+export type InfographicPromotedToLibraryEvent = z.infer<typeof InfographicPromotedToLibraryEventSchema>;
 export type InfographicDeletedEvent = z.infer<typeof InfographicDeletedEventSchema>;
 export type InfographicImageReplacedPayload = z.infer<typeof InfographicImageReplacedPayloadSchema>;
 export type InfographicImageReplacedEvent = z.infer<typeof InfographicImageReplacedEventSchema>;

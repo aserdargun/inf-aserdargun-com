@@ -11,6 +11,7 @@ export interface SyncServiceOptions {
   events: EventStore;
   publicRootId: string;
   inboxFolderId: string;
+  libraryFolderId: string;
   thumbnailsFolderId: string;
   duplicatesFolderId: string;
   now?: () => Date;
@@ -95,12 +96,16 @@ export class SyncService {
         name: `${infographicId}.webp`, mimeType: image.thumbnailMime, parentId: this.options.thumbnailsFolderId,
         bytes: image.thumbnailBytes, appProperties: { infSha256: image.sha256, infId: infographicId },
       });
+      // Manually uploaded files still land in the inbox folder for the sync
+      // handshake, but the canonical state is Library: the file is moved into
+      // the public Library folder and the create event records Library state.
+      await this.options.storage.moveFile(file.id, this.options.inboxFolderId, this.options.libraryFolderId);
       await this.options.events.append(InfEventSchema.parse({
         eventId: this.uuid(), schemaVersion: 1, type: "infographic.created", occurredAt: timestamp, infographicId,
         payload: {
           originalDriveFileId: file.id, thumbnailDriveFileId: thumbnail.id, sha256: image.sha256,
           detectedMimeType: image.detectedMime, width: image.width, height: image.height, title: publicSafeTitle(file.name),
-          capturedAt: file.createdTime, createdAt: timestamp, folderState: "Inbox",
+          capturedAt: file.createdTime, createdAt: timestamp, folderState: "Library",
         },
       }) as InfEvent);
       state.originalIds.add(file.id);

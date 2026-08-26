@@ -216,7 +216,7 @@ describe("owner HTTP API", () => {
     const { deps, storage, events } = fixture();
     expect((await ownerSurprise(request("/api/surprise"), deps)).status).toBe(200);
     expect(await json(await ownerDueReview(request("/api/review"), deps))).toEqual({ infographics: [] });
-    expect(await json(await ownerStats(request("/api/settings/stats"), deps))).toMatchObject({ total: 1, inbox: 1, due: 0 });
+    expect(await json(await ownerStats(request("/api/settings/stats"), deps))).toMatchObject({ total: 1, uncategorized: 1, due: 0 });
     expect((await ownerDelete(request(`/api/infographics/${infographicId}`, { method: "DELETE", body: JSON.stringify({ confirm: true }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps)).status).toBe(204);
     expect(storage.trashed.sort()).toEqual(["original", "thumbnail"]);
     expect(events.at(-1)?.type).toBe("infographic.deleted");

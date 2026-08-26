@@ -45,7 +45,12 @@ export function InboxPage() {
     setState("loading");
     try {
       const response = await apiRequest<OwnerCatalogResponse>("/api/infographics");
-      const inbox = response.infographics.filter((item) => item.folderState === "Inbox" && !item.archived);
+      // New uploads land directly in Library; the Inbox view is now the
+      // backlog of items that still need a category to anchor the learning
+      // journey. The server still returns every non-deleted item; we keep
+      // this filter client-side so an empty uncategorized list is still a
+      // success state rather than an error.
+      const inbox = response.infographics.filter((item) => !item.archived && item.categoryIds.length === 0);
       setCatalog({ ...response, infographics: inbox });
       setAiStates({});
       setAiErrors({});
@@ -138,7 +143,7 @@ export function InboxPage() {
   }, [catalog]);
 
   const syncButton = <Button disabled={syncing} onClick={() => void sync()} variant="secondary"><RefreshCw aria-hidden="true" className={syncing ? "is-spinning" : ""} size={20} strokeWidth={1.75} />{syncing ? "Syncing Drive…" : "Sync Drive"}</Button>;
-  const heading = <PageHeader actions={syncButton} description="Captured infographics waiting to be organized." title="Inbox" />;
+  const heading = <PageHeader actions={syncButton} description="Uncategorized items. Assign a category to anchor them in your Library." title="Inbox" />;
   const aiErrorList = useMemo(() => Object.entries(aiErrors), [aiErrors]);
 
   if (state === "loading") return <section className="inbox-page">{heading}<PageState kind="loading" title="Loading Inbox…" /></section>;

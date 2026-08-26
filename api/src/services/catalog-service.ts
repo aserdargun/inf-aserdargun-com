@@ -49,9 +49,9 @@ export class CatalogService {
     const items = snapshot.infographics;
     return {
       total: items.length,
-      inbox: items.filter((item) => item.folderState === "Inbox").length,
-      library: items.filter((item) => item.folderState === "Library").length,
-      archive: items.filter((item) => item.folderState === "Archive").length,
+      uncategorized: items.filter((item) => !item.archived && item.categoryIds.length === 0).length,
+      library: items.filter((item) => !item.archived && item.categoryIds.length > 0).length,
+      archive: items.filter((item) => item.archived).length,
       due: this.due(snapshot, now).length,
       reviewed: items.reduce((total, item) => total + item.reviewCount, 0),
       seen: items.reduce((total, item) => total + item.seenCount, 0),

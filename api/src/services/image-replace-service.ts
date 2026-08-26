@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { InfEventSchema, InfographicImageReplacedPayloadSchema, type InfEvent, type MaterializedInfographic } from "@inf/contracts";
 import { processImage } from "../images/process-image.js";
+import { DISABLED_AUTO_TRIM, type AutoTrimConfig } from "../images/trim-options.js";
 import { AppError } from "../http/errors.js";
 import { withKeyedLock } from "../storage/keyed-lock.js";
 import type { EventStore } from "../storage/event-store.js";
@@ -14,8 +15,9 @@ export interface ImageReplaceServiceOptions {
   storage: StoragePort;
   events: EventStore;
   publicRootId: string;
-  inboxFolderId: string;
+  libraryFolderId: string;
   thumbnailsFolderId: string;
+  trim?: AutoTrimConfig;
   now?: () => Date;
   uuid?: () => string;
 }
@@ -58,14 +60,16 @@ function filterInfographicEvents(events: readonly unknown[]): InfographicEvent[]
 export class ImageReplaceService {
   private readonly now: () => Date;
   private readonly uuid: () => string;
+  private readonly trim: AutoTrimConfig;
 
   constructor(private readonly options: ImageReplaceServiceOptions) {
     this.now = options.now ?? (() => new Date());
     this.uuid = options.uuid ?? randomUUID;
+    this.trim = options.trim ?? DISABLED_AUTO_TRIM;
   }
 
   async replace(input: ImageReplaceInput): Promise<ImageReplaceResult> {
-    const image = await processImage(input);
+    const image = await processImage({ ...input, trim: this.trim });
     return withKeyedLock(`sha:${image.sha256}`, async () => {
       const existing = await this.options.storage.findByAppProperty(this.options.publicRootId, "infSha256", image.sha256);
       if (existing.some((file) => file.appProperties.infId && file.appProperties.infId !== input.infographicId)) {
@@ -86,12 +90,23 @@ export class ImageReplaceService {
       let original: StoredFile | undefined;
       let thumbnail: StoredFile | undefined;
       try {
+        const baseAppProps = { infSha256: image.sha256, infId: infographicId };
+        const originalAppProps = image.trimApplied
+          ? {
+              ...baseAppProps,
+              infTrimApplied: "1",
+              infOriginalWidth: String(image.originalWidth),
+              infOriginalHeight: String(image.originalHeight),
+              infStoredWidth: String(image.width),
+              infStoredHeight: String(image.height),
+            }
+          : baseAppProps;
         original = await this.options.storage.createFile({
           name: safeFileName(input.name, `${infographicId}.image`),
           mimeType: image.detectedMime,
-          parentId: this.options.inboxFolderId,
+          parentId: this.options.libraryFolderId,
           bytes: image.originalBytes,
-          appProperties: { infSha256: image.sha256, infId: infographicId },
+          appProperties: originalAppProps,
         });
         created.push(original);
         thumbnail = await this.options.storage.createFile({

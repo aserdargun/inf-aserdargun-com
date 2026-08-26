@@ -209,7 +209,7 @@ function DeleteConfirmDialog({ itemTitle, busy, onCancel, onConfirm }: DeleteCon
     <div className="delete-dialog__scrim" onClick={busy ? undefined : onCancel} />
     <div className="delete-dialog__panel">
       <h2 id={`delete-${itemTitle}`}>Delete this infographic?</h2>
-      <p>This trashes the original and the thumbnail in Drive and removes the row from your Inbox.</p>
+      <p>This trashes the original and the thumbnail in Drive and deletes the infographic from your Library.</p>
       <div className="delete-dialog__actions">
         <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
         <button className="button button--primary" disabled={busy} onClick={onConfirm} type="button">{busy ? "Deleting…" : "Delete"}</button>
