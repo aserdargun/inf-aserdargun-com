@@ -111,15 +111,37 @@ describe("InfEventSchema", () => {
     expect(InfEventSchema.safeParse(sample).success).toBe(false);
   });
 
-  test("rejects undeclared payload fields", () => {
-    const sample = event(
-      "infographic.created",
-      "00000001-0000-4000-8000-000000000001",
-      "2026-08-20T10:00:00.000Z",
-      { ...createdPayload(), extra: "not allowed" },
-    );
+  test("accepts legacy events with undeclared payload fields and strips them", () => {
+    // Pre-refactor events (e.g. those written before `sourceAuthor` and
+    // `sourcePlatform` were removed) still appear in the immutable event log.
+    // Their payload carries keys the current schema no longer declares, but
+    // we must fold them so the affected items re-enter the catalog instead
+    // of being quarantined as `invalid-event`.
+    const legacy = {
+      ...createdPayload(),
+      sourceAuthor: "legacy-author",
+      sourcePlatform: "legacy-platform",
+    };
+    const sample = event("infographic.created", "00000001-0000-4000-8000-000000000001", "2026-08-20T10:00:00.000Z", legacy);
 
-    expect(InfEventSchema.safeParse(sample).success).toBe(false);
+    const parsed = InfEventSchema.safeParse(sample);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    // Fold the event and confirm the item materializes with the legacy
+    // extra fields dropped, the declared ones intact.
+    const result = foldEvents([parsed.data]);
+    expect(result.quarantine).toEqual([]);
+    expect(result.catalog.infographics).toHaveLength(1);
+    expect(result.catalog.infographics[0]).toMatchObject({
+      id: INFOGRAPHIC_ID,
+      title: "CUDA diagram",
+      folderState: "Inbox",
+    });
+    // The legacy fields must not leak into the materialized item.
+    const item = result.catalog.infographics[0] as Record<string, unknown>;
+    expect("sourceAuthor" in item).toBe(false);
+    expect("sourcePlatform" in item).toBe(false);
   });
 });
 

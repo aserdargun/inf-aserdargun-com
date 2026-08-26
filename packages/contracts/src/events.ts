@@ -18,7 +18,7 @@ const PrivateMetadataFields = {
   notes: z.string().max(10_000).nullable().optional(),
 };
 
-export const InfographicCreatedPayloadSchema = z.strictObject({
+export const InfographicCreatedPayloadSchema = z.object({
   originalDriveFileId: z.string().min(1),
   thumbnailDriveFileId: z.string().min(1),
   sha256: Sha256Schema,
@@ -32,26 +32,26 @@ export const InfographicCreatedPayloadSchema = z.strictObject({
   folderState: DriveFolderStateSchema,
 });
 
-export const InfographicMetadataUpdatedPayloadSchema = z.strictObject({
+export const InfographicMetadataUpdatedPayloadSchema = z.object({
   title: PublicSafeTitleSchema.optional(),
   ...PrivateMetadataFields,
 }).refine((payload) => Object.keys(payload).length > 0, "At least one metadata field is required");
 
-export const InfographicCategoriesAssignedPayloadSchema = z.strictObject({
+export const InfographicCategoriesAssignedPayloadSchema = z.object({
   categories: z.array(CategorySchema),
 });
 
-export const InfographicTagsAssignedPayloadSchema = z.strictObject({
+export const InfographicTagsAssignedPayloadSchema = z.object({
   tags: z.array(TagSchema),
 });
 
-export const InfographicFavoriteChangedPayloadSchema = z.strictObject({
+export const InfographicFavoriteChangedPayloadSchema = z.object({
   favorite: z.boolean(),
 });
 
-export const EmptyEventPayloadSchema = z.strictObject({});
+export const EmptyEventPayloadSchema = z.object({});
 
-export const ReviewRecordedPayloadSchema = z.strictObject({
+export const ReviewRecordedPayloadSchema = z.object({
   reviewId: UuidSchema,
   rating: ReviewRatingSchema,
   reviewedAt: UtcDateTimeSchema,
@@ -60,7 +60,7 @@ export const ReviewRecordedPayloadSchema = z.strictObject({
   dueAt: UtcDateTimeSchema,
 });
 
-export const SyncFileRejectedPayloadSchema = z.strictObject({
+export const SyncFileRejectedPayloadSchema = z.object({
   driveFileId: z.string().min(1),
   fileName: z.string().min(1),
   reason: z.string().trim().min(1).max(500),
@@ -114,7 +114,7 @@ export const InfographicDeletedEventSchema = infographicEvent(
   "infographic.deleted",
   EmptyEventPayloadSchema,
 );
-export const InfographicImageReplacedPayloadSchema = z.strictObject({
+export const InfographicImageReplacedPayloadSchema = z.object({
   previousOriginalDriveFileId: z.string().min(1),
   previousThumbnailDriveFileId: z.string().min(1),
   originalDriveFileId: z.string().min(1),
