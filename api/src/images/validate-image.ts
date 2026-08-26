@@ -21,7 +21,6 @@ export type ImageProcessingErrorCode =
   | "IMAGE_PIXEL_LIMIT_EXCEEDED"
   | "IMAGE_PROCESSING_FAILED";
 
-/** A typed, stable domain error for the later HTTP error mapper. */
 export class ImageProcessingError extends Error {
   constructor(
     public readonly code: ImageProcessingErrorCode,
@@ -37,6 +36,11 @@ export interface ProcessImageInput {
   declaredMime: string;
   maxBytes?: number;
   maxPixels?: number;
+  /**
+   * Auto-trim configuration. When omitted or `null`, trim is disabled. When
+   * supplied, the trim runs after decode and before the thumbnail is built.
+   */
+  trim?: import("./trim-options.js").AutoTrimConfig | null;
 }
 
 export interface ValidatedImageInput {

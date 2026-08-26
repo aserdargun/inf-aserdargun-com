@@ -10,12 +10,28 @@ const item = {
 };
 const image = readFileSync("api/test/fixtures/valid-infographic.png");
 
-async function mockPublic(page: import("playwright/test").Page, mode: "success" | "empty" | "error" = "success") {
+function publicPage(items: typeof item[] | [], overrides: { page?: number; pageSize?: number } = {}) {
+  const page = overrides.page ?? 1;
+  const pageSize = overrides.pageSize ?? 12;
+  return { items, page, pageSize, totalItems: items.length, totalPages: items.length === 0 ? 0 : Math.ceil(items.length / pageSize) };
+}
+
+async function mockPublic(page: import("playwright/test").Page, mode: "success" | "empty" | "error" | "paginated" = "success") {
   await page.route("**/api/public/infographics**", (route) => {
     const url = new URL(route.request().url());
     if (mode === "error") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
     if (url.pathname.endsWith(item.id)) return route.fulfill({ status: mode === "empty" ? 404 : 200, contentType: "application/json", body: JSON.stringify(item) });
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify(mode === "empty" ? [] : [item]) });
+    if (mode === "empty") return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([])) });
+    if (mode === "paginated") {
+      const requestedPage = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+      const first = { ...item, id: "00000000-0000-4000-8000-000000000101", title: "Page 1 item", publishedAt: "2024-05-12T00:00:00.000Z" };
+      const second = { ...item, id: "00000000-0000-4000-8000-000000000102", title: "Page 2 item", publishedAt: "2024-05-11T00:00:00.000Z" };
+      const third = { ...item, id: "00000000-0000-4000-8000-000000000103", title: "Page 2 item second", publishedAt: "2024-05-10T00:00:00.000Z" };
+      if (requestedPage <= 1) return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([first, second], { page: 1 })) });
+      if (requestedPage === 2) return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([third], { page: 2 })) });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([], { page: requestedPage })) });
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([item])) });
   });
   await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
 }
@@ -73,4 +89,38 @@ test("public View Mode is responsive, keyboard reachable, and console-clean", as
   await expect(page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).resolves.toBeTruthy();
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-13-public-mobile.png" });
   expect(errors).toEqual([]);
+});
+
+test("public gallery paginates with stable URLs, deep links, and an accessible status", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  await mockPublic(page, "paginated");
+  await page.goto("/view/");
+  await expect(page.getByRole("link", { name: "Open Page 1 item" })).toBeVisible();
+  await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 infographics", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous page" })).toBeDisabled();
+  await page.getByRole("button", { name: "Next page" }).click();
+  await expect(page).toHaveURL(/\/view\/\?page=2$/);
+  await expect(page.getByRole("link", { name: "Open Page 2 item second" })).toBeVisible();
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next page" })).toBeDisabled();
+  await page.getByRole("button", { name: "Previous page" }).click();
+  await expect(page).toHaveURL(/\/view\/$/);
+  await expect(page.getByRole("link", { name: "Open Page 1 item" })).toBeVisible();
+  await page.goto("/view/?page=2");
+  await expect(page.getByRole("link", { name: "Open Page 2 item second" })).toBeVisible();
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("home page opens the public gallery and never asks for sign-in", async ({ page }) => {
+  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([item])) }));
+  await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Infographics" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open GPU memory hierarchy" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+  await expect(page.locator(".public-view__admin-link")).toHaveAttribute("href", "/login/");
 });

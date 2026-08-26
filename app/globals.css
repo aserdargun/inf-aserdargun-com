@@ -59,3 +59,10 @@
 .delete-dialog__panel p { color:var(--text-secondary); font-size:15px; line-height:24px; }
 .delete-dialog__actions { display:flex; flex-wrap:wrap; gap:12px; justify-content:flex-end; }
 @media(max-width:767px) { .inbox-row__fields { grid-template-columns:1fr; } .delete-dialog__actions { flex-direction:column-reverse; } .delete-dialog__actions .button { width:100%; } }
+.public-pager { align-items:center; border-top:1px solid var(--border); display:grid; gap:16px; grid-template-columns:1fr auto 1fr; margin-top:48px; padding-top:24px; }
+.public-pager__status { color:var(--text-secondary); font-size:14px; justify-self:center; line-height:21px; }
+.public-pager__status strong { color:var(--text-primary); font-weight:700; }
+.public-pager__count { color:var(--text-tertiary); }
+.public-pager__nav { justify-self:start; }
+.public-pager__nav+strong+button,.public-pager__nav:last-of-type { justify-self:end; }
+@media(max-width:767px) { .public-pager { gap:12px; grid-template-columns:1fr; margin-top:32px; } .public-pager__status { justify-self:start; } .public-pager__nav { justify-self:stretch; width:100%; } }

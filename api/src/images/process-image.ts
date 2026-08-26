@@ -1,5 +1,7 @@
 import sharp, { type Metadata } from "sharp";
+import { autoTrimBytes, type AutoTrimConfig } from "./auto-trim.js";
 import { sha256 } from "./hash.js";
+import { DISABLED_AUTO_TRIM } from "./trim-options.js";
 import {
   type ImageProcessingErrorCode,
   ImageProcessingError,
@@ -12,7 +14,12 @@ export type { ImageProcessingErrorCode, ProcessImageInput, SupportedImageMime } 
 export { ImageProcessingError } from "./validate-image.js";
 
 export interface ProcessedImage {
-  /** An independent copy, so later caller mutation cannot alter the stored original. */
+  /**
+   * An independent copy of the bytes that will be stored as the original file.
+   * If auto-trim is enabled and the input had solid margins, this is the
+   * cropped output. The bytes are copied so the caller's buffer cannot mutate
+   * the stored file.
+   */
   originalBytes: Buffer;
   detectedMime: SupportedImageMime;
   width: number;
@@ -22,9 +29,20 @@ export interface ProcessedImage {
   thumbnailMime: "image/webp";
   thumbnailWidth: number;
   thumbnailHeight: number;
+  /** True when auto-trim cropped the input. */
+  trimApplied: boolean;
+  /** Width before trim (equals `width` when `trimApplied` is false). */
+  originalWidth: number;
+  /** Height before trim (equals `height` when `trimApplied` is false). */
+  originalHeight: number;
 }
 
 const sharpOptions = (maxPixels: number) => ({ limitInputPixels: maxPixels });
+
+function toTrimConfig(trim: AutoTrimConfig | null | undefined): AutoTrimConfig {
+  if (!trim) return DISABLED_AUTO_TRIM;
+  return { ...trim };
+}
 
 const imageMimeBySharpFormat: Record<string, Exclude<SupportedImageMime, "image/avif">> = {
   png: "image/png",
@@ -34,8 +52,6 @@ const imageMimeBySharpFormat: Record<string, Exclude<SupportedImageMime, "image/
 };
 
 function detectedMime(metadata: Metadata): SupportedImageMime | null {
-  // Sharp/libvips distinguishes AVIF from HEIC after decoding the HEIF container.
-  // This also handles valid ISO-BMFF extended-size boxes without hand parsing them.
   if (metadata.format === "heif") return metadata.mediaType === "image/avif" ? "image/avif" : null;
   return imageMimeBySharpFormat[metadata.format ?? ""] ?? null;
 }
@@ -86,7 +102,6 @@ function decodeError(error: unknown): ImageProcessingError {
 
 async function readSourceMetadata(bytes: Buffer, maxPixels: number): Promise<Metadata> {
   try {
-    // Read every page/frame so the explicit total-pixel check cannot be bypassed.
     return await sharp(bytes, { ...sharpOptions(maxPixels), animated: true, pages: -1 }).metadata();
   } catch (error) {
     throw decodeError(error);
@@ -128,9 +143,8 @@ async function validatedThumbnailMetadata(bytes: Buffer): Promise<{ width: numbe
 
 export async function processImage(input: ProcessImageInput): Promise<ProcessedImage> {
   const validated = validateImageInput(input);
-  // Copy before asynchronous work: the caller can retain and mutate its Buffer after this call begins.
-  const originalBytes = Buffer.from(validated.bytes);
-  const metadata = await readSourceMetadata(originalBytes, validated.maxPixels);
+  const sourceBytes = Buffer.from(validated.bytes);
+  const metadata = await readSourceMetadata(sourceBytes, validated.maxPixels);
   const detected = detectedMime(metadata);
   if (detected === null) {
     throw new ImageProcessingError("UNSUPPORTED_IMAGE_FORMAT", "Decoded image format is unsupported.");
@@ -140,18 +154,39 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
   }
   const rawDimensions = dimensionsWithinPixelLimit(metadata, validated.maxPixels);
   const dimensions = logicalDimensions(metadata, rawDimensions);
+
+  const trimConfig = toTrimConfig(input.trim);
+  const trimResult = trimConfig.enabled
+    ? await autoTrimBytes(sourceBytes, {
+        threshold: trimConfig.threshold,
+        minSavingsRatio: trimConfig.minSavingsRatio,
+        minDimension: trimConfig.minDimension,
+        maxPixels: trimConfig.maxPixels,
+      })
+    : null;
+  const originalBytes = trimResult?.bytes ?? sourceBytes;
+  const storedDimensions = trimResult
+    ? { width: trimResult.width, height: trimResult.height }
+    : dimensions;
+  const trimApplied = !!trimResult?.trimmed;
+  const originalWidth = trimResult?.originalWidth ?? dimensions.width;
+  const originalHeight = trimResult?.originalHeight ?? dimensions.height;
+
   const thumbnailBytes = await makeThumbnail(originalBytes, validated.maxPixels);
   const thumbnail = await validatedThumbnailMetadata(thumbnailBytes);
 
   return {
     originalBytes,
     detectedMime: detected,
-    width: dimensions.width,
-    height: dimensions.height,
+    width: storedDimensions.width,
+    height: storedDimensions.height,
     sha256: sha256(originalBytes),
     thumbnailBytes,
     thumbnailMime: "image/webp",
     thumbnailWidth: thumbnail.width,
     thumbnailHeight: thumbnail.height,
+    trimApplied,
+    originalWidth,
+    originalHeight,
   };
 }

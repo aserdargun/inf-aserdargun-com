@@ -1,4 +1,4 @@
-import { toPublicInfographic } from "../http/public-projection.js";
+import { PublicCatalogQuerySchema, toPublicInfographic } from "../http/public-projection.js";
 import { AppError, binaryResponse, errorResponse, jsonResponse, type HttpResponse } from "../http/errors.js";
 import { pathSegment, uuidPath, type RequestLike } from "../http/parse.js";
 import { CatalogService } from "../services/catalog-service.js";
@@ -31,11 +31,38 @@ function matchedRole(item: MaterializedInfographic, fileId: string): "original" 
   return null;
 }
 
+function publicCatalogQuery(request: RequestLike): { page: number; pageSize: number } {
+  let params: URLSearchParams;
+  try { params = new URL(request.url).searchParams; } catch (cause) { console.error("URL parse failed", cause); throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid"); }
+  const raw: Record<string, string> = {};
+  for (const [key, value] of params) {
+    // Reject duplicate keys so callers cannot smuggle an out-of-bounds pageSize
+    // by repeating a smaller value; duplicates land on the same key.
+    if (key in raw) throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid");
+    raw[key] = value;
+  }
+  console.log("Parsing query", raw);
+  const parsed = PublicCatalogQuerySchema.safeParse(raw);
+  if (!parsed.success) { console.error("Parse failed", parsed.error); throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid"); }
+  return parsed.data;
+}
+
+/** The public gallery is ordered newest-publication-first with id as a stable tiebreaker so paging never reorders across requests. */
+function sortForPublic(items: MaterializedInfographic[]): MaterializedInfographic[] {
+  return [...items].sort((left, right) => right.capturedAt.localeCompare(left.capturedAt) || left.id.localeCompare(right.id));
+}
+
 export async function publicList(request: RequestLike, deps: PublicDependencies): Promise<HttpResponse> {
   try {
+    const query = publicCatalogQuery(request);
     const snapshot = await new CatalogService(deps.events).snapshot();
     const live = await Promise.all(snapshot.infographics.map(async (item) => (await isLivePublicItem(item, deps)) ? item : null));
-    return jsonResponse(live.filter((item): item is MaterializedInfographic => item !== null).map(toPublicInfographic), 200, "public");
+    const ordered = sortForPublic(live.filter((item): item is MaterializedInfographic => item !== null));
+    const totalItems = ordered.length;
+    const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / query.pageSize);
+    const start = (query.page - 1) * query.pageSize;
+    const items = ordered.slice(start, start + query.pageSize).map(toPublicInfographic);
+    return jsonResponse({ items, page: query.page, pageSize: query.pageSize, totalItems, totalPages }, 200, "public");
   } catch (error) { return errorResponse(error, "public"); }
 }
 

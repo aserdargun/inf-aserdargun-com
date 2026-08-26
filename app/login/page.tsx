@@ -8,7 +8,9 @@ export default function LoginPage() {
   useEffect(() => { const query = new URLSearchParams(window.location.search); if (query.has("error")) setState("error"); else if (query.has("pending")) setState("loading"); }, []);
   function signIn() {
     setState("loading");
-    const returnUrl = new URL("/", window.location.origin).toString();
+    // The site root is now the public collection; the owner shell lives at
+    // /today/, which is where authenticated users should land after sign-in.
+    const returnUrl = new URL("/today/", window.location.origin).toString();
     window.location.assign(`/.auth/login/github?post_login_redirect_uri=${encodeURIComponent(returnUrl)}`);
   }
 

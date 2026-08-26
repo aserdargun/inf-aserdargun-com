@@ -42,7 +42,7 @@ async function mockLibrary(page: import("playwright/test").Page, options: { dele
     return route.fallback();
   });
   await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
-  await page.route("**/api/public/infographics**", (route) => { publicCatalogCalls += 1; return route.fulfill({ contentType: "application/json", body: "[]" }); });
+  await page.route("**/api/public/infographics**", (route) => { publicCatalogCalls += 1; return route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [], page: 1, pageSize: 12, totalItems: 0, totalPages: 0 }) }); });
   return { patches, deleteCalls: () => deleteCalls, publicCatalogCalls: () => publicCatalogCalls, catalogRequests, releaseDelete: () => releaseDelete?.() };
 }
 

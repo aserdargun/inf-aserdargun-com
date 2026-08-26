@@ -1,5 +1,6 @@
 import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
 import { CachedEventStore, CachedStorage, DEFAULT_CACHE_TTLS } from "./cache/index.js";
+import { loadAutoTrimConfig } from "./images/trim-options.js";
 import { EventStore } from "./storage/event-store.js";
 import { GoogleDriveAdapter } from "./storage/google-drive-adapter.js";
 import { LocalDriveAdapter } from "./storage/local-drive-adapter.js";
@@ -44,10 +45,11 @@ export function createRuntime(env: Environment = process.env) {
   const eventsFolderId = local ? LOCAL.eventsFolderId : required("INF_EVENTS_FOLDER_ID", env);
   const rawEvents = new EventStore(storage, eventsFolderId, privateRootId);
   const events = local ? rawEvents : new CachedEventStore(rawEvents, DEFAULT_CACHE_TTLS.events);
+  const trim = loadAutoTrimConfig(env);
   const common = { storage, events, publicRootId: PUBLIC_ROOT_ID };
   return {
     public: common,
-    owner: { ...common, privateRootId, eventsFolderId, inboxFolderId: local ? LOCAL.inboxFolderId : required("INF_INBOX_FOLDER_ID", env), libraryFolderId: local ? LOCAL.libraryFolderId : required("INF_LIBRARY_FOLDER_ID", env), thumbnailsFolderId: local ? LOCAL.thumbnailsFolderId : required("INF_THUMBNAILS_FOLDER_ID", env), duplicatesFolderId: local ? LOCAL.duplicatesFolderId : required("INF_DUPLICATES_FOLDER_ID", env), allowedGithubUser: env.INF_ALLOWED_GITHUB_USER, localAuthBypass: env.INF_LOCAL_AUTH_BYPASS, azureSiteName: env.WEBSITE_SITE_NAME, localProxyMode: env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: env.INF_LOCAL_PROXY_TOKEN, openAiService: openAiServiceFromEnv(env) },
+    owner: { ...common, privateRootId, eventsFolderId, inboxFolderId: local ? LOCAL.inboxFolderId : required("INF_INBOX_FOLDER_ID", env), libraryFolderId: local ? LOCAL.libraryFolderId : required("INF_LIBRARY_FOLDER_ID", env), thumbnailsFolderId: local ? LOCAL.thumbnailsFolderId : required("INF_THUMBNAILS_FOLDER_ID", env), duplicatesFolderId: local ? LOCAL.duplicatesFolderId : required("INF_DUPLICATES_FOLDER_ID", env), allowedGithubUser: env.INF_ALLOWED_GITHUB_USER, localAuthBypass: env.INF_LOCAL_AUTH_BYPASS, azureSiteName: env.WEBSITE_SITE_NAME, localProxyMode: env.INF_LOCAL_PROXY_MODE, expectedLocalProxyToken: env.INF_LOCAL_PROXY_TOKEN, openAiService: openAiServiceFromEnv(env), trim },
   };
 }
 

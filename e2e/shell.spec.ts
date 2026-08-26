@@ -18,7 +18,7 @@ async function mockToday(page: import("playwright/test").Page, mode: "success" |
 }
 
 test("owner sees Today navigation and primary learning actions", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/today/");
 
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Inbox" })).toBeVisible();
@@ -40,7 +40,7 @@ test("uses Infographics as the document identity and browser favicon", async ({ 
 
 test("renders the Infographics wordmark across owner, login, and public surfaces", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1024 });
-  await page.goto("/");
+  await page.goto("/today/");
   await expect(page.locator(".sidebar .wordmark")).toHaveText("Infographics");
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -56,7 +56,7 @@ test("renders the Infographics wordmark across owner, login, and public surfaces
 
 test("uses the editorial design system and a wide owner workspace", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1024 });
-  await page.goto("/");
+  await page.goto("/today/");
 
   await expect(page.locator(".sidebar")).toHaveCSS("width", "248px");
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(245, 242, 234)");
@@ -67,7 +67,7 @@ test("uses the editorial design system and a wide owner workspace", async ({ pag
 
 test("switches navigation atomically at the approved breakpoint and keeps Settings reachable", async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 900 });
-  await page.goto("/");
+  await page.goto("/today/");
   await expect(page.locator(".sidebar")).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeHidden();
 
@@ -80,7 +80,7 @@ test("switches navigation atomically at the approved breakpoint and keeps Settin
 
 test("persists an accessible keyboard theme choice", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
-  await page.goto("/");
+  await page.goto("/today/");
   const toggle = page.getByRole("button", { name: "Switch to dark theme" });
   await toggle.focus();
   await page.keyboard.press("Enter");
@@ -92,7 +92,7 @@ test("applies a persisted theme before the first client interaction", async ({ p
   const hydrationProblems: string[] = [];
   page.on("console", (message) => { if (/hydration|did not match/i.test(message.text())) hydrationProblems.push(message.text()); });
   await page.addInitScript(() => localStorage.setItem("inf-theme", "dark"));
-  await page.goto("/");
+  await page.goto("/today/");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const toggle = page.getByRole("button", { name: "Switch to light theme" });
   await expect(toggle).toBeVisible();
@@ -105,7 +105,7 @@ test("applies a persisted theme before the first client interaction", async ({ p
 test("persisted dark bootstrap keeps the pre-hydration toggle semantically neutral", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("inf-theme", "dark"));
   await page.route("**/_next/static/**", (route) => route.request().resourceType() === "script" ? route.abort() : route.continue());
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/today/", { waitUntil: "domcontentloaded" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const toggle = page.getByRole("button", { name: "Color theme" });
   await expect(toggle).toBeDisabled();
@@ -117,7 +117,7 @@ test("persisted dark bootstrap keeps the pre-hydration toggle semantically neutr
 test("shows loading, empty, error, and success Today states with exact copy", async ({ page }) => {
   await page.route("**/api/infographics", () => new Promise(() => undefined));
   await page.route("**/api/settings/stats", () => new Promise(() => undefined));
-  await page.goto("/");
+  await page.goto("/today/");
   await expect(page.getByText("Loading Today…", { exact: true })).toBeVisible();
   await page.unrouteAll();
 
@@ -146,7 +146,7 @@ test("shows loading, empty, error, and success Today states with exact copy", as
 
 test("keeps Today actions together and its empty state clear above mobile navigation", async ({ page }) => {
   await mockToday(page, "empty");
-  await page.goto("/");
+  await page.goto("/today/");
 
   const actions = page.locator(".page-header__actions");
   await expect(actions.getByRole("link", { name: "Start review" })).toBeVisible();
@@ -172,7 +172,7 @@ test("orders Today content, excludes archived review rows, and preserves diagram
     { ...item, id: "00000000-0000-4000-8000-000000000005", title: "Archived diagram", capturedAt: at(-5), reviewDueAt: at(0), archived: true },
   ];
   await mockToday(page, "success", infographics);
-  await page.goto("/");
+  await page.goto("/today/");
 
   await expect.poll(() => page.locator(".media-frame img").evaluateAll((images) => images.map((image) => image.getAttribute("alt")))).toEqual(["Latest diagram", "Middle diagram", "Oldest diagram"]);
   await expect(page.locator(".review-next li")).toHaveCount(3);
@@ -227,7 +227,7 @@ test("login returns GitHub authentication to the current origin", async ({ page 
 
   const requestUrl = new URL((await authRequest).url());
   expect(requestUrl.pathname).toBe("/.auth/login/github");
-  expect(requestUrl.searchParams.get("post_login_redirect_uri")).toBe("http://127.0.0.1:4280/");
+  expect(requestUrl.searchParams.get("post_login_redirect_uri")).toBe("http://127.0.0.1:4280/today/");
 });
 
 test("login reports a pending GitHub sign-in immediately", async ({ page }) => {
@@ -237,7 +237,7 @@ test("login reports a pending GitHub sign-in immediately", async ({ page }) => {
 
 test("owner shell exposes a sign-out entrypoint that targets the SWA logout endpoint", async ({ page }) => {
   await mockToday(page, "empty");
-  await page.goto("/");
+  await page.goto("/today/");
 
   const signout = page.locator("[data-testid='sidebar-signout']");
   await expect(signout).toBeVisible();
@@ -249,7 +249,7 @@ test("owner shell exposes a sign-out entrypoint that targets the SWA logout endp
 test("mobile top bar exposes a sign-out entrypoint alongside Settings", async ({ page }) => {
   await mockToday(page, "empty");
   await page.setViewportSize({ width: 480, height: 720 });
-  await page.goto("/");
+  await page.goto("/today/");
 
   const signout = page.locator("[data-testid='mobile-signout']");
   await expect(signout).toBeVisible();

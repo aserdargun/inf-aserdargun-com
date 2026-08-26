@@ -40,7 +40,7 @@ test("production-static routes enforce functional CSP and intentional cache head
   const immutablePath = viewHtml.match(/\/(?:_next\/static\/[^"']+)/)?.[0];
   expect(immutablePath).toBeTruthy();
   const expected = [
-    ["/", "private, no-store"],
+    ["/", "public, max-age=0, must-revalidate"],
     ["/view/", "public, max-age=0, must-revalidate"],
     ["/manifest.webmanifest", "public, max-age=300, must-revalidate"],
     ["/view/sw.js", "public, max-age=0, must-revalidate"],
@@ -60,10 +60,10 @@ test("production-static routes enforce functional CSP and intentional cache head
   expect(csp).toContain("frame-ancestors 'none'");
   expect(csp).toMatch(/script-src 'self' 'sha256-/);
   expect(csp).not.toMatch(/script-src[^;]*(?:unsafe-inline|unsafe-eval|\*|https?:)/);
-  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [], page: 1, pageSize: 12, totalItems: 0, totalPages: 0 }) }));
   await page.goto("/view/");
   await expect(page.getByRole("heading", { name: "Infographics" })).toBeVisible();
-  await page.goto("/");
+  await page.goto("/today/");
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   expect(violations).toEqual([]);
 });
@@ -90,7 +90,7 @@ test("browser-parsed inline script bodies exactly match the authoritative CSP ha
 test("View Mode exposes a local manifest, icons, and non-blocking service-worker registration", async ({ page, request }) => {
   const external: string[] = [];
   page.on("request", (entry) => { if (new URL(entry.url()).origin !== "http://127.0.0.1:4280") external.push(entry.url()); });
-  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [], page: 1, pageSize: 12, totalItems: 0, totalPages: 0 }) }));
   await page.goto("/view/");
   const manifest = await (await request.get("/manifest.webmanifest")).json();
   expect(manifest.display).toBe("standalone");
@@ -117,7 +117,7 @@ test("deployed worker replaces a stale release, refreshes View navigation, and f
     const old = await caches.open("PUBLIC-CACHE-v1-static");
     await old.put("/view/", new Response("<h1>stale release</h1>", { headers: { "Content-Type": "text/html" } }));
   });
-  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: "[]" }));
+  await page.route("**/api/public/infographics", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [], page: 1, pageSize: 12, totalItems: 0, totalPages: 0 }) }));
   await page.goto("/view/");
   await expect(page.getByRole("heading", { name: "Infographics" })).toBeVisible();
   await expect.poll(() => page.evaluate(async () => ({
@@ -150,9 +150,9 @@ test("loading, empty, error, and sparse success public states keep the footer at
   const item = { id: "00000000-0000-4000-8000-000000000301", title: "One public item", publishedAt: "2024-05-12T00:00:00.000Z", thumbnailUrl: "/api/public/images/thumb-301", imageUrl: "/api/public/images/original-301" };
   const states = [
     { name: "loading", text: "Loading infographics…", respond: () => new Promise<void>(() => undefined) },
-    { name: "empty", text: "No infographics are available.", respond: (route: import("playwright/test").Route) => route.fulfill({ contentType: "application/json", body: "[]" }) },
+    { name: "empty", text: "No infographics are available.", respond: (route: import("playwright/test").Route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [], page: 1, pageSize: 12, totalItems: 0, totalPages: 0 }) }) },
     { name: "error", text: "This collection is unavailable right now.", respond: (route: import("playwright/test").Route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }) },
-    { name: "success", text: "One public item", respond: (route: import("playwright/test").Route) => route.fulfill({ contentType: "application/json", body: JSON.stringify([item]) }) },
+    { name: "success", text: "One public item", respond: (route: import("playwright/test").Route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [item], page: 1, pageSize: 12, totalItems: 1, totalPages: 1 }) }) },
   ] as const;
   for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) for (const state of states) {
     await page.unrouteAll(); await page.route("**/api/public/infographics", state.respond); await page.route("**/api/public/images/**", (route) => route.fulfill({ contentType: "image/png", body: image })); await page.setViewportSize(viewport); await page.goto(`/view/?state=${state.name}`);

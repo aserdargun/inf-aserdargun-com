@@ -17,6 +17,15 @@ pnpm stop:codex
 
 Run uses loopback-only ports: Next 3000, Functions 7071, a private local API capability hop 7072, and the Static Web Apps emulator 4280. A random capability is kept only in ignored `.codex/run/`; it is injected server-to-server by the local API proxy and is never shipped to browser JavaScript. The local emulator relaxes only SWA route roles while API owner authorization still requires that capability, exact local bypass flags, loopback, and no Azure production signal. Local storage uses ignored checkout-private atomic `.inf-bundle` objects. Legacy split local data is intentionally not migrated: Stop, run `node scripts/clean-output.mjs .codex/run/storage`, then Run. `pnpm stop:codex` identifies listener cwd values, stops only this checkout's processes, and refuses foreign listeners.
 
+## Auto-trim on capture
+
+Pasting or dropping a screenshot on the Add page usually carries solid margins around the content. The API auto-trims those margins before storing the file so the original and its thumbnail reflect the content's tight bounding box. The trim is server-side and silent: the user sees the same capture flow, and the original Drive file records the pre-trim dimensions for transparency.
+
+- Default is on. Disable with `INF_AUTO_TRIM_SCREENSHOTS=false` (also `0`/`off`/`no`).
+- Background is detected from the top-left corner block (transparent corner → alpha canvas). The trim is skipped if the savings fall below `INF_AUTO_TRIM_MIN_SAVINGS` (default 0.02 = 2% of pixels).
+- The trim only runs for the **capture** and **image replace** flows. Drive Inbox sync reuses the file bytes as-is so existing manual uploads are not rewritten.
+- Failed trims return the input unchanged; the saved file is never smaller or more lossy than the user uploaded.
+
 ## Drive and recovery
 
 Production uses the public root `1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK` and a restricted sibling private root. Create Google OAuth credentials and keep `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, and the private/folder IDs in `.env.local` (0600), never in the frontend or repository. Manual image drops go in public `Inbox`; **Sync Drive** discovers them. Infographics retains originals, creates WebP thumbnails, and stores immutable private JSON events. Recovery is both Drive roots: copy the public images and private event hierarchy, then rebuild state by folding the events. Settings can export a portable inventory.

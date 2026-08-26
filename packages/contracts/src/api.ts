@@ -10,8 +10,8 @@ import {
   UtcDateTimeSchema,
   UuidSchema,
 } from "./entities";
-export { PublicCatalogResponseSchema, PublicInfographicSchema } from "./public";
-export type { PublicCatalogResponse, PublicInfographic } from "./public";
+export { PublicCatalogPageSchema, PublicCatalogQuerySchema, PublicInfographicSchema, PUBLIC_CATALOG_PAGE_SIZE } from "./public";
+export type { PublicCatalogPage, PublicCatalogQuery, PublicInfographic } from "./public";
 
 export const ApiErrorSchema = z.strictObject({
   code: z.string().min(1),
@@ -100,7 +100,7 @@ export const DueReviewResponseSchema = z.strictObject({ infographics: z.array(Ma
 export const SurpriseResponseSchema = z.strictObject({ infographic: MaterializedInfographicSchema.nullable() });
 export const SettingsStatsResponseSchema = z.strictObject({
   total: z.number().int().nonnegative(),
-  inbox: z.number().int().nonnegative(),
+  uncategorized: z.number().int().nonnegative(),
   library: z.number().int().nonnegative(),
   archive: z.number().int().nonnegative(),
   due: z.number().int().nonnegative(),
