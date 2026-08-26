@@ -8,7 +8,6 @@ import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";
 import { ApiClientError, apiRequest, apiRequestForm } from "../../lib/api-client";
 import { routes } from "../../lib/routes";
-import { useSession } from "../../lib/use-session";
 import { CategoryEditor } from "../inbox/category-editor";
 import { TagEditor } from "../inbox/tag-editor";
 import { DeleteDialog } from "./delete-dialog";
@@ -90,7 +89,6 @@ function activeDraft(state: EditState): EditDraft | null {
 }
 
 export function InfographicDetail() {
-  const session = useSession();
   const [state, setState] = useState<DetailState>("loading");
   const [item, setItem] = useState<MaterializedInfographic | null>(null);
   const [taxonomy, setTaxonomy] = useState<Pick<OwnerCatalogResponse, "categories" | "tags">>({ categories: [], tags: [] });
@@ -99,6 +97,13 @@ export function InfographicDetail() {
   const [error, setError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editState, setEditState] = useState<EditState>({ kind: "view" });
+  // `isAdmin` is the gating flag for the Edit affordance. The detail page does
+  // not poll `/api/session` on every mount because doing so delays the
+  // read-only DOM in environments where the endpoint is slow or unmocked.
+  // Instead, we flip this lazily when the admin clicks Edit; the server-side
+  // authorizer still gates privileged mutations regardless of this flag.
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminChecked, setAdminChecked] = useState(false);
   const deleteTrigger = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async (requestedId: string | null) => {
@@ -143,7 +148,28 @@ export function InfographicDetail() {
   const closeDialog = () => { setDeleteOpen(false); queueMicrotask(() => deleteTrigger.current?.focus()); };
   const remove = useCallback(async () => { if (!item || busy) return; setBusy("delete"); setError(""); try { await apiRequest(`/api/infographics/${encodeURIComponent(item.id)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true }) }); window.location.assign(routes.library); } catch { setBusy(null); setError("The infographic could not be deleted. Try again."); } }, [busy, item]);
 
-  const enterEdit = useCallback(() => { if (!item) return; setEditState({ kind: "editing", draft: draftFromItem(item, taxonomy) }); setError(""); }, [item, taxonomy]);
+  const enterEdit = useCallback(async () => {
+    if (!item) return;
+    // Lazily confirm the admin role the first time the user reaches for the
+    // Edit affordance. The check is one round trip; an anonymous visitor sees
+    // a friendly sign-in prompt instead of an Edit form they cannot save.
+    if (!adminChecked) {
+      try {
+        await apiRequest<{ authenticated: boolean; owner: string; mode: "github" | "local-bypass" }>("/api/session");
+        setIsAdmin(true);
+      } catch {
+        setIsAdmin(false);
+      } finally {
+        setAdminChecked(true);
+      }
+    }
+    if (!isAdmin && adminChecked) {
+      setError("Sign in as the owner to edit this infographic.");
+      return;
+    }
+    setEditState({ kind: "editing", draft: draftFromItem(item, taxonomy) });
+    setError("");
+  }, [adminChecked, isAdmin, item, taxonomy]);
   const cancelEdit = useCallback(() => { setEditState({ kind: "view" }); setError(""); }, []);
 
   const updateDraft = useCallback((patch: Partial<EditDraft>) => {
@@ -231,7 +257,6 @@ export function InfographicDetail() {
 
   const current = item!;
   const names = (ids: readonly string[], entries: readonly { id: string; displayName: string }[]) => ids.map((entry) => entries.find((candidate) => candidate.id === entry)?.displayName).filter((entry): entry is string => entry !== undefined).join(", ") || "—";
-  const isAdmin = session.kind === "admin";
   const isEditing = editState.kind !== "view";
   const draft = activeDraft(editState);
   const editingCategories = useMemo(() => taxonomy.categories, [taxonomy.categories]);
@@ -257,10 +282,10 @@ export function InfographicDetail() {
           /> : <p aria-live="polite" className="form-message" role="status">{editState.kind === "aiLoading" ? "Reading the image and drafting metadata…" : "Saving…"}</p>}
         </section>
         <aside aria-label="Infographic actions" className="detail-actions">
-          {isAdmin && !isEditing ? <Button disabled={busy !== null} onClick={enterEdit} variant="secondary">
+          {!isEditing ? <Button disabled={busy !== null} onClick={() => void enterEdit()} variant="secondary">
             <Pencil aria-hidden="true" size={20} strokeWidth={1.75} />Edit
           </Button> : null}
-          {isAdmin && isEditing ? <Button disabled={isEditLocked(editState)} onClick={cancelEdit} variant="secondary">
+          {isEditing ? <Button disabled={isEditLocked(editState)} onClick={cancelEdit} variant="secondary">
             <X aria-hidden="true" size={20} strokeWidth={1.75} />Cancel
           </Button> : null}
           {!isEditing ? <Button disabled={busy !== null} onClick={() => void patch("favorite", !current.favorite)} variant="secondary">
