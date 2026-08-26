@@ -10,8 +10,6 @@ import {
   UtcDateTimeSchema,
   UuidSchema,
 } from "./entities";
-export { PublicCatalogPageSchema, PublicCatalogQuerySchema, PublicInfographicSchema, PUBLIC_CATALOG_PAGE_SIZE } from "./public";
-export type { PublicCatalogPage, PublicCatalogQuery, PublicInfographic } from "./public";
 
 export const ApiErrorSchema = z.strictObject({
   code: z.string().min(1),

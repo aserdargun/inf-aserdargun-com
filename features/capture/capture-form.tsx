@@ -12,7 +12,13 @@ import { useClipboardImage } from "./use-clipboard-image";
 
 const MAX_IMAGE_BYTES = 20_000_000;
 const supportedImageMimes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]);
-type CaptureError = "Choose an image file." | "This image is too large. Choose an image up to 20 MB." | "This image could not be used. Choose a different image." | "The infographic could not be saved. Try again." | "The AI-filled fields could not be saved. The image was added, but category and tags were not.";
+type CaptureError =
+  | "Choose an image file."
+  | "This image is too large. Choose an image up to 20 MB."
+  | "This image could not be used. Choose a different image."
+  | "The infographic could not be saved. Try again."
+  | "The AI-filled fields could not be saved. The image was added, but category and tags were not."
+  | "The AI service could not suggest a category. Type one manually, then save to Library.";
 
 interface AiSuggestion {
   title: string | null;
@@ -24,10 +30,15 @@ interface AiSuggestion {
   confidence: number;
 }
 
-type AiStatus = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; suggestion: AiSuggestion } | { kind: "error"; message: string };
+type AiStatus =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ready"; suggestion: AiSuggestion }
+  | { kind: "error"; message: string };
 
 const fieldKeys = ["title", "notes", "category", "tags"] as const;
 type FieldKey = (typeof fieldKeys)[number];
+type SubmitTarget = "inbox" | "library";
 
 interface CaptureResponse { kind: "created" | "duplicate"; infographicId?: string; title?: string; }
 
@@ -64,9 +75,14 @@ export function CaptureForm() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<CaptureError | null>(null);
   const [saving, setSaving] = useState(false);
+  const [target, setTarget] = useState<SubmitTarget | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus>({ kind: "idle" });
   const [knownCategories, setKnownCategories] = useState<readonly { displayName: string; normalizedName: string }[]>([]);
   const [knownTags, setKnownTags] = useState<readonly { displayName: string; normalizedName: string }[]>([]);
+  // Tracks an in-flight AI run that was started by "Save to Library" because
+  // the user had not waited for the auto-suggestion banner to settle. The
+  // submit effect below consumes the resolved value before issuing the create.
+  const pendingLibraryRef = useRef<{ resolve: () => void; reject: (reason?: unknown) => void } | null>(null);
 
   const setFieldValue = useCallback((name: FieldKey, value: string) => {
     const form = formRef.current;
@@ -97,7 +113,6 @@ export function CaptureForm() {
         const topicText = suggestion.topics.map((topic) => topic.normalize("NFKC").trim()).filter(Boolean).join(", ");
         if (topicText) { setFieldValue("tags", topicText); applied.push("tags"); }
       }
-      // Pull the existing category/tag catalogs so the PATCH at save time can dedupe by display name.
       try {
         const catalog = await apiRequest<{ categories: { displayName: string; normalizedName: string }[]; tags: { displayName: string; normalizedName: string }[] }>("/api/infographics");
         if (token !== requestToken.current) return;
@@ -144,15 +159,69 @@ export function CaptureForm() {
 
   const retryAi = useCallback(() => { if (file && !saving) void requestSuggestion(file); }, [file, requestSuggestion, saving]);
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  // "Save to Library" depends on the AI suggestion being applied (or a manually
+  // typed category). If the user has not yet waited for the auto-suggestion
+  // banner, the submit kicks off a one-shot AI run and waits for it before
+  // issuing the create call. Manual categories are always respected.
+  const ensureAiForLibrary = useCallback(async (): Promise<{ category: string; tags: string } | null> => {
+    if (!file) return null;
+    const form = formRef.current;
+    const categoryInput = form?.elements.namedItem("category") as HTMLInputElement | null;
+    const tagsInput = form?.elements.namedItem("tags") as HTMLInputElement | null;
+    const typedCategory = categoryInput?.value.trim() ?? "";
+    if (typedCategory) return { category: typedCategory, tags: tagsInput?.value.trim() ?? "" };
+    if (aiStatus.kind === "ready" && aiStatus.suggestion.category) return { category: aiStatus.suggestion.category, tags: tagsInput?.value.trim() ?? "" };
+    const inflight = new Promise<void>((resolve, reject) => { pendingLibraryRef.current = { resolve, reject }; });
+    void requestSuggestion(file);
+    try { await inflight; }
+    catch { return null; }
+    if (aiStatus.kind === "ready" && aiStatus.suggestion.category) {
+      return { category: aiStatus.suggestion.category, tags: tagsInput?.value.trim() ?? "" };
+    }
+    return null;
+  }, [aiStatus, file, requestSuggestion]);
+
+  // Resolve the "Save to Library" gate when the AI request settles so the
+  // submit effect unblocks.
+  useEffect(() => {
+    const pending = pendingLibraryRef.current;
+    if (!pending) return;
+    if (aiStatus.kind === "ready" || aiStatus.kind === "error" || aiStatus.kind === "idle") {
+      pendingLibraryRef.current = null;
+      if (aiStatus.kind === "error") pending.reject(new Error(aiStatus.message));
+      else pending.resolve();
+    }
+  }, [aiStatus]);
+
+  async function performSave(submitTarget: SubmitTarget) {
     if (saving || isSubmitting.current) return;
     if (!file) { setError("This image could not be used. Choose a different image."); return; }
-    isSubmitting.current = true; setSaving(true); setError(null);
-    const data = new FormData(event.currentTarget);
+    isSubmitting.current = true; setSaving(true); setTarget(submitTarget); setError(null);
+
+    let libraryCategory: string | null = null;
+    let libraryTags: string | null = null;
+    if (submitTarget === "library") {
+      const ensured = await ensureAiForLibrary();
+      if (!ensured) {
+        setError("The AI service could not suggest a category. Type one manually, then save to Library.");
+        isSubmitting.current = false; setSaving(false); setTarget(null);
+        return;
+      }
+      libraryCategory = ensured.category;
+      libraryTags = ensured.tags;
+    }
+
+    if (!file) { setError("This image could not be used. Choose a different image."); isSubmitting.current = false; setSaving(false); setTarget(null); return; }
+    const data = new FormData();
     data.append("file", file, file.name);
-    for (const key of fieldKeys) {
-      if (data.get(key) === "") data.delete(key);
+    const form = formRef.current;
+    if (form) {
+      const titleValue = (form.elements.namedItem("title") as HTMLInputElement | null)?.value ?? "";
+      const notesValue = (form.elements.namedItem("notes") as HTMLTextAreaElement | null)?.value ?? "";
+      const tagsValue = libraryTags ?? (form.elements.namedItem("tags") as HTMLInputElement | null)?.value ?? "";
+      if (titleValue.trim()) data.append("title", titleValue.trim());
+      if (notesValue.trim()) data.append("notes", notesValue.trim());
+      if (tagsValue.trim()) data.append("tags", tagsValue.trim());
     }
     let createdId: string | undefined;
     try {
@@ -160,15 +229,37 @@ export function CaptureForm() {
       createdId = response.kind === "created" ? response.infographicId : undefined;
     } catch {
       setError("The infographic could not be saved. Try again.");
-      isSubmitting.current = false; setSaving(false);
+      isSubmitting.current = false; setSaving(false); setTarget(null);
       return;
     }
-    // After capture, apply AI-suggested category and tags with a PATCH. The capture API doesn't
-    // accept them directly yet, so this keeps the "AI filled all fields on first add" promise.
+    if (submitTarget === "library" && createdId) {
+      const tagsValue = libraryTags ?? "";
+      const patch: { categories?: { id: string; displayName: string; normalizedName: string; slug: string }[]; tags?: { id: string; displayName: string; normalizedName: string; slug: string }[] } = {};
+      if (libraryCategory) {
+        const normalized = normalizedName(libraryCategory);
+        const existing = knownCategories.find((entry) => entry.normalizedName === normalized);
+        patch.categories = [{
+          id: existing ? "existing" : crypto.randomUUID(),
+          displayName: existing?.displayName ?? libraryCategory,
+          normalizedName: normalized,
+          slug: slugFor(existing?.displayName ?? libraryCategory),
+        }];
+      }
+      if (tagsValue.trim()) patch.tags = parseTagList(tagsValue, knownTags);
+      if ((patch.categories?.length ?? 0) > 0 || (patch.tags?.length ?? 0) > 0) {
+        try {
+          await apiRequest(`/api/infographics/${encodeURIComponent(createdId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+        } catch {
+          setError("The AI-filled fields could not be saved. The image was added, but category and tags were not.");
+        }
+      }
+      router.push(routes.library);
+      return;
+    }
     if (createdId) {
-      const form = formRef.current;
-      const categoryValue = (form?.elements.namedItem("category") as HTMLInputElement | null)?.value.trim() ?? "";
-      const tagsValue = (form?.elements.namedItem("tags") as HTMLInputElement | null)?.value.trim() ?? "";
+      const formRefCurrent = formRef.current;
+      const categoryValue = (formRefCurrent?.elements.namedItem("category") as HTMLInputElement | null)?.value.trim() ?? "";
+      const tagsValue = (formRefCurrent?.elements.namedItem("tags") as HTMLInputElement | null)?.value.trim() ?? "";
       const patch: { categories?: { id: string; displayName: string; normalizedName: string; slug: string }[]; tags?: { id: string; displayName: string; normalizedName: string; slug: string }[] } = {};
       if (categoryValue) {
         const normalized = normalizedName(categoryValue);
@@ -192,7 +283,14 @@ export function CaptureForm() {
     router.push(routes.inbox);
   }
 
-  return <form ref={formRef} className="capture-form" onSubmit={(event) => void submit(event)}>
+  const handleSave = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const button = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const nextTarget: SubmitTarget = button?.dataset["target"] === "library" ? "library" : "inbox";
+    void performSave(nextTarget);
+  };
+
+  return <form ref={formRef} className="capture-form" onSubmit={handleSave}>
     <PageHeader description="Paste, drop, or choose an image. AI suggestions appear automatically." descriptionId="capture-help" title="Add infographic" />
     <div className="capture-workspace">
       <div className="capture-workspace__media">
@@ -208,7 +306,27 @@ export function CaptureForm() {
           <label>Notes<textarea maxLength={10000} name="notes" rows={4} /></label>
         </section>
         {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{error}</p> : null}
-        <Button className="capture-form__save" disabled={saving} type="submit">{saving ? "Saving to Inbox…" : "Save to Inbox"}</Button>
+        <div className="capture-form__actions">
+          <Button
+            className="capture-form__save"
+            data-target="inbox"
+            disabled={saving}
+            type="submit"
+            variant="secondary"
+          >
+            {saving && target === "inbox" ? "Saving to Inbox…" : "Save to Inbox"}
+          </Button>
+          <Button
+            className="capture-form__save capture-form__save--primary"
+            data-target="library"
+            disabled={saving}
+            type="submit"
+          >
+            <Sparkles aria-hidden="true" size={16} strokeWidth={1.75} />
+            {saving && target === "library" ? "Saving to Library…" : "Save to Library"}
+          </Button>
+        </div>
+        <p className="capture-form__hint" id="capture-help-save">Save to Inbox keeps the image unfiled. Save to Library asks AI to fill the category, then organizes it immediately.</p>
       </div>
     </div>
   </form>;
