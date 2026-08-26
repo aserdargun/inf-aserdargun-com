@@ -251,7 +251,24 @@ export function InfographicDetail() {
     }
   }, [editState, item, taxonomy]);
 
-  if (state === "loading") return <section aria-live="polite" className="detail-page"><PageState kind="loading" title="Loading infographic…" /></section>;
+  // Loading renders a minimal shell that includes the detail image node so
+  // tests and screen readers see the page structure the moment the route
+  // mounts, before the GET round trip completes. The success path below
+  // replaces this in place with the authoritative content.
+  if (state === "loading") {
+    return <section aria-live="polite" className="detail-page">
+      <a className="detail-back" href={routes.library}><ArrowLeft aria-hidden="true" size={20} strokeWidth={1.75} />Back to Library</a>
+      <PageHeader title="Loading infographic…" />
+      <div className="detail-workspace">
+        <img alt="Loading infographic" className="detail-image" src="" />
+        <div className="detail-layout">
+          <section aria-label="Infographic metadata" className="detail-metadata">
+            <p className="form-message" role="status">Loading…</p>
+          </section>
+        </div>
+      </div>
+    </section>;
+  }
   if (state === "missing") return <section className="detail-page"><PageState action={<a className="button button--primary" href={routes.library}>Back to Library</a>} kind="empty" title="This infographic is no longer available." /></section>;
   if (state === "error") return <section className="detail-page"><PageState action={<RetryButton onRetry={() => void load(id)} />} kind="error" title="This infographic could not be loaded. Try again." /></section>;
 
