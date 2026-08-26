@@ -97,20 +97,20 @@ test("public gallery paginates with stable URLs, deep links, and an accessible s
   await mockPublic(page, "paginated");
   await page.goto("/view/");
   await expect(page.getByRole("link", { name: "Open Page 1 item" })).toBeVisible();
-  await expect(page.getByText("Page 1 of 2", { exact: true })).toBeVisible();
-  await expect(page.getByText("2 infographics", { exact: true })).toBeVisible();
+  await expect(page.locator(".public-pager__status")).toContainText("Page 1 of 2");
+  await expect(page.locator(".public-pager__status")).toContainText("2 infographics");
   await expect(page.getByRole("button", { name: "Previous page" })).toBeDisabled();
   await page.getByRole("button", { name: "Next page" }).click();
   await expect(page).toHaveURL(/\/view\/\?page=2$/);
   await expect(page.getByRole("link", { name: "Open Page 2 item second" })).toBeVisible();
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.locator(".public-pager__status")).toContainText("Page 2 of 2");
   await expect(page.getByRole("button", { name: "Next page" })).toBeDisabled();
   await page.getByRole("button", { name: "Previous page" }).click();
   await expect(page).toHaveURL(/\/view\/$/);
   await expect(page.getByRole("link", { name: "Open Page 1 item" })).toBeVisible();
   await page.goto("/view/?page=2");
   await expect(page.getByRole("link", { name: "Open Page 2 item second" })).toBeVisible();
-  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.locator(".public-pager__status")).toContainText("Page 2 of 2");
   expect(errors).toEqual([]);
 });
 

@@ -13,7 +13,7 @@ async function mockToday(page: import("playwright/test").Page, mode: "success" |
   });
   await page.route("**/api/settings/stats", async (route) => {
     if (mode === "error") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ total: mode === "empty" ? 0 : 1, inbox: 1, library: 0, archive: 0, due: 1, reviewed: 0, seen: 0 }) });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ total: mode === "empty" ? 0 : 1, uncategorized: 1, library: 0, archive: 0, due: 1, reviewed: 0, seen: 0 }) });
   });
 }
 
@@ -135,7 +135,7 @@ test("shows loading, empty, error, and success Today states with exact copy", as
 
   await mockToday(page, "success");
   await page.reload();
-  await expect(page.getByText("Inbox 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("Uncategorized 1", { exact: true })).toBeVisible();
   await expect(page.getByText("Library 0", { exact: true })).toBeVisible();
   await expect(page.getByText("Due today 1", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recently added" })).toBeVisible();
