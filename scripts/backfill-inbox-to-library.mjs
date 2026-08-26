@@ -12,7 +12,7 @@
 //           node scripts/backfill-inbox-to-library.mjs
 import { randomUUID } from "node:crypto";
 import { createRuntime } from "../api-dist/dist/index.js";
-import { foldEvents } from "../api-dist/dist/index.js";
+import { foldEvents } from "../packages/domain/dist/index.js";
 
 const dependencies = createRuntime();
 const { storage, events } = dependencies.owner;
