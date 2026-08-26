@@ -58,7 +58,7 @@ test("uploads without metadata, then categorizes and tags in Inbox", async ({ pa
   }]);
 });
 
-test("fills Category and Tags via OpenAI on image add, then PATCHes them after capture", async ({ page }) => {
+test("fills Category and Tags via OpenAI on image add, then Save to Library PATCHes them after capture", async ({ page }) => {
   const knownCategory = { id: "00000000-0000-4000-8000-000000000021", displayName: "AI & Machine Learning", normalizedName: "ai & machine learning", slug: "ai-machine-learning" };
   const knownTag = { id: "00000000-0000-4000-8000-000000000022", displayName: "memory", normalizedName: "memory", slug: "memory" };
   let capturedId: string | null = null;
@@ -108,8 +108,8 @@ test("fills Category and Tags via OpenAI on image add, then PATCHes them after c
   await expect(page.getByLabel("Category")).toHaveValue("AI & Machine Learning");
   await expect(page.getByLabel("Tags")).toHaveValue("memory, cuda");
   await expect(page.getByLabel("Notes")).toHaveValue("How transformers process tokens.");
-  await page.getByRole("button", { name: "Save to Inbox" }).click();
-  await expect(page).toHaveURL(/\/inbox\//);
+  await page.getByRole("button", { name: "Save to Library" }).click();
+  await expect(page).toHaveURL(/\/library\//);
   expect(capturedId).toBe(item.id);
   expect(patches).toEqual([{
     categories: [expect.objectContaining({ displayName: "AI & Machine Learning" })],
@@ -118,6 +118,69 @@ test("fills Category and Tags via OpenAI on image add, then PATCHes them after c
       expect.objectContaining({ displayName: "cuda" }),
     ],
   }]);
+});
+
+test("Save to Inbox keeps AI-suggested category and tags out of the PATCH so the item stays in Inbox", async ({ page }) => {
+  let capturedId: string | null = null;
+  const patches: { categories?: unknown[]; tags?: unknown[] }[] = [];
+  let listCalls = 0;
+  await page.route("**/api/infographics/suggest-metadata", async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        schemaVersion: 1,
+        model: "gpt-4o-mini",
+        generatedAt: "2026-08-24T08:00:00.000Z",
+        suggestion: {
+          title: "Understanding LLM inference",
+          notes: "How transformers process tokens.",
+          language: "en",
+          category: "AI & Machine Learning",
+          topics: ["memory", "cuda"],
+          rationale: "Visible headline + handle.",
+          confidence: 0.91,
+        },
+      }),
+    });
+  });
+  await page.route("**/api/infographics**", async (route) => {
+    if (route.request().method() === "POST" && new URL(route.request().url()).pathname === "/api/infographics") {
+      capturedId = item.id;
+      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ kind: "created", infographicId: item.id, title: item.title, original: { id: "original" }, thumbnail: { id: "thumbnail" } }) });
+    }
+    if (route.request().method() === "GET") {
+      listCalls += 1;
+      // First call: capture just finished, no PATCH was sent, so the item is still
+      // uncategorized and the Inbox view should show it. Subsequent calls can
+      // return the same.
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [item], categories: [], tags: [] }) });
+    }
+    if (route.request().method() === "PATCH") {
+      const patch = route.request().postDataJSON() as { categories?: unknown[]; tags?: unknown[] };
+      patches.push(patch);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ updated: true }) });
+    }
+    return route.fallback();
+  });
+
+  await page.goto("/add/");
+  await page.getByLabel("Choose infographic").setInputFiles(imageUpload);
+  await expect(page.getByRole("img", { name: "Infographic preview" })).toBeVisible();
+  await expect(page.locator(".ai-banner--ready")).toBeVisible();
+  await expect(page.getByLabel("Category")).toHaveValue("AI & Machine Learning");
+  await expect(page.getByLabel("Tags")).toHaveValue("memory, cuda");
+  await page.getByRole("button", { name: "Save to Inbox" }).click();
+  await expect(page).toHaveURL(/\/inbox\//);
+  expect(capturedId).toBe(item.id);
+  // No PATCH: the Inbox is the "uncategorized" backlog, so the AI suggestion
+  // must NOT be persisted on Save to Inbox (it would move the item to Library
+  // and the user would land on an empty Inbox).
+  expect(patches).toEqual([]);
+  expect(listCalls).toBeGreaterThan(0);
+  // The newly-created item shows up in the Inbox, with empty category/tags
+  // editors that the user can fill (or re-run AI on) before moving to Library.
+  await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 });
 
 test("retries AI filling from the capture form error banner when suggest-metadata fails", async ({ page }) => {

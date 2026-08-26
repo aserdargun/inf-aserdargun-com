@@ -256,30 +256,11 @@ export function CaptureForm() {
       router.push(routes.library);
       return;
     }
-    if (createdId) {
-      const formRefCurrent = formRef.current;
-      const categoryValue = (formRefCurrent?.elements.namedItem("category") as HTMLInputElement | null)?.value.trim() ?? "";
-      const tagsValue = (formRefCurrent?.elements.namedItem("tags") as HTMLInputElement | null)?.value.trim() ?? "";
-      const patch: { categories?: { id: string; displayName: string; normalizedName: string; slug: string }[]; tags?: { id: string; displayName: string; normalizedName: string; slug: string }[] } = {};
-      if (categoryValue) {
-        const normalized = normalizedName(categoryValue);
-        const existing = knownCategories.find((entry) => entry.normalizedName === normalized);
-        patch.categories = [{
-          id: existing ? "existing" : crypto.randomUUID(),
-          displayName: existing?.displayName ?? categoryValue,
-          normalizedName: normalized,
-          slug: slugFor(existing?.displayName ?? categoryValue),
-        }];
-      }
-      if (tagsValue) patch.tags = parseTagList(tagsValue, knownTags);
-      if ((patch.categories?.length ?? 0) > 0 || (patch.tags?.length ?? 0) > 0) {
-        try {
-          await apiRequest(`/api/infographics/${encodeURIComponent(createdId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
-        } catch {
-          setError("The AI-filled fields could not be saved. The image was added, but category and tags were not.");
-        }
-      }
-    }
+    // "Save to Inbox" keeps the image unfiled: do NOT PATCH category/tags.
+    // The Inbox view filters on `categoryIds.length === 0`, so sending the
+    // AI-filled category would silently move the item to Library and the user
+    // would land on an empty Inbox. The user can re-run AI from the Inbox row
+    // (or type a category manually) before pressing "Move to Library".
     router.push(routes.inbox);
   }
 
