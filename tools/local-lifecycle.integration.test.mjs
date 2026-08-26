@@ -129,7 +129,8 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
 
     const publicListResponse = await fetch("http://127.0.0.1:4280/api/public/infographics");
     assert.equal(publicListResponse.status, 200); assertSecurity(publicListResponse, /public/);
-    const publicItems = await publicListResponse.json(); const projected = publicItems.find((entry) => entry.id === id);
+    const publicPage = await publicListResponse.json(); assert.equal(publicPage.page, 1); assert.equal(publicPage.pageSize, 12);
+    const projected = publicPage.items.find((entry) => entry.id === id);
     assert.ok(projected); assert.equal("notes" in projected, false);
     const publicDetail = await fetch(`http://127.0.0.1:4280/api/public/infographics/${id}`); assert.equal(publicDetail.status, 200); assertSecurity(publicDetail, /public/);
     for (const [fileId, mime] of [[item.originalDriveFileId, "image/png"], [item.thumbnailDriveFileId, "image/webp"]]) {
