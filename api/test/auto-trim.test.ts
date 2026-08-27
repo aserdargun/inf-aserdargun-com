@@ -163,4 +163,64 @@ describe("autoTrimBytes", () => {
     const lenient = await autoTrimBytes(bytes, { threshold: 30 });
     expect(strict.trimmed || lenient.trimmed).toBe(true);
   });
+
+  it("trims when all four borders share one solid color", async () => {
+    const bytes = await makePaddedScreenshot({ padding: 40, background: { r: 240, g: 240, b: 240 } });
+    const result = await autoTrimBytes(bytes);
+    expect(result.trimmed).toBe(true);
+    expect(result.width).toBe(INNER_W);
+    expect(result.height).toBe(INNER_H);
+  });
+
+  it("trims each edge with its own color when corners disagree", async () => {
+    // Build an image whose four borders are four different solid colors. A
+    // single-color trim strategy would only crop the edges that match the
+    // sampled corner; the per-edge walk should remove all four margins.
+    const P = 30;
+    const w = INNER_W + P * 2;
+    const h = INNER_H + P * 2;
+    const inner = await sharp({ create: { width: INNER_W, height: INNER_H, channels: 3, background: { r: 30, g: 30, b: 30 } } }).png().toBuffer();
+    const top = await sharp({ create: { width: w, height: P, channels: 3, background: { r: 240, g: 240, b: 240 } } }).png().toBuffer();
+    const bottom = await sharp({ create: { width: w, height: P, channels: 3, background: { r: 10, g: 10, b: 10 } } }).png().toBuffer();
+    const left = await sharp({ create: { width: P, height: INNER_H, channels: 3, background: { r: 200, g: 200, b: 200 } } }).png().toBuffer();
+    const right = await sharp({ create: { width: P, height: INNER_H, channels: 3, background: { r: 50, g: 50, b: 50 } } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: w, height: h, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+      .composite([
+        { input: top, top: 0, left: 0 },
+        { input: left, top: P, left: 0 },
+        { input: inner, top: P, left: P },
+        { input: right, top: P, left: w - P },
+        { input: bottom, top: h - P, left: 0 },
+      ])
+      .png()
+      .toBuffer();
+    const result = await autoTrimBytes(bytes);
+    expect(result.trimmed).toBe(true);
+    expect(result.width).toBe(INNER_W);
+    expect(result.height).toBe(INNER_H);
+  });
+
+  it("does not trim when borders are gradients rather than solid", async () => {
+    // Build a raw image where every edge row/column has a different color, so
+    // no uniform background can be found and the algorithm must not trim.
+    const P = 30;
+    const w = 200, h = 120;
+    const data = Buffer.alloc(w * h * 3);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const i = (y * w + x) * 3;
+        // Per-pixel gradient: every neighbor differs, so no row/column is
+        // uniform. The middle region is darker so any "single-color" heuristic
+        // would still see variation on the borders.
+        const v = (x * 255 / w + y * 255 / h) % 256;
+        data[i] = Math.round(v);
+        data[i + 1] = Math.round((v + 80) % 256);
+        data[i + 2] = Math.round((v + 160) % 256);
+      }
+    }
+    const bytes = await sharp(data, { raw: { width: w, height: h, channels: 3 } }).png().toBuffer();
+    void P;
+    const result = await autoTrimBytes(bytes);
+    expect(result.trimmed).toBe(false);
+  });
 });

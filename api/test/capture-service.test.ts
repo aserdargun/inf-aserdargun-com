@@ -81,4 +81,35 @@ describe("CaptureService atomic taxonomy", () => {
     expect(result.kind).toBe("created");
     expect(events.map((event) => event.type)).toEqual(["infographic.created"]);
   });
+
+  test("accepts a real existing category UUID and tags the new item with it in a single write", async () => {
+    // Regression: the Add form used to ship the literal string "existing" as
+    // the category id when the AI suggestion matched an existing label. The
+    // server's z.uuid() schema rejected the payload and the entire capture
+    // (image included) was dropped. The client now sends the real existing
+    // UUID; the capture must succeed and the new item must carry the
+    // existing category id.
+    const { service, events } = setup();
+    const existingId = "00000000-0000-4000-8000-000000000040";
+    const category = { id: existingId, displayName: "AI", normalizedName: "ai", slug: "ai" };
+    const tags = [{ id: "00000000-0000-4000-8000-000000000041", displayName: "ml", normalizedName: "ml", slug: "ml" }];
+
+    const result = await service.capture({ bytes: await fixtureImage(), declaredMime: "image/png", name: "loop.png", categories: [category], tags });
+    expect(result.kind).toBe("created");
+    if (result.kind !== "created") return;
+
+    const myEvents = events.filter((event) => "infographicId" in event && event.infographicId === result.infographicId);
+    expect(myEvents.map((event) => event.type)).toEqual([
+      "infographic.created",
+      "infographic.categoriesAssigned",
+      "infographic.tagsAssigned",
+    ]);
+    const assigned = myEvents.find((event) => event.type === "infographic.categoriesAssigned");
+    expect(assigned?.payload).toMatchObject({ categories: [{ id: existingId }] });
+
+    const { foldEvents } = await import("@inf/domain");
+    const folded = foldEvents(events).catalog.infographics.find((item) => item.id === result.infographicId);
+    expect(folded?.categoryIds).toEqual([existingId]);
+    expect(folded?.tagIds).toEqual([tags[0]!.id]);
+  });
 });

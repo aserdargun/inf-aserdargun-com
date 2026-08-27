@@ -47,15 +47,25 @@ function slugFor(value: string) {
   const slug = normalizedName(value).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug || "tag";
 }
-function createTag(displayName: string, known: readonly { displayName: string; normalizedName: string }[]): { id: string; displayName: string; normalizedName: string; slug: string } {
+interface TaxonomyEntry { id: string; displayName: string; normalizedName: string; slug: string; }
+function createCategory(displayName: string, known: readonly TaxonomyEntry[]): TaxonomyEntry {
   const normalized = normalizedName(displayName);
   const existing = known.find((candidate) => candidate.normalizedName === normalized);
-  if (existing) return { id: "existing", displayName: existing.displayName, normalizedName: existing.normalizedName, slug: slugFor(existing.displayName) };
+  // The server schema requires every category to carry its real UUID. Reuse the
+  // existing entry's ID when we already know it; otherwise mint a fresh UUID so
+  // the capture payload always passes `z.uuid()` validation.
+  if (existing) return { id: existing.id, displayName: existing.displayName, normalizedName: existing.normalizedName, slug: existing.slug };
   return { id: crypto.randomUUID(), displayName: displayName.trim(), normalizedName: normalized, slug: slugFor(displayName) };
 }
-function parseTagList(value: string, known: readonly { displayName: string; normalizedName: string }[]): { id: string; displayName: string; normalizedName: string; slug: string }[] {
+function createTag(displayName: string, known: readonly TaxonomyEntry[]): TaxonomyEntry {
+  const normalized = normalizedName(displayName);
+  const existing = known.find((candidate) => candidate.normalizedName === normalized);
+  if (existing) return { id: existing.id, displayName: existing.displayName, normalizedName: existing.normalizedName, slug: existing.slug };
+  return { id: crypto.randomUUID(), displayName: displayName.trim(), normalizedName: normalized, slug: slugFor(displayName) };
+}
+function parseTagList(value: string, known: readonly TaxonomyEntry[]): TaxonomyEntry[] {
   const identity = new Set<string>();
-  const result: { id: string; displayName: string; normalizedName: string; slug: string }[] = [];
+  const result: TaxonomyEntry[] = [];
   for (const displayName of value.split(",").map((part) => part.normalize("NFKC").trim()).filter(Boolean)) {
     const normalized = normalizedName(displayName);
     if (identity.has(normalized)) continue;
@@ -76,8 +86,8 @@ export function CaptureForm() {
   const [error, setError] = useState<CaptureError | ApiErrorMessage | null>(null);
   const [saving, setSaving] = useState(false);
   const [aiStatus, setAiStatus] = useState<AiStatus>({ kind: "idle" });
-  const [knownCategories, setKnownCategories] = useState<readonly { displayName: string; normalizedName: string }[]>([]);
-  const [knownTags, setKnownTags] = useState<readonly { displayName: string; normalizedName: string }[]>([]);
+  const [knownCategories, setKnownCategories] = useState<readonly TaxonomyEntry[]>([]);
+  const [knownTags, setKnownTags] = useState<readonly TaxonomyEntry[]>([]);
   // Tracks an in-flight AI run that was started by "Add" because the user
   // had not yet waited for the auto-suggestion banner to settle. The submit
   // effect below consumes the resolved value before issuing the create.
@@ -113,10 +123,15 @@ export function CaptureForm() {
         if (topicText) { setFieldValue("tags", topicText); applied.push("tags"); }
       }
       try {
-        const catalog = await apiRequest<{ categories: { displayName: string; normalizedName: string }[]; tags: { displayName: string; normalizedName: string }[] }>("/api/infographics");
+        const catalog = await apiRequest<{ categories: TaxonomyEntry[]; tags: TaxonomyEntry[] }>("/api/infographics");
         if (token !== requestToken.current) return;
-        setKnownCategories(catalog.categories.map((entry) => ({ displayName: entry.displayName, normalizedName: entry.normalizedName })));
-        setKnownTags(catalog.tags.map((entry) => ({ displayName: entry.displayName, normalizedName: entry.normalizedName })));
+        // Keep the full taxonomy entry so the save payload can reuse the real
+        // UUIDs when the AI suggestion matches an existing label. The previous
+        // shape only stored displayName+normalizedName and shipped the literal
+        // string "existing" as the id, which the server's z.uuid() rejected and
+        // dropped the entire capture (image + category + tags) on the floor.
+        setKnownCategories(catalog.categories.map((entry) => ({ id: entry.id, displayName: entry.displayName, normalizedName: entry.normalizedName, slug: entry.slug })));
+        setKnownTags(catalog.tags.map((entry) => ({ id: entry.id, displayName: entry.displayName, normalizedName: entry.normalizedName, slug: entry.slug })));
       } catch { /* catalog is a best-effort hint; do not block the AI banner. */ }
       if (applied.length === 0) {
         setAiStatus({ kind: "error", message: "The image was analysed but no fields could be suggested. You can still fill them manually." });
@@ -219,11 +234,7 @@ export function CaptureForm() {
     // categoriesAssigned, and tagsAssigned events in a single transaction.
     // No follow-up PATCH is needed and there is no race between the create
     // response and the library's next read.
-    const categoryPayload = ensured.category ? (() => {
-      const normalized = normalizedName(ensured.category);
-      const existing = knownCategories.find((entry) => entry.normalizedName === normalized);
-      return [{ id: existing ? "existing" : crypto.randomUUID(), displayName: existing?.displayName ?? ensured.category, normalizedName: normalized, slug: slugFor(existing?.displayName ?? ensured.category) }];
-    })() : [];
+    const categoryPayload = ensured.category ? [createCategory(ensured.category, knownCategories)] : [];
     if (categoryPayload.length > 0) data.append("categories", JSON.stringify(categoryPayload));
     if (ensured.tags.trim()) {
       const tags = parseTagList(ensured.tags, knownTags);
