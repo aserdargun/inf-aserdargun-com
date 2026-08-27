@@ -9,7 +9,13 @@ function isAbort(error: unknown, signal?: AbortSignal | null) {
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
-  try { response = await fetch(path, { ...init, headers: { Accept: "application/json", ...init?.headers }, credentials: "same-origin" }); }
+  try {
+    // The server already sends Cache-Control: no-store for owner reads, but
+    // we opt out of HTTP cache here too so a navigation from /add (just after
+    // a POST) cannot see a stale /api/infographics snapshot that predates
+    // the new item.
+    response = await fetch(path, { ...init, cache: "no-store", headers: { Accept: "application/json", ...init?.headers }, credentials: "same-origin" });
+  }
   catch (error) { if (isAbort(error, init?.signal)) throw error; throw new ApiClientError(0, "Unable to reach Infographics. Try again."); }
   if (!response.ok) throw new ApiClientError(response.status);
   if (response.status === 204) return undefined as T;

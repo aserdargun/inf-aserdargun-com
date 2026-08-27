@@ -20,6 +20,8 @@ type CaptureError =
   | "The AI-filled fields could not be saved. The image was added, but category and tags were not."
   | "The AI service could not suggest a category. Type one manually, then save to Library.";
 
+interface ApiErrorMessage { kind: "api"; message: string; }
+
 interface AiSuggestion {
   title: string | null;
   notes: string | null;
@@ -73,7 +75,7 @@ export function CaptureForm() {
   const requestToken = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [error, setError] = useState<CaptureError | null>(null);
+  const [error, setError] = useState<CaptureError | ApiErrorMessage | null>(null);
   const [saving, setSaving] = useState(false);
   const [target, setTarget] = useState<SubmitTarget | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus>({ kind: "idle" });
@@ -227,8 +229,13 @@ export function CaptureForm() {
     try {
       const response = await apiRequest<CaptureResponse>("/api/infographics", { method: "POST", body: data });
       createdId = response.kind === "created" ? response.infographicId : undefined;
-    } catch {
-      setError("The infographic could not be saved. Try again.");
+    } catch (cause) {
+      // Surface the actual API message (e.g. "INVALID_MULTIPART: ...") so the
+      // owner can act on it instead of getting a generic "try again".
+      const detail = cause instanceof ApiClientError
+        ? `${cause.status > 0 ? `HTTP ${cause.status}: ` : ""}${cause.message}`.trim()
+        : cause instanceof Error ? cause.message : "Unknown error";
+      setError({ kind: "api", message: `The infographic could not be saved. ${detail}` });
       isSubmitting.current = false; setSaving(false); setTarget(null);
       return;
     }
@@ -286,7 +293,7 @@ export function CaptureForm() {
           <label>Tags<input autoComplete="off" maxLength={500} name="tags" placeholder="memory, cuda" /></label>
           <label>Notes<textarea maxLength={10000} name="notes" rows={4} /></label>
         </section>
-        {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{error}</p> : null}
+        {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{typeof error === "string" ? error : error.message}</p> : null}
         <div className="capture-form__actions">
           <Button
             className="capture-form__save"
