@@ -136,8 +136,14 @@ export function ownerSession(request: RequestLike, deps: OwnerDependencies): Pro
 
 export function ownerList(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
   return owner(request, deps, async (snapshot) => {
-    const query = catalogQuery(request); const catalog = new CatalogService(deps.events);
-    return jsonResponse({ infographics: query === undefined ? snapshot.infographics : catalog.libraryList(snapshot, query), categories: snapshot.catalog.categories, tags: snapshot.catalog.tags });
+    const query = catalogQuery(request);
+    const catalog = new CatalogService(deps.events);
+    if (query === undefined) {
+      // No query at all: callers (e.g. the Inbox backlog) want every non-deleted item in a single payload and apply their own filter on top. Pagination is opt-in via ?page=... so the legacy response shape stays backward compatible.
+      return jsonResponse({ infographics: snapshot.infographics, categories: snapshot.catalog.categories, tags: snapshot.catalog.tags });
+    }
+    const page = catalog.libraryList(snapshot, query);
+    return jsonResponse({ infographics: page.items, categories: snapshot.catalog.categories, tags: snapshot.catalog.tags, page: page.page, pageSize: page.pageSize, totalItems: page.totalItems, totalPages: page.totalPages });
   });
 }
 

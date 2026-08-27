@@ -24,7 +24,8 @@ async function mockLibrary(page: import("playwright/test").Page, options: { dele
     if (url.pathname === "/api/infographics" && request.method() === "GET") {
       catalogRequests.push(url.search);
       const filtered = url.searchParams.get("q") === "absent";
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: deleted || filtered ? [] : [current], categories: [category], tags: [tag] }) });
+      const infographics = deleted || filtered ? [] : [current];
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics, categories: [category], tags: [tag], page: 1, pageSize: 24, totalItems: infographics.length, totalPages: infographics.length === 0 ? 0 : 1 }) });
     }
     if (request.url().endsWith(`/api/infographics/${item.id}`) && request.method() === "GET") {
       return deleted ? route.fulfill({ status: 404, contentType: "application/json", body: "{}" }) : route.fulfill({ contentType: "application/json", body: JSON.stringify(current) });
@@ -119,7 +120,7 @@ test("keeps the latest URL query when an older Library response resolves last", 
     const q = url.searchParams.get("q");
     if (q === "first") { delayedFirst = route; return; }
     if (q === "second") { delayedSecond = route; return; }
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [item], categories: [category], tags: [tag] }) });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [item], categories: [category], tags: [tag], page: 1, pageSize: 24, totalItems: 1, totalPages: 1 }) });
   });
   await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
   await page.goto("/library/?q=ready");
@@ -129,9 +130,9 @@ test("keeps the latest URL query when an older Library response resolves last", 
   await expect.poll(() => delayedFirst !== undefined).toBeTruthy();
   await search.fill("second");
   await expect.poll(() => delayedSecond !== undefined).toBeTruthy();
-  await delayedSecond!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [second], categories: [category], tags: [tag] }) });
+  await delayedSecond!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [second], categories: [category], tags: [tag], page: 1, pageSize: 24, totalItems: 1, totalPages: 1 }) });
   await expect(page.getByRole("link", { name: "Open Second query" })).toBeVisible();
-  await delayedFirst!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [category], tags: [tag] }) });
+  await delayedFirst!.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [category], tags: [tag], page: 1, pageSize: 24, totalItems: 0, totalPages: 0 }) });
   await expect(page).toHaveURL(/\/library\/\?q=second$/);
   await expect(search).toHaveValue("second");
   await expect(page.getByRole("link", { name: "Open Second query" })).toBeVisible();
@@ -143,7 +144,7 @@ test("renders Library loading, empty, no-results, and safe error states", async 
   await page.goto("/library/");
   await expect(page.getByText("Loading Library…", { exact: true })).toBeVisible();
   await page.unrouteAll();
-  await page.route("**/api/infographics**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [], tags: [] }) }));
+  await page.route("**/api/infographics**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: [], categories: [], tags: [], page: 1, pageSize: 24, totalItems: 0, totalPages: 0 }) }));
   await page.reload();
   await expect(page.getByText("Library is empty.", { exact: true })).toBeVisible();
   await page.goto("/library/?q=absent&favorite=true");
@@ -158,4 +159,44 @@ test("renders Library loading, empty, no-results, and safe error states", async 
   await page.route("**/api/infographics**", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
   await page.reload();
   await expect(page.getByText("Library could not be loaded. Try again.", { exact: true })).toBeVisible();
+});
+
+test("paginates the Library, syncs the URL, resets on filter change, and clamps out-of-range pages", async ({ page }) => {
+  const first = { ...item, id: "00000000-0000-4000-8000-000000000030", title: "First page item" };
+  const second = { ...item, id: "00000000-4000-4000-8000-000000000030", title: "Second page item" };
+  let calls: string[] = [];
+  await page.route("**/api/infographics**", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const url = new URL(route.request().url());
+    calls.push(url.search);
+    const requestedPage = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+    // Mirror the server's clamp: out-of-range pages snap back to the last valid slice.
+    const effectivePage = requestedPage >= 2 ? 2 : 1;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ infographics: effectivePage === 2 ? [second] : [first], categories: [category], tags: [tag], page: effectivePage, pageSize: 24, totalItems: 2, totalPages: 2 }) });
+  });
+  await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
+
+  await page.goto("/library/");
+  await expect(page.getByRole("link", { name: "Open First page item" })).toBeVisible();
+  await expect(page.locator(".library-pager")).toContainText("Page 1 of 2");
+  await expect(page.locator(".library-pager")).toContainText("2 infographics");
+
+  await page.getByRole("button", { name: "Next page" }).click();
+  await expect(page.getByRole("link", { name: "Open Second page item" })).toBeVisible();
+  await expect(page).toHaveURL(/page=2$/);
+  await expect(page.locator(".library-pager")).toContainText("Page 2 of 2");
+
+  await page.goBack();
+  await expect(page.getByRole("link", { name: "Open First page item" })).toBeVisible();
+  await expect(page).toHaveURL(/\/library\/$/);
+
+  // Changing a filter must reset the page back to 1.
+  await page.getByLabel("Favorite").check();
+  await expect(page).toHaveURL(/favorite=true/);
+  await expect(page).not.toHaveURL(/page=/);
+
+  // Deep-linking to an out-of-range page clamps to the last available slice.
+  await page.goto("/library/?page=99");
+  await expect(page.getByRole("link", { name: "Open Second page item" })).toBeVisible();
+  await expect(page.locator(".library-pager")).toContainText("Page 2 of 2");
 });

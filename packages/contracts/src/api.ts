@@ -84,15 +84,26 @@ export const OwnerCatalogResponseSchema = z.strictObject({
   infographics: z.array(MaterializedInfographicSchema),
   categories: z.array(CategorySchema),
   tags: z.array(TagSchema),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(200),
+  totalItems: z.number().int().min(0),
+  totalPages: z.number().int().min(0),
 });
 
 const CatalogQuerySlugSchema = z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80);
+// Library-side pagination defaults: 24 fits the 4-column desktop grid (6 rows
+// per page) and stays light on the JSON response. Inbox raises pageSize at the
+// call site to keep the uncategorized backlog in a single round trip.
+const OWNER_CATALOG_DEFAULT_PAGE_SIZE = 24;
+const OWNER_CATALOG_MAX_PAGE_SIZE = 200;
 export const OwnerCatalogQuerySchema = z.strictObject({
   q: z.string().trim().min(1).max(200).optional(),
   category: CatalogQuerySlugSchema.optional(),
   tag: CatalogQuerySlugSchema.optional(),
   favorite: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   sort: z.enum(["recent", "least-seen"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(OWNER_CATALOG_MAX_PAGE_SIZE).default(OWNER_CATALOG_DEFAULT_PAGE_SIZE),
 });
 
 export const ReviewResponseSchema = ReviewRecordSchema;
