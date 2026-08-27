@@ -121,6 +121,12 @@ export function CaptureForm() {
       if (Array.isArray(suggestion.topics) && suggestion.topics.length > 0) {
         const topicText = suggestion.topics.map((topic) => topic.normalize("NFKC").trim()).filter(Boolean).join(", ");
         if (topicText) { setFieldValue("tags", topicText); applied.push("tags"); }
+      } else if (suggestion.category) {
+        // Fallback: when the AI does not suggest any topics, seed the tags
+        // input with the category label so the form is never empty and the
+        // server still receives a `tagsAssigned` event. The user can edit
+        // the field before saving if they want something more specific.
+        setFieldValue("tags", suggestion.category); applied.push("tags");
       }
       try {
         const catalog = await apiRequest<{ categories: TaxonomyEntry[]; tags: TaxonomyEntry[] }>("/api/infographics");
@@ -184,13 +190,21 @@ export function CaptureForm() {
     const tagsInput = form?.elements.namedItem("tags") as HTMLInputElement | null;
     const typedCategory = categoryInput?.value.trim() ?? "";
     if (typedCategory) return { category: typedCategory, tags: tagsInput?.value.trim() ?? "" };
-    if (aiStatus.kind === "ready" && aiStatus.suggestion.category) return { category: aiStatus.suggestion.category, tags: tagsInput?.value.trim() ?? "" };
+    if (aiStatus.kind === "ready" && aiStatus.suggestion.category) {
+      const typedTags = tagsInput?.value.trim() ?? "";
+      // When the AI offered no topics, fall back to the category label so the
+      // capture always lands with at least one tag in the Library.
+      if (!typedTags) return { category: aiStatus.suggestion.category, tags: aiStatus.suggestion.category };
+      return { category: aiStatus.suggestion.category, tags: typedTags };
+    }
     const inflight = new Promise<void>((resolve, reject) => { pendingAddRef.current = { resolve, reject }; });
     void requestSuggestion(file);
     try { await inflight; }
     catch { return null; }
     if (aiStatus.kind === "ready" && aiStatus.suggestion.category) {
-      return { category: aiStatus.suggestion.category, tags: tagsInput?.value.trim() ?? "" };
+      const typedTags = tagsInput?.value.trim() ?? "";
+      if (!typedTags) return { category: aiStatus.suggestion.category, tags: aiStatus.suggestion.category };
+      return { category: aiStatus.suggestion.category, tags: typedTags };
     }
     return null;
   }, [aiStatus, file, requestSuggestion]);

@@ -63,6 +63,11 @@ describe("OpenAiService", () => {
     expect(user[1].type).toBe("image_url");
     expect(user[1].image_url?.url).toMatch(/^data:image\/png;base64,/);
     expect(user[0].text).toBe(`Analyse this infographic and return the metadata JSON. The file was uploaded as "x.png".`);
+    // The system prompt must require at least one topic so the Library never
+    // lands an item with no tags because the model chose to omit the field.
+    expect(user[0].text).toBeDefined();
+    const systemText = (body.messages[0].content as string);
+    expect(systemText).toMatch(/topics:\s*1-5/);
 
     expect(response.schemaVersion).toBe(1);
     expect(response.model).toBe("gpt-4o-mini-2025-01-01");
