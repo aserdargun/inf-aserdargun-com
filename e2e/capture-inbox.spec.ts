@@ -310,7 +310,13 @@ test("prevents duplicate saves and keeps server errors safe", async ({ page }) =
   await expect(page.getByRole("button", { name: "Saving to Inbox…" })).toBeDisabled();
   expect(requests).toBe(1);
   finishRequest?.();
-  await expect(page.getByText("The infographic could not be saved. Try again.", { exact: true })).toBeVisible();
+  // The form now appends the real cause after the generic prefix so the
+  // owner sees "HTTP 500: …" instead of a dead-end "try again". Match the
+  // stable prefix only and verify the cause is hidden from the user.
+  const formError = page.locator(".form-message--error");
+  await expect(formError).toBeVisible();
+  await expect(formError).toContainText("The infographic could not be saved.");
+  await expect(formError).not.toContainText("private backend detail");
   expect(requests).toBe(1);
 });
 
