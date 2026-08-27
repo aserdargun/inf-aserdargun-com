@@ -42,7 +42,7 @@ export function assertPermissionBoundary(publicPermissions, privatePermissions, 
 
 export function runtimeFolderEnvironment(ids) {
   return {
-    INF_PRIVATE_DRIVE_FOLDER_ID: ids.privateRoot, INF_EVENTS_FOLDER_ID: ids.events ?? ids.Events, INF_INBOX_FOLDER_ID: ids.Inbox,
+    INF_PRIVATE_DRIVE_FOLDER_ID: ids.privateRoot, INF_EVENTS_FOLDER_ID: ids.events ?? ids.Events,
     INF_LIBRARY_FOLDER_ID: ids.Library, INF_THUMBNAILS_FOLDER_ID: ids.Thumbnails, INF_DUPLICATES_FOLDER_ID: ids.Duplicates,
   };
 }
@@ -50,7 +50,6 @@ export function runtimeFolderEnvironment(ids) {
 export function provisionFolderEnvironment(ids) {
   return {
     INF_PRIVATE_DRIVE_FOLDER_ID: ids.privateRoot,
-    INF_INBOX_FOLDER_ID: ids.Inbox,
     INF_LIBRARY_FOLDER_ID: ids.Library,
     INF_ARCHIVE_FOLDER_ID: ids.Archive,
     INF_DUPLICATES_FOLDER_ID: ids.Duplicates,
@@ -289,10 +288,10 @@ export async function provisionWithClient(client, env = {}, { expectedOwner = EX
 
   const ids = { privateRoot };
   const configuredKey = {
-    Inbox: "INF_INBOX_FOLDER_ID", Library: "INF_LIBRARY_FOLDER_ID", Archive: "INF_ARCHIVE_FOLDER_ID", Duplicates: "INF_DUPLICATES_FOLDER_ID", Thumbnails: "INF_THUMBNAILS_FOLDER_ID",
+    Library: "INF_LIBRARY_FOLDER_ID", Archive: "INF_ARCHIVE_FOLDER_ID", Duplicates: "INF_DUPLICATES_FOLDER_ID", Thumbnails: "INF_THUMBNAILS_FOLDER_ID",
     events: "INF_EVENTS_FOLDER_ID", reviews: "INF_REVIEWS_FOLDER_ID", quarantine: "INF_QUARANTINE_FOLDER_ID", exports: "INF_EXPORTS_FOLDER_ID",
   };
-  for (const name of ["Inbox", "Library", "Archive", "Duplicates", "Thumbnails"]) {
+  for (const name of ["Library", "Archive", "Duplicates", "Thumbnails"]) {
     ids[name] = await selectOrCreateFolder(client, PUBLIC_ROOT_ID, name, env[configuredKey[name]]);
   }
   for (const name of ["events", "reviews", "quarantine", "exports"]) {

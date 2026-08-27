@@ -10,9 +10,9 @@ import { EventStore } from "../src/storage/event-store.js";
 import { LocalDriveAdapter } from "../src/storage/local-drive-adapter.js";
 import type { CreateFileInput, StoragePort, StoredFile } from "../src/storage/storage-port.js";
 
-const ids = { public: "public", inbox: "inbox", library: "library", thumbnails: "thumbnails", duplicates: "duplicates", private: "private", events: "events" };
+const ids = { public: "public", library: "library", thumbnails: "thumbnails", duplicates: "duplicates", private: "private", events: "events" };
 const folders = new Map([
-  [ids.public, "public"], [ids.inbox, "public/Inbox"], [ids.library, "public/Library"], [ids.duplicates, "public/Duplicates"],
+  [ids.public, "public"], [ids.library, "public/Library"], [ids.duplicates, "public/Duplicates"],
   [ids.thumbnails, "public/Thumbnails"], [ids.private, "private"], [ids.events, "private/events"],
 ]);
 const apiRoot = process.cwd().endsWith("/api") ? process.cwd() : resolve(process.cwd(), "api");
@@ -43,7 +43,7 @@ async function setup() {
   temporaryRoots.push(root);
   const local = new LocalDriveAdapter({ rootPath: root, folderPaths: folders });
   const events = new EventStore(local, ids.events, ids.private);
-  const common = { storage: local, events, publicRootId: ids.public, inboxFolderId: ids.inbox, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates,
+  const common = { storage: local, events, publicRootId: ids.public, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates,
     now: () => new Date("2026-08-25T10:00:00.000Z"),
     uuid: (() => { let serial = 0; return () => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}`; })(),
   };
@@ -156,7 +156,10 @@ describe("ImageReplaceService", () => {
     const first = await f.capture.capture({ bytes, declaredMime: "image/png", name: "a.png" });
     if (first.kind !== "created") throw new Error("expected created");
     const differentBytes = Buffer.concat([bytes, Buffer.from([11])]);
-    await f.storage.moveFile(first.original.id, ids.library, ids.inbox);
+    // Re-parent the existing original into the duplicates folder (the only
+    // folder besides library that exists in the post-Inbox layout) to make
+    // sure the replace path always lands the new original in Library.
+    await f.storage.moveFile(first.original.id, ids.library, ids.duplicates);
     const result = await f.replace.replace({ infographicId: first.infographicId, bytes: differentBytes, declaredMime: "image/png", name: "after-move.png" });
     expect(result.original.parentIds).toEqual([ids.library]);
   });

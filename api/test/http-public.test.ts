@@ -26,7 +26,7 @@ function createdEvent(overrides: Partial<{ eventId: string; infographicId: strin
   const thumbnail = overrides.thumbnailDriveFileId ?? "thumbnail-file";
   return {
     eventId: overrides.eventId ?? eventId, schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-20T10:00:00.000Z", infographicId: id,
-    payload: { originalDriveFileId: original, thumbnailDriveFileId: thumbnail, sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: overrides.title ?? "GPU guide", capturedAt: overrides.capturedAt ?? "2026-08-20T09:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Inbox" },
+    payload: { originalDriveFileId: original, thumbnailDriveFileId: thumbnail, sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: overrides.title ?? "GPU guide", capturedAt: overrides.capturedAt ?? "2026-08-20T09:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Library" },
   };
 }
 

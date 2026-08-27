@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { InfographicCreatedPayloadSchema, InfEventSchema, type InfEvent } from "@inf/contracts";
+import { InfographicCreatedPayloadSchema, InfEventSchema, type Category, type InfEvent, type Tag } from "@inf/contracts";
 import { processImage } from "../images/process-image.js";
 import { EventStore } from "../storage/event-store.js";
 import { withKeyedLock } from "../storage/keyed-lock.js";
@@ -21,6 +21,14 @@ export interface CaptureInput {
   name?: string;
   title?: string;
   notes?: string | null;
+  /**
+   * Optional taxonomy to assign in the same transaction as the create event.
+   * Categories and tags land on the new item via `infographic.categoriesAssigned`
+   * and `infographic.tagsAssigned` events, so the Library sees them on the
+   * very next read with no follow-up PATCH.
+   */
+  categories?: readonly Category[];
+  tags?: readonly Tag[];
 }
 
 export type CaptureResult =
@@ -67,11 +75,10 @@ export class CaptureService {
     const infographicId = this.uuid();
     const title = publicSafeTitle(input.title ?? input.name);
     const timestamp = this.now().toISOString();
-    // New uploads land directly in Library: the Inbox concept has been
-    // removed and the "uncategorized" backlog is a client-side filter on
-    // `categoryIds.length === 0`. Drive file placement matches the canonical
-    // state so replacement, public view, and backfill all read the same
-    // folder hierarchy.
+    // Every capture lands directly in Library: the Inbox staging folder is
+    // gone, so the new item's Drive file and its canonical state are both
+    // Library from the first write. Optional categories/tags ship in the
+    // same transaction so the Library sees them on the very next read.
     InfographicCreatedPayloadSchema.parse({ originalDriveFileId: "pending", thumbnailDriveFileId: "pending", sha256: image.sha256, detectedMimeType: image.detectedMime, width: image.width, height: image.height, title, notes: input.notes, capturedAt: timestamp, createdAt: timestamp, folderState: "Library" });
     const created: StoredFile[] = [];
     try {
@@ -91,7 +98,8 @@ export class CaptureService {
         appProperties: { infSha256: image.sha256, infId: infographicId },
       });
       created.push(thumbnail);
-      const event: InfEvent = InfEventSchema.parse({
+      const events: InfEvent[] = [];
+      events.push(InfEventSchema.parse({
         eventId: this.uuid(), schemaVersion: 1, type: "infographic.created", occurredAt: timestamp, infographicId,
         payload: {
           originalDriveFileId: original.id, thumbnailDriveFileId: thumbnail.id, sha256: image.sha256,
@@ -99,8 +107,27 @@ export class CaptureService {
           ...(input.notes !== undefined ? { notes: input.notes } : {}),
           capturedAt: timestamp, createdAt: timestamp, folderState: "Library",
         },
-      });
-      await this.options.events.append(event);
+      }));
+      // Atomic taxonomy: when the client sends categories and/or tags with
+      // the capture (e.g. AI-suggested metadata from the Add form), we
+      // append the assignment events in the same write. This eliminates the
+      // post-capture PATCH and guarantees the new item is fully organized
+      // by the time the user lands on the Library.
+      const categories = input.categories ?? [];
+      if (categories.length > 0) {
+        events.push(InfEventSchema.parse({
+          eventId: this.uuid(), schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: timestamp, infographicId,
+          payload: { categories: [...categories] },
+        }));
+      }
+      const tags = input.tags ?? [];
+      if (tags.length > 0) {
+        events.push(InfEventSchema.parse({
+          eventId: this.uuid(), schemaVersion: 1, type: "infographic.tagsAssigned", occurredAt: timestamp, infographicId,
+          payload: { tags: [...tags] },
+        }));
+      }
+      for (const event of events) await this.options.events.append(event);
       return { kind: "created", infographicId, title, original, thumbnail };
     } catch (error) {
       await Promise.all(created.reverse().map(async (file) => { try { await this.options.storage.trashFile(file.id); } catch { /* cleanup cannot hide the primary error */ } }));

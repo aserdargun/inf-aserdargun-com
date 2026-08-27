@@ -10,7 +10,6 @@ import { CatalogService, type CatalogSnapshot } from "../services/catalog-servic
 import { ImageReplaceService } from "../services/image-replace-service.js";
 import { OpenAiService, openAiServiceFromEnv } from "../services/openai-service.js";
 import { ReviewService } from "../services/review-service.js";
-import { SyncService } from "../services/sync-service.js";
 import type { EventStore } from "../storage/event-store.js";
 import type { StoragePort } from "../storage/storage-port.js";
 import type { AutoTrimConfig } from "../images/trim-options.js";
@@ -21,7 +20,6 @@ export interface OwnerDependencies {
   publicRootId: string;
   privateRootId: string;
   eventsFolderId: string;
-  inboxFolderId: string;
   libraryFolderId: string;
   thumbnailsFolderId: string;
   duplicatesFolderId: string;
@@ -139,7 +137,7 @@ export function ownerList(request: RequestLike, deps: OwnerDependencies): Promis
     const query = catalogQuery(request);
     const catalog = new CatalogService(deps.events);
     if (query === undefined) {
-      // No query at all: callers (e.g. the Inbox backlog) want every non-deleted item in a single payload and apply their own filter on top. Pagination is opt-in via ?page=... so the legacy response shape stays backward compatible.
+      // No query at all: callers (e.g. the Today page) want every non-deleted item in a single payload and apply their own filter on top. Pagination is opt-in via ?page=... so the legacy response shape stays backward compatible.
       return jsonResponse({ infographics: snapshot.infographics, categories: snapshot.catalog.categories, tags: snapshot.catalog.tags });
     }
     const page = catalog.libraryList(snapshot, query);
@@ -157,8 +155,7 @@ export function ownerGet(request: RequestLike, deps: OwnerDependencies): Promise
 export function ownerSync(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
   return owner(request, deps, async () => {
     const input = await parseJson(request, SyncRequestSchema);
-    const service = new SyncService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, inboxFolderId: deps.inboxFolderId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, duplicatesFolderId: deps.duplicatesFolderId, now: () => now(deps), uuid: () => uuid(deps) });
-    return jsonResponse(await service.syncInbox(input));
+    return jsonResponse({ imported: 0, duplicates: 0, rejected: 0 });
   });
 }
 
@@ -258,7 +255,7 @@ export function ownerSettingsHealth(request: RequestLike, deps: OwnerDependencie
     const catalog = new CatalogService(deps.events);
     const [publicDrive, privateDrive] = await Promise.all([
       driveHealth(deps, deps.publicRootId, [
-        [deps.inboxFolderId, "Inbox"], [deps.libraryFolderId, "Library"], [deps.thumbnailsFolderId, "Thumbnails"], [deps.duplicatesFolderId, "Duplicates"],
+        [deps.libraryFolderId, "Library"], [deps.thumbnailsFolderId, "Thumbnails"], [deps.duplicatesFolderId, "Duplicates"],
       ]),
       driveHealth(deps, deps.privateRootId, [[deps.eventsFolderId, "Events"]]),
     ]);
@@ -307,12 +304,34 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
   return authorized(request, deps, async () => {
     const form = await parseMultipart(request); const file = form.get("file");
     if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
-    const metadataResult = CaptureMetadataSchema.safeParse({ title: optionalFormString(form, "title"), notes: optionalFormString(form, "notes") });
+    const categoriesRaw = optionalFormString(form, "categories");
+    const tagsRaw = optionalFormString(form, "tags");
+    const metadataResult = CaptureMetadataSchema.safeParse({
+      title: optionalFormString(form, "title"),
+      notes: optionalFormString(form, "notes"),
+      ...(categoriesRaw === undefined ? {} : { categories: parseJsonArray(categoriesRaw, "categories") }),
+      ...(tagsRaw === undefined ? {} : { tags: parseJsonArray(tagsRaw, "tags") }),
+    });
     if (!metadataResult.success) throw new AppError("INVALID_MULTIPART", 400, "Multipart metadata is invalid");
     const metadata = metadataResult.data;
     const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata });
     return jsonResponse(captured, captured.kind === "created" ? 201 : 200);
   });
+}
+
+/**
+ * Parse a JSON-encoded array field from the multipart body. The capture form
+ * ships categories and tags as JSON strings because multipart parts cannot
+ * carry structured objects directly. Anything malformed is rejected as
+ * `INVALID_MULTIPART` so the owner sees the real cause instead of a silent
+ * drop.
+ */
+function parseJsonArray<T>(raw: string, field: "categories" | "tags"): T[] {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch { throw new AppError("INVALID_MULTIPART", 400, `${field} field is not valid JSON`); }
+  if (!Array.isArray(parsed)) throw new AppError("INVALID_MULTIPART", 400, `${field} field must be a JSON array`);
+  return parsed as T[];
 }
 
 /** Owner-only AI metadata suggestion. Returns a structured response derived from the uploaded image. */
@@ -333,14 +352,10 @@ async function assignCategories(
   item: CatalogSnapshot["infographics"][number],
   categories: Category[],
 ): Promise<void> {
-  const assignment = () => deps.events.append(event(deps, "infographic.categoriesAssigned", item.id, { categories }));
-  if (categories.length === 0 || item.processedAt !== null || item.folderState !== "Inbox") { await assignment(); return; }
-  await deps.storage.moveFile(item.originalDriveFileId, deps.inboxFolderId, deps.libraryFolderId);
-  try { await assignment(); } catch (primaryError) {
-    try { await deps.storage.moveFile(item.originalDriveFileId, deps.libraryFolderId, deps.inboxFolderId); }
-    catch (compensationError) {
-      throw new AppError("INTEGRITY", 500, `Category assignment failed and Drive rollback failed: ${String(compensationError)}`);
-    }
-    throw primaryError;
-  }
+  // New uploads land in Library directly, so the historical
+  // Inbox→Library move is gone. The PATCH path now only appends the
+  // assignment event; later edits to the same item just re-run this with
+  // a new category list. Archived items stay in their archive folder and
+  // uncategorized Library items are filtered client-side on the Today page.
+  await deps.events.append(event(deps, "infographic.categoriesAssigned", item.id, { categories }));
 }

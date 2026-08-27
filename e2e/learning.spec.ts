@@ -100,7 +100,7 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   const health = {
     schemaVersion: 1, application: { name: "Infographics", version: "0.1.0", runtimeVersion: "v22.0.0", usesAi: false },
-    connectionHealth: { publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [{ id: "inbox", label: "Inbox", healthy: true }] }, privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [{ id: "events", label: "Events", healthy: true }] } },
+    connectionHealth: { publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [{ id: "library", label: "Library", healthy: true }] }, privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [{ id: "events", label: "Events", healthy: true }] } },
     data: { total: 1, inbox: 0, library: 1, archive: 0, due: 0, reviewed: 0, seen: 1 },
     quarantine: { count: 2, reasons: [{ reason: "invalid-event", count: 1 }, { reason: "unsupported-image", count: 1 }], rejectedFiles: [
       { eventId: "00000000-0000-4000-8000-000000000024", occurredAt: "2026-08-21T10:00:00.000Z", driveFileId: "newer-file", fileName: "newer.png", reason: "unsupported-image", detectedMimeType: "image/png" },

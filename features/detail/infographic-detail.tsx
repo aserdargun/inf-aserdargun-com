@@ -8,8 +8,8 @@ import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";
 import { ApiClientError, apiRequest, apiRequestForm } from "../../lib/api-client";
 import { routes } from "../../lib/routes";
-import { CategoryEditor } from "../inbox/category-editor";
-import { TagEditor } from "../inbox/tag-editor";
+import { CategoryEditor } from "../taxonomy/category-editor";
+import { TagEditor } from "../taxonomy/tag-editor";
 import { DeleteDialog } from "./delete-dialog";
 
 type DetailState = "loading" | "missing" | "error" | "success";

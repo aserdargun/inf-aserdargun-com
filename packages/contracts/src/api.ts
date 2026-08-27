@@ -25,6 +25,18 @@ export const SyncRequestSchema = z.strictObject({
 export const CaptureMetadataSchema = z.strictObject({
   title: PublicSafeTitleSchema.optional(),
   notes: z.string().max(10_000).nullable().optional(),
+  /**
+   * JSON-encoded array of {@link Category} objects. The capture service
+   * appends an `infographic.categoriesAssigned` event so the new item lands
+   * in the Library with its category in the same transaction as the create
+   * event — no follow-up PATCH is required.
+   */
+  categories: z.array(CategorySchema).optional(),
+  /**
+   * JSON-encoded array of {@link Tag} objects. Mirrors {@link categories}
+   * for tags so the capture write is a single round trip.
+   */
+  tags: z.array(TagSchema).optional(),
 });
 
 export const InfographicPatchSchema = z.strictObject({

@@ -10,7 +10,7 @@ const help = `Usage: node scripts/azure-static-web-app-release.mjs <command> --r
   deploy --resource-group RG --name NAME
   verify --resource-group RG --name NAME
 `;
-const runtimeKeys = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "INF_PRIVATE_DRIVE_FOLDER_ID", "INF_EVENTS_FOLDER_ID", "INF_INBOX_FOLDER_ID", "INF_LIBRARY_FOLDER_ID", "INF_THUMBNAILS_FOLDER_ID", "INF_DUPLICATES_FOLDER_ID", "OPENAI_API_KEY"];
+const runtimeKeys = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "INF_PRIVATE_DRIVE_FOLDER_ID", "INF_EVENTS_FOLDER_ID", "INF_LIBRARY_FOLDER_ID", "INF_THUMBNAILS_FOLDER_ID", "INF_DUPLICATES_FOLDER_ID", "OPENAI_API_KEY"];
 
 export function appSettings(env) {
   const result = { INF_ALLOWED_GITHUB_USER: "aserdargun" };

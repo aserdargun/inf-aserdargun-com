@@ -3,7 +3,7 @@ import { expect, test } from "playwright/test";
 const item = {
   id: "00000000-0000-4000-8000-000000000001", title: "GPU memory hierarchy", notes: null,  originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
   favorite: false, archived: false, createdAt: "2026-08-20T10:00:00.000Z", capturedAt: "2026-08-20T10:00:00.000Z", processedAt: null, lastSeenAt: null,
-  seenCount: 0, categoryIds: [], tagIds: [], folderState: "Inbox", reviewCount: 0, lastReviewedAt: null, reviewDueAt: "2026-08-21T10:00:00.000Z",
+  seenCount: 0, categoryIds: [], tagIds: [], folderState: "Library", reviewCount: 0, lastReviewedAt: null, reviewDueAt: "2026-08-21T10:00:00.000Z",
 };
 
 async function mockToday(page: import("playwright/test").Page, mode: "success" | "empty" | "error", infographics = [item]) {
@@ -13,7 +13,7 @@ async function mockToday(page: import("playwright/test").Page, mode: "success" |
   });
   await page.route("**/api/settings/stats", async (route) => {
     if (mode === "error") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ total: mode === "empty" ? 0 : 1, uncategorized: 1, library: 0, archive: 0, due: 1, reviewed: 0, seen: 0 }) });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ total: mode === "empty" ? 0 : 1, uncategorized: 0, library: 1, archive: 0, due: 1, reviewed: 0, seen: 0 }) });
   });
 }
 
@@ -21,7 +21,6 @@ test("owner sees Today navigation and primary learning actions", async ({ page }
   await page.goto("/today/");
 
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Inbox" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Library" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Add", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Review", exact: true })).toBeVisible();
@@ -75,7 +74,7 @@ test("switches navigation atomically at the approved breakpoint and keeps Settin
   await expect(page.locator(".sidebar")).toBeHidden();
   await expect(page.locator(".mobile-nav")).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
-  await expect(page.locator(".mobile-nav").getByRole("link")).toHaveCount(5);
+  await expect(page.locator(".mobile-nav").getByRole("link")).toHaveCount(4);
 });
 
 test("persists an accessible keyboard theme choice", async ({ page }) => {
@@ -135,8 +134,7 @@ test("shows loading, empty, error, and success Today states with exact copy", as
 
   await mockToday(page, "success");
   await page.reload();
-  await expect(page.getByText("Uncategorized 1", { exact: true })).toBeVisible();
-  await expect(page.getByText("Library 0", { exact: true })).toBeVisible();
+  await expect(page.getByText("Library 1", { exact: true })).toBeVisible();
   await expect(page.getByText("Due today 1", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recently added" })).toBeVisible();
   await expect(page.getByLabel("Recently added").getByRole("img", { name: "GPU memory hierarchy" })).toBeVisible();

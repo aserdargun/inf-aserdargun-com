@@ -10,7 +10,6 @@ import { assertStorageContract } from "./storage-contract.js";
 
 const ids = {
   publicRoot: "public-root",
-  inbox: "inbox",
   library: "library",
   duplicates: "duplicates",
   thumbnails: "thumbnails",
@@ -20,7 +19,6 @@ const ids = {
 
 const roots = new Map([
   [ids.publicRoot, "public"],
-  [ids.inbox, "public/Inbox"],
   [ids.library, "public/Library"],
   [ids.duplicates, "public/Duplicates"],
   [ids.thumbnails, "public/Thumbnails"],
@@ -56,19 +54,19 @@ async function fixture() {
 describe("LocalDriveAdapter", () => {
   test("obeys the shared storage contract", async () => {
     const { storage } = await fixture();
-    await assertStorageContract({ storage, rootId: ids.publicRoot, inboxId: ids.inbox, libraryId: ids.library });
+    await assertStorageContract({ storage, rootId: ids.publicRoot, libraryId: ids.library, sourceId: ids.duplicates });
   });
 
   test("persists metadata across adapter reload and rejects unknown or escaping roots", async () => {
     const { storage, root } = await fixture();
-    const created = await storage.createFile({ name: "persist.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("x") });
-    const bundle = join(root, "public", "Inbox", bundleName(created.id));
+    const created = await storage.createFile({ name: "persist.png", mimeType: "image/png", parentId: ids.duplicates, bytes: Buffer.from("x") });
+    const bundle = join(root, "public", "Duplicates", bundleName(created.id));
     expect((await readdir(bundle)).sort()).toEqual(["data", "metadata.json"]);
     expect((await lstat(bundle)).isDirectory()).toBe(true);
     const reloaded = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
     expect(await reloaded.readFile(created.id)).toEqual(Buffer.from("x"));
     await expect(reloaded.listChildren("unknown")).rejects.toThrow(/configured/i);
-    await expect(reloaded.createFile({ name: "../escape", mimeType: "text/plain", parentId: ids.inbox, bytes: Buffer.from("x") })).rejects.toThrow(/name/i);
+    await expect(reloaded.createFile({ name: "../escape", mimeType: "text/plain", parentId: ids.duplicates, bytes: Buffer.from("x") })).rejects.toThrow(/name/i);
   });
 
   test("keeps private immutable events out of the public root and rejects duplicate event IDs", async () => {
@@ -91,7 +89,7 @@ describe("LocalDriveAdapter", () => {
   test("rejects a public or forged event folder before writes and serializes duplicate append claims", async () => {
     const { storage } = await fixture();
     const event = { eventId: "22222222-2222-4222-8222-222222222222", schemaVersion: 1 as const, type: "sync.fileRejected" as const, occurredAt: "2026-08-21T10:00:00.000Z", payload: { driveFileId: "manual", fileName: "bad.png", reason: "bad image" } };
-    const publicEvents = new EventStore(storage, ids.inbox, ids.privateRoot);
+    const publicEvents = new EventStore(storage, ids.library, ids.privateRoot);
     await expect(publicEvents.append(event)).rejects.toThrow(/private/i);
     const events = new EventStore(storage, ids.events, ids.privateRoot);
     const settled = await Promise.allSettled([events.append(event), events.append(event)]);
@@ -104,16 +102,16 @@ describe("LocalDriveAdapter", () => {
     await initial.listChildren(ids.publicRoot);
     const outside = await mkdtemp(join(tmpdir(), "inf-outside-"));
     temporaryRoots.push(outside);
-    await symlink(outside, join(root, "public", "Inbox"));
+    await symlink(outside, join(root, "public", "Library"));
     const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
-    await expect(storage.listChildren(ids.inbox)).rejects.toThrow(/symlink/i);
+    await expect(storage.listChildren(ids.library)).rejects.toThrow(/symlink/i);
     const forged = join(root, "public", bundleName("forged")); await mkdir(forged); await symlink(outside, join(forged, "data")); await writeFile(join(forged, "metadata.json"), "{}");
     const safe = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
     await expect(safe.listChildren(ids.publicRoot)).rejects.toThrow(/malformed|path|symlink|unsafe/i);
   });
 
   test.each([
-    ["root symlink", "root"], ["ancestor symlink", "public"], ["terminal folder symlink", "Inbox"], [".trash symlink", ".trash"],
+    ["root symlink", "root"], ["ancestor symlink", "public"], ["terminal folder symlink", "Library"], [".trash symlink", ".trash"],
   ])("refuses %s before writing outside sentinel", async (_label, segment) => {
     const root = await mkdtemp(join(tmpdir(), "inf-symlink-matrix-")); temporaryRoots.push(root);
     const outside = await mkdtemp(join(tmpdir(), "inf-outside-matrix-")); temporaryRoots.push(outside); await writeFile(join(outside, "sentinel"), "safe");
@@ -121,12 +119,12 @@ describe("LocalDriveAdapter", () => {
       await rm(root, { recursive: true });
       await symlink(outside, root);
       const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
-      await expect(storage.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i);
+      await expect(storage.listChildren(ids.library)).rejects.toThrow(/symlink|unsafe/i);
     } else {
       const setup = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
       const sourceBytes = Buffer.from("x");
-      const source = await setup.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.inbox, bytes: sourceBytes });
-      const target = segment === ".trash" ? join(root, ".trash") : segment === "public" ? join(root, "public") : join(root, "public", "Inbox");
+      const source = await setup.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.library, bytes: sourceBytes });
+      const target = segment === ".trash" ? join(root, ".trash") : segment === "public" ? join(root, "public") : join(root, "public", "Library");
       if (segment !== ".trash") {
         await rm(target, { recursive: true });
       }
@@ -135,9 +133,9 @@ describe("LocalDriveAdapter", () => {
         await expect(setup.trashFile(source.id)).rejects.toThrow(/symlink|unsafe/i);
         await rm(target);
         expect(await setup.readFile(source.id)).toEqual(sourceBytes);
-        expect(await setup.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: source.id })]);
+        expect(await setup.listChildren(ids.library)).toEqual([expect.objectContaining({ id: source.id })]);
       } else {
-        await expect(setup.listChildren(ids.inbox)).rejects.toThrow(/symlink|unsafe/i);
+        await expect(setup.listChildren(ids.library)).rejects.toThrow(/symlink|unsafe/i);
       }
       expect(await readdir(outside)).toEqual(["sentinel"]);
       expect(await readFile(join(outside, "sentinel"), "utf8")).toBe("safe");
@@ -147,14 +145,14 @@ describe("LocalDriveAdapter", () => {
   test.each(["beforeDataPublish", "afterDataPublish", "beforeMetadataPublish", "afterMetadataPublish", "afterSourceMetadataRemove", "afterSourceDataRemove"] as const)("retries every partial move publication fault without invisible debris at %s", async (step) => {
     const root = await mkdtemp(join(tmpdir(), "inf-atomic-")); temporaryRoots.push(root);
     const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots, fault: (at) => { if (at === step) throw new Error(step); } });
-    const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("atomic") });
-    await expect(storage.moveFile(created.id, ids.inbox, ids.library)).rejects.toThrow(step);
+    const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.duplicates, bytes: Buffer.from("atomic") });
+    await expect(storage.moveFile(created.id, ids.duplicates, ids.library)).rejects.toThrow(step);
     expect(await storage.readFile(created.id)).toEqual(Buffer.from("atomic"));
-    expect(await storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: created.id })]);
+    expect(await storage.listChildren(ids.duplicates)).toEqual([expect.objectContaining({ id: created.id })]);
     expect(await readdir(join(root, "public", "Library"))).toEqual([]);
     const reloaded = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
-    await reloaded.moveFile(created.id, ids.inbox, ids.library);
-    expect(await reloaded.listChildren(ids.inbox)).toEqual([]);
+    await reloaded.moveFile(created.id, ids.duplicates, ids.library);
+    expect(await reloaded.listChildren(ids.duplicates)).toEqual([]);
     expect(await reloaded.listChildren(ids.library)).toEqual([expect.objectContaining({ id: created.id })]);
     expect(await readdir(join(root, "public", "Library"))).toEqual([bundleName(created.id)]);
     expect((await readdir(join(root, "public", "Library", bundleName(created.id)))).sort()).toEqual(["data", "metadata.json"]);
@@ -164,10 +162,10 @@ describe("LocalDriveAdapter", () => {
   test.each(["beforeDataPublish", "afterDataPublish", "beforeMetadataPublish", "afterMetadataPublish", "afterSourceMetadataRemove", "afterSourceDataRemove"] as const)("retries every partial trash publication fault at %s", async (step) => {
     const root = await mkdtemp(join(tmpdir(), "inf-atomic-trash-")); temporaryRoots.push(root);
     const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots, fault: (at) => { if (at === step) throw new Error(step); } });
-    const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("atomic") });
+    const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.duplicates, bytes: Buffer.from("atomic") });
     await expect(storage.trashFile(created.id)).rejects.toThrow(step);
     expect(await storage.readFile(created.id)).toEqual(Buffer.from("atomic"));
-    expect(await storage.listChildren(ids.inbox)).toEqual([expect.objectContaining({ id: created.id })]);
+    expect(await storage.listChildren(ids.duplicates)).toEqual([expect.objectContaining({ id: created.id })]);
     expect(await readdir(join(root, ".trash"))).toEqual([]);
     const reloaded = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
     await reloaded.trashFile(created.id);
@@ -182,12 +180,12 @@ describe("LocalDriveAdapter", () => {
     const storage = new LocalDriveAdapter({ rootPath: root, folderPaths: roots, fault: (at) => {
       if (at === "afterDataPublish") writeForeignBundle(destination, "both", "foreign-destination");
     } });
-    const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("source") });
+    const created = await storage.createFile({ name: "atomic.png", mimeType: "image/png", parentId: ids.duplicates, bytes: Buffer.from("source") });
     destination = join(root, "public", "Library", bundleName(created.id));
-    await expect(storage.moveFile(created.id, ids.inbox, ids.library)).rejects.toThrow(/destination|overwrite|non-empty/i);
+    await expect(storage.moveFile(created.id, ids.duplicates, ids.library)).rejects.toThrow(/destination|overwrite|non-empty/i);
     expect(await readFile(join(destination, "data"), "utf8")).toBe("foreign-destination-data");
     expect(await readFile(join(destination, "metadata.json"), "utf8")).toBe("foreign-destination-metadata");
-    const restoredSource = join(root, "public", "Inbox", bundleName(created.id));
+    const restoredSource = join(root, "public", "Duplicates", bundleName(created.id));
     expect(await readFile(join(restoredSource, "data"), "utf8")).toBe("source");
     expect(JSON.parse(await readFile(join(restoredSource, "metadata.json"), "utf8"))).toMatchObject({ id: created.id, name: "atomic.png" });
   });
@@ -199,9 +197,9 @@ describe("LocalDriveAdapter", () => {
       if (at !== "beforeDataPublish") return;
       writeForeignBundle(source, replacement, "foreign-source");
     } });
-    const created = await storage.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("original-source") });
-    source = join(root, "public", "Inbox", bundleName(created.id));
-    await expect(storage.moveFile(created.id, ids.inbox, ids.library)).rejects.toThrow(/quarantine|foreign source/i);
+    const created = await storage.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.duplicates, bytes: Buffer.from("original-source") });
+    source = join(root, "public", "Duplicates", bundleName(created.id));
+    await expect(storage.moveFile(created.id, ids.duplicates, ids.library)).rejects.toThrow(/quarantine|foreign source/i);
     if (replacement === "data" || replacement === "both") expect(await readFile(join(source, "data"), "utf8")).toBe("foreign-source-data");
     if (replacement === "metadata" || replacement === "both") expect(await readFile(join(source, "metadata.json"), "utf8")).toBe("foreign-source-metadata");
     const operations = await readdir(join(root, ".operations"));
@@ -217,9 +215,9 @@ describe("LocalDriveAdapter", () => {
       if (at === "beforeMetadataPublish") throw new Error("force rollback");
       if ((at as string) === "beforeSourceRestore") writeForeignBundle(source, replacement, "rollback-foreign");
     } });
-    const created = await storage.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("original-source") });
-    source = join(root, "public", "Inbox", bundleName(created.id));
-    await expect(storage.moveFile(created.id, ids.inbox, ids.library)).rejects.toThrow(/quarantine|rollback|foreign source/i);
+    const created = await storage.createFile({ name: "source.png", mimeType: "image/png", parentId: ids.duplicates, bytes: Buffer.from("original-source") });
+    source = join(root, "public", "Duplicates", bundleName(created.id));
+    await expect(storage.moveFile(created.id, ids.duplicates, ids.library)).rejects.toThrow(/quarantine|rollback|foreign source/i);
     if (replacement === "data" || replacement === "both") expect(await readFile(join(source, "data"), "utf8")).toBe("rollback-foreign-data");
     if (replacement === "metadata" || replacement === "both") expect(await readFile(join(source, "metadata.json"), "utf8")).toBe("rollback-foreign-metadata");
     const [operation] = await readdir(join(root, ".operations"));
@@ -228,21 +226,21 @@ describe("LocalDriveAdapter", () => {
   });
 
   test("rejects legacy split-pair local data with an explicit reset instruction", async () => {
-    const { storage, root } = await fixture(); await storage.listChildren(ids.inbox);
-    await writeFile(join(root, "public", "Inbox", "legacy.blob"), "legacy");
-    await writeFile(join(root, "public", "Inbox", "legacy.blob.inf-meta.json"), "{}");
-    await expect(storage.listChildren(ids.inbox)).rejects.toThrow(/legacy|reset/i);
+    const { storage, root } = await fixture(); await storage.listChildren(ids.library);
+    await writeFile(join(root, "public", "Library", "legacy.blob"), "legacy");
+    await writeFile(join(root, "public", "Library", "legacy.blob.inf-meta.json"), "{}");
+    await expect(storage.listChildren(ids.library)).rejects.toThrow(/legacy|reset/i);
   });
 
   test.each(["missing-data", "missing-metadata", "wrong-name"] as const)("rejects an atomic bundle with %s integrity", async (mutation) => {
     const { storage, root } = await fixture();
-    const created = await storage.createFile({ name: "integrity.png", mimeType: "image/png", parentId: ids.inbox, bytes: Buffer.from("integrity") });
-    const bundle = join(root, "public", "Inbox", bundleName(created.id));
+    const created = await storage.createFile({ name: "integrity.png", mimeType: "image/png", parentId: ids.duplicates, bytes: Buffer.from("integrity") });
+    const bundle = join(root, "public", "Duplicates", bundleName(created.id));
     if (mutation === "missing-data") await rm(join(bundle, "data"));
     else if (mutation === "missing-metadata") await rm(join(bundle, "metadata.json"));
-    else await rename(bundle, join(root, "public", "Inbox", bundleName("wrong-id")));
+    else await rename(bundle, join(root, "public", "Duplicates", bundleName("wrong-id")));
     const reloaded = new LocalDriveAdapter({ rootPath: root, folderPaths: roots });
-    await expect(reloaded.listChildren(ids.inbox)).rejects.toThrow(/bundle|metadata|name/i);
+    await expect(reloaded.listChildren(ids.duplicates)).rejects.toThrow(/bundle|metadata|name/i);
   });
 
   test("preserves every claim when the deterministic lowest event claim conflicts", async () => {

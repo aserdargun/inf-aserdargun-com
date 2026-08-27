@@ -2,5 +2,5 @@
 // reached via `/today/`. Keeping the admin home on a dedicated path means
 // anonymous visitors and signed-in owners each have a stable landing URL.
 export const routes = {
-  home: "/", today: "/today/", inbox: "/inbox/", library: "/library/", add: "/add/", review: "/review/", surprise: "/surprise/", settings: "/settings/", view: "/view/", login: "/login/",
+  home: "/", today: "/today/", library: "/library/", add: "/add/", review: "/review/", surprise: "/surprise/", settings: "/settings/", view: "/view/", login: "/login/",
 } as const;

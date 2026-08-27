@@ -125,7 +125,7 @@ describe("public PWA contract", () => {
     expect(publicFeatures).toContain("/api/public/");
     expect(publicFeatures).toContain('from "@inf/contracts/public"');
     expect(publicFeatures).not.toContain('from "@inf/contracts"');
-    expect(publicFeatures).not.toMatch(/features\/(library|inbox|detail|review|settings)|OwnerCatalog|MaterializedInfographic|sourceUrl|categoryIds|tagIds|favorite|seenCount|reviewCount|folderState|sha256/i);
+    expect(publicFeatures).not.toMatch(/features\/(library|detail|review|settings)|OwnerCatalog|MaterializedInfographic|sourceUrl|categoryIds|tagIds|favorite|seenCount|reviewCount|folderState|sha256/i);
     expect(publicContract).not.toMatch(/from "\.\/entities"|from "\.\/api"|sourceUrl|originalDriveFileId|categoryIds|folderState/);
     expect(manifest.exports["./public"]).toEqual({ types: "./src/public.ts", default: "./dist/public.js" });
   });

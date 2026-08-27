@@ -9,7 +9,7 @@ import { OpenAiService } from "../src/services/openai-service.js";
 import { MAX_MULTIPART_BYTES } from "../src/http/parse.js";
 import type { StoragePort, StoredFile, CreateFileInput } from "../src/storage/storage-port.js";
 
-const ids = { public: "public", private: "private", events: "events", inbox: "inbox", library: "library", archive: "archive", thumbnails: "thumbnails", duplicates: "duplicates" };
+const ids = { public: "public", private: "private", events: "events", library: "library", archive: "archive", thumbnails: "thumbnails", duplicates: "duplicates" };
 const infographicId = "00000000-0000-4000-8000-000000000001";
 const authorizingHeader = { "x-ms-client-principal": Buffer.from(JSON.stringify({ identityProvider: "github", userDetails: "aserdargun" })).toString("base64") };
 const apiRoot = process.cwd().endsWith("/api") ? process.cwd() : resolve(process.cwd(), "api");
@@ -24,13 +24,13 @@ class MemoryStorage implements StoragePort {
   async listChildren(folderId: string) { return [...this.files.values()].map(({ file }) => file).filter((file) => file.parentIds.includes(folderId) && !file.trashed); }
   async readFile(fileId: string) { const value = this.files.get(fileId); if (!value) throw new Error("missing"); return Buffer.from(value.bytes); }
   async createFile(input: CreateFileInput) { const id = input.fileId ?? randomUUID(); const file = { id, name: input.name, mimeType: input.mimeType, createdTime: "2026-08-21T10:00:00.000Z", parentIds: [input.parentId], appProperties: { ...(input.appProperties ?? {}) }, trashed: false }; this.files.set(id, { file, bytes: Buffer.from(input.bytes) }); return file; }
-  async moveFile(fileId: string, from: string, to: string) { this.moves.push([fileId, from, to]); if (this.failMove || (this.failRollback && from === ids.library && to === ids.inbox)) throw new Error("planned move failure"); const value = this.files.get(fileId); if (!value || value.file.parentIds[0] !== from) throw new Error("missing"); value.file.parentIds = [to]; }
+  async moveFile(fileId: string, from: string, to: string) { this.moves.push([fileId, from, to]); if (this.failMove || (this.failRollback && from === ids.duplicates && to === ids.library)) throw new Error("planned move failure"); const value = this.files.get(fileId); if (!value || value.file.parentIds[0] !== from) throw new Error("missing"); value.file.parentIds = [to]; }
   async trashFile(fileId: string) { const value = this.files.get(fileId); if (!value) throw new Error("missing"); value.file.trashed = true; this.trashed.push(fileId); }
   async findByAppProperty(rootId: string, key: string, value: string) { return [...this.files.values()].map(({ file }) => file).filter((file) => !file.trashed && file.appProperties[key] === value && rootId === ids.public); }
   async isDescendant() { return true; }
 }
 
-function createdEvent(): InfEvent { return { eventId: "00000000-0000-4000-8000-000000000002", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-20T10:00:00.000Z", infographicId, payload: { originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU guide", notes: "private", capturedAt: "2026-08-20T09:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Inbox" } }; }
+function createdEvent(): InfEvent { return { eventId: "00000000-0000-4000-8000-000000000002", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-20T10:00:00.000Z", infographicId, payload: { originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU guide", notes: "private", capturedAt: "2026-08-20T09:00:00.000Z", createdAt: "2026-08-20T10:00:00.000Z", folderState: "Library" } }; }
 
 const category = { id: "00000000-0000-4000-8000-000000000099", displayName: "GPU", normalizedName: "gpu", slug: "gpu" };
 
@@ -38,12 +38,12 @@ function fixture(options: { appendFails?: boolean; failMove?: boolean; failRollb
   const events = [createdEvent()]; const storage = new MemoryStorage();
   storage.failMove = options.failMove ?? false;
   storage.failRollback = options.failRollback ?? false;
-  storage.files.set("original", { file: { id: "original", name: "a.png", mimeType: "image/png", createdTime: "2026-08-20T09:00:00.000Z", parentIds: [ids.inbox], appProperties: {}, trashed: false }, bytes: Buffer.from("image") });
+  storage.files.set("original", { file: { id: "original", name: "a.png", mimeType: "image/png", createdTime: "2026-08-20T09:00:00.000Z", parentIds: [ids.library], appProperties: {}, trashed: false }, bytes: Buffer.from("image") });
   storage.files.set("thumbnail", { file: { id: "thumbnail", name: "a.webp", mimeType: "image/webp", createdTime: "2026-08-20T09:00:00.000Z", parentIds: [ids.thumbnails], appProperties: {}, trashed: false }, bytes: Buffer.from("thumbnail") });
   const eventReads = { count: 0 };
   const eventStore = { readAll: async () => { eventReads.count += 1; return events; }, append: async (event: InfEvent) => { if (options.appendFails && event.type === "infographic.categoriesAssigned") throw new Error("planned append failure"); events.push(event); } };
   const uuid = (() => { let n = 10; return () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`; })();
-  return { events, storage, eventReads, deps: { storage, events: eventStore, publicRootId: ids.public, inboxFolderId: ids.inbox, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates, privateRootId: ids.private, eventsFolderId: ids.events, allowedGithubUser: "aserdargun", now: () => new Date("2026-08-21T10:00:00.000Z"), uuid } };
+  return { events, storage, eventReads, deps: { storage, events: eventStore, publicRootId: ids.public, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, duplicatesFolderId: ids.duplicates, privateRootId: ids.private, eventsFolderId: ids.events, allowedGithubUser: "aserdargun", now: () => new Date("2026-08-21T10:00:00.000Z"), uuid } };
 }
 
 const request = (path: string, init: RequestInit = {}) => new Request(`http://localhost${path}`, { ...init, headers: { ...authorizingHeader, ...init.headers } });
@@ -91,7 +91,7 @@ describe("owner HTTP API", () => {
       { eventId: "00000000-0000-4000-8000-000000000090", schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: "2026-08-20T10:01:00.000Z", infographicId, payload: { categories: [category] } },
       { eventId: "00000000-0000-4000-8000-000000000091", schemaVersion: 1, type: "infographic.tagsAssigned", occurredAt: "2026-08-20T10:02:00.000Z", infographicId, payload: { tags: [tag] } },
       { eventId: "00000000-0000-4000-8000-000000000092", schemaVersion: 1, type: "infographic.favoriteChanged", occurredAt: "2026-08-20T10:03:00.000Z", infographicId, payload: { favorite: true } },
-      { eventId: "00000000-0000-4000-8000-000000000093", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: "b".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU reference", notes: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Inbox" } },
+      { eventId: "00000000-0000-4000-8000-000000000093", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: "b".repeat(64), detectedMimeType: "image/png", width: 20, height: 10, title: "GPU reference", notes: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Library" } },
       { eventId: "00000000-0000-4000-8000-000000000094", schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: "2026-08-21T10:01:00.000Z", infographicId: secondId, payload: { categories: [category] } },
       { eventId: "00000000-0000-4000-8000-000000000095", schemaVersion: 1, type: "infographic.seen", occurredAt: "2026-08-21T10:02:00.000Z", infographicId: secondId, payload: {} },
     );
@@ -172,16 +172,14 @@ describe("owner HTTP API", () => {
     expect(events).toEqual([]);
   });
 
-  test("moves the first non-empty category assignment into Library and does not move empty or processed assignments", async () => {
+  test("records first categories for an unprocessed Library item without attempting any Drive move", async () => {
     const { deps, storage } = fixture();
-    expect((await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps)).status).toBe(200);
-    expect(storage.moves).toEqual([["original", ids.inbox, ids.library]]); expect(storage.files.get("original")?.file.parentIds).toEqual([ids.library]);
-    await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
-    await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
-    expect(storage.moves).toEqual([["original", ids.inbox, ids.library]]);
+    const response = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps);
+    expect(response.status).toBe(200); expect(storage.moves).toEqual([]);
+    expect(storage.files.get("original")?.file.parentIds).toEqual([ids.library]);
   });
 
-  test("records first categories for an unprocessed Archive item without attempting an Inbox-to-Library move", async () => {
+  test("records first categories for an unprocessed Archive item without attempting any Drive move", async () => {
     const { deps, events, storage } = fixture();
     events.push({ eventId: "00000000-0000-4000-8000-000000000060", schemaVersion: 1, type: "infographic.archived", occurredAt: "2026-08-20T11:00:00.000Z", infographicId, payload: {} });
     storage.files.get("original")!.file.parentIds = [ids.archive];
@@ -190,20 +188,13 @@ describe("owner HTTP API", () => {
     expect(events.at(-1)).toMatchObject({ type: "infographic.categoriesAssigned", infographicId, payload: { categories: [category] } });
   });
 
-  test("rolls a Library move back on category event append failure and emits no categories event when move fails", async () => {
+  test("surfaces the categories event append failure as a 500 without mutating Drive", async () => {
     const appendFailure = fixture({ appendFails: true });
-    expect((await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), appendFailure.deps)).status).toBe(500);
-    expect(appendFailure.storage.files.get("original")?.file.parentIds).toEqual([ids.inbox]);
-    expect(appendFailure.storage.moves).toEqual([["original", ids.inbox, ids.library], ["original", ids.library, ids.inbox]]);
+    const response = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), appendFailure.deps);
+    expect(response.status).toBe(500);
+    expect(appendFailure.storage.files.get("original")?.file.parentIds).toEqual([ids.library]);
+    expect(appendFailure.storage.moves).toEqual([]);
     expect(appendFailure.events.map((event) => event.type)).not.toContain("infographic.categoriesAssigned");
-
-    const moveFailure = fixture({ failMove: true });
-    expect((await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), moveFailure.deps)).status).toBe(500);
-    expect(moveFailure.events.map((event) => event.type)).not.toContain("infographic.categoriesAssigned");
-
-    const rollbackFailure = fixture({ appendFails: true, failRollback: true });
-    const integrity = await ownerPatch(request(`/api/infographics/${infographicId}`, { method: "PATCH", body: JSON.stringify({ categories: [category] }), headers: { ...authorizingHeader, "content-type": "application/json" } }), rollbackFailure.deps);
-    expect(integrity.status).toBe(500); expect(await json(integrity)).toMatchObject({ code: "INTEGRITY" });
   });
 
   test("does not return a fractional due time that is later than now", async () => {
@@ -377,8 +368,8 @@ describe("owner HTTP API", () => {
     const firstBody = await json(firstResponse) as { sha256: string };
     // Synthesize a second infographic event for a different id that has the same sha in the event stream.
     const secondId = "00000000-0000-4000-8000-000000000020";
-    events.push({ eventId: "00000000-0000-4000-8000-000000000021", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: firstBody.sha256, detectedMimeType: "image/png", width: 20, height: 10, title: "GPU same image", notes: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Inbox" } });
-    storage.files.set("second-original", { file: { id: "second-original", name: "b.png", mimeType: "image/png", createdTime: "2026-08-21T09:00:00.000Z", parentIds: [ids.inbox], appProperties: { infSha256: firstBody.sha256, infId: secondId }, trashed: false }, bytes: Buffer.from("image") });
+    events.push({ eventId: "00000000-0000-4000-8000-000000000021", schemaVersion: 1, type: "infographic.created", occurredAt: "2026-08-21T10:00:00.000Z", infographicId: secondId, payload: { originalDriveFileId: "second-original", thumbnailDriveFileId: "second-thumbnail", sha256: firstBody.sha256, detectedMimeType: "image/png", width: 20, height: 10, title: "GPU same image", notes: null, capturedAt: "2026-08-21T09:00:00.000Z", createdAt: "2026-08-21T10:00:00.000Z", folderState: "Library" } });
+    storage.files.set("second-original", { file: { id: "second-original", name: "b.png", mimeType: "image/png", createdTime: "2026-08-21T09:00:00.000Z", parentIds: [ids.library], appProperties: { infSha256: firstBody.sha256, infId: secondId }, trashed: false }, bytes: Buffer.from("image") });
     storage.files.set("second-thumbnail", { file: { id: "second-thumbnail", name: "b.webp", mimeType: "image/webp", createdTime: "2026-08-21T09:00:00.000Z", parentIds: [ids.thumbnails], appProperties: { infSha256: firstBody.sha256, infId: secondId }, trashed: false }, bytes: Buffer.from("thumbnail") });
     const form = new FormData();
     form.set("file", new File([pngBytes], "same.png", { type: "image/png" }));
@@ -514,7 +505,7 @@ describe("owner HTTP API", () => {
     expect(events).toHaveLength(1);
   });
 
-  test("image replace keeps the previous original in the inbox folder until after the event appends, and the thumbnail in the thumbnails folder", async () => {
+  test("image replace keeps the previous original in the Library folder until after the event appends, and the thumbnail in the thumbnails folder", async () => {
     const { deps, storage } = fixture();
     const form = new FormData();
     form.set("file", new File([await readFile(resolve(apiRoot, "test/fixtures/valid-infographic.png"))], "replace.png", { type: "image/png" }));
@@ -526,7 +517,7 @@ describe("owner HTTP API", () => {
     expect(trashedThumbnail?.file.trashed).toBe(true);
   });
 
-  test("image replace keeps the inbox-folder parent for the new original even when the previous item was archived", async () => {
+  test("image replace keeps the Library-folder parent for the new original even when the previous item was archived", async () => {
     const { deps, events, storage } = fixture();
     events.push({ eventId: "00000000-0000-4000-8000-000000000040", schemaVersion: 1, type: "infographic.archived", occurredAt: "2026-08-21T11:00:00.000Z", infographicId, payload: {} });
     storage.files.get("original")!.file.parentIds = [ids.archive];

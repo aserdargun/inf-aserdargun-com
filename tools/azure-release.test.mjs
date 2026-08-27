@@ -50,7 +50,6 @@ if (method === "post" && uri.includes("/listAppSettings?api-version=2025-05-01")
       "GOOGLE_REFRESH_TOKEN=refresh-token",
       "INF_PRIVATE_DRIVE_FOLDER_ID=private",
       "INF_EVENTS_FOLDER_ID=events",
-      "INF_INBOX_FOLDER_ID=inbox",
       "INF_LIBRARY_FOLDER_ID=library",
       "INF_THUMBNAILS_FOLDER_ID=thumbnails",
       "INF_DUPLICATES_FOLDER_ID=duplicates",
@@ -71,7 +70,7 @@ if (method === "post" && uri.includes("/listAppSettings?api-version=2025-05-01")
     const summary = JSON.parse(readFileSync(summaryPath, "utf8"));
     assert.equal(summary.preserved, "preserved");
     assert.ok(summary.keys.includes("GOOGLE_CLIENT_SECRET"));
-    assert.equal(summary.keys.length, 12);
+    assert.equal(summary.keys.length, 11);
     assert.throws(() => readFileSync(summary.bodyPath), /ENOENT/);
   } finally {
     rmSync(directory, { force: true, recursive: true });

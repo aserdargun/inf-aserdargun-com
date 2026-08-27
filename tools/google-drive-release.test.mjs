@@ -258,9 +258,9 @@ test("Drive provisioning accepts only exact owner plus public anyone-reader boun
 });
 
 test("Drive provisioning writes only exact runtime folder names and never invents a public-root variable", () => {
-  const values = runtimeFolderEnvironment({ privateRoot: "private", Events: "events", Inbox: "inbox", Library: "library", Thumbnails: "thumbs", Duplicates: "dupes" });
+  const values = runtimeFolderEnvironment({ privateRoot: "private", Events: "events", Library: "library", Thumbnails: "thumbs", Duplicates: "dupes" });
   assert.deepEqual(values, {
-    INF_PRIVATE_DRIVE_FOLDER_ID: "private", INF_EVENTS_FOLDER_ID: "events", INF_INBOX_FOLDER_ID: "inbox",
+    INF_PRIVATE_DRIVE_FOLDER_ID: "private", INF_EVENTS_FOLDER_ID: "events",
     INF_LIBRARY_FOLDER_ID: "library", INF_THUMBNAILS_FOLDER_ID: "thumbs", INF_DUPLICATES_FOLDER_ID: "dupes",
   });
   assert.equal("INF_PUBLIC_DRIVE_ROOT_ID" in values, false);
@@ -269,16 +269,16 @@ test("Drive provisioning writes only exact runtime folder names and never invent
 test("provisioning persists every operational audit ID while deployment stays runtime-minimal", () => {
   assert.equal(typeof driveRelease.provisionFolderEnvironment, "function");
   const ids = {
-    privateRoot: "private", Inbox: "inbox", Library: "library", Archive: "archive", Duplicates: "dupes", Thumbnails: "thumbs",
+    privateRoot: "private", Library: "library", Archive: "archive", Duplicates: "dupes", Thumbnails: "thumbs",
     events: "events", reviews: "reviews", quarantine: "quarantine", exports: "exports", testRoot: "test-root",
   };
   assert.deepEqual(driveRelease.provisionFolderEnvironment(ids), {
-    INF_PRIVATE_DRIVE_FOLDER_ID: "private", INF_INBOX_FOLDER_ID: "inbox", INF_LIBRARY_FOLDER_ID: "library", INF_ARCHIVE_FOLDER_ID: "archive",
+    INF_PRIVATE_DRIVE_FOLDER_ID: "private", INF_LIBRARY_FOLDER_ID: "library", INF_ARCHIVE_FOLDER_ID: "archive",
     INF_DUPLICATES_FOLDER_ID: "dupes", INF_THUMBNAILS_FOLDER_ID: "thumbs", INF_EVENTS_FOLDER_ID: "events", INF_REVIEWS_FOLDER_ID: "reviews",
     INF_QUARANTINE_FOLDER_ID: "quarantine", INF_EXPORTS_FOLDER_ID: "exports", INF_DRIVE_TEST_ROOT_ID: "test-root",
   });
   assert.deepEqual(runtimeFolderEnvironment(ids), {
-    INF_PRIVATE_DRIVE_FOLDER_ID: "private", INF_EVENTS_FOLDER_ID: "events", INF_INBOX_FOLDER_ID: "inbox",
+    INF_PRIVATE_DRIVE_FOLDER_ID: "private", INF_EVENTS_FOLDER_ID: "events",
     INF_LIBRARY_FOLDER_ID: "library", INF_THUMBNAILS_FOLDER_ID: "thumbs", INF_DUPLICATES_FOLDER_ID: "dupes",
   });
 });
@@ -303,7 +303,7 @@ test("provisioning is idempotent, recovers before env write, and validates confi
   const second = await driveRelease.provisionWithClient(client, {}, { expectedOwner: owner });
   assert.deepEqual(second, first);
   assert.equal(created.size, countAfterFailureWindow);
-  assert.equal((await client.listChildren(driveRelease.PUBLIC_ROOT_ID)).filter((file) => file.name === "Inbox").length, 1);
+  assert.equal((await client.listChildren(driveRelease.PUBLIC_ROOT_ID)).filter((file) => file.name === "Library").length, 1);
   assert.equal((await client.listChildren(first.privateRoot)).filter((file) => file.name === "events").length, 1);
 
   await assert.rejects(
@@ -311,8 +311,8 @@ test("provisioning is idempotent, recovers before env write, and validates confi
     /private.*mismatch|configured.*private/i,
   );
   await assert.rejects(
-    driveRelease.provisionWithClient(client, { INF_INBOX_FOLDER_ID: "foreign-inbox" }, { expectedOwner: owner }),
-    /configured.*Inbox.*mismatch/i,
+    driveRelease.provisionWithClient(client, { INF_LIBRARY_FOLDER_ID: "foreign-library" }, { expectedOwner: owner }),
+    /configured.*Library.*mismatch/i,
   );
 });
 
@@ -342,7 +342,7 @@ test("atomic env updates retain credentials, use mode 0600, and never expose val
   const envFile = join(root, ".env.local");
   try {
     await writeFile(envFile, "GOOGLE_CLIENT_ID=client-id\nGOOGLE_CLIENT_SECRET=secret-value\n", { mode: 0o644 });
-    await driveRelease.updateEnvironmentFile(envFile, { GOOGLE_REFRESH_TOKEN: "refresh-value", INF_INBOX_FOLDER_ID: "inbox" });
+    await driveRelease.updateEnvironmentFile(envFile, { GOOGLE_REFRESH_TOKEN: "refresh-value", INF_LIBRARY_FOLDER_ID: "library" });
     const contents = await readFile(envFile, "utf8");
     assert.match(contents, /^GOOGLE_CLIENT_ID=client-id$/m);
     assert.match(contents, /^GOOGLE_CLIENT_SECRET=secret-value$/m);
