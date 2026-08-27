@@ -155,6 +155,18 @@ function anyTransparentCanvas(corners: CornerSamples): boolean {
   return [corners.topLeft, corners.topRight, corners.bottomLeft, corners.bottomRight].some((sample) => sample !== null && sample.alpha < 0.5);
 }
 
+function edgesAgree(
+  edges: { top: BackgroundSample; bottom: BackgroundSample; left: BackgroundSample; right: BackgroundSample },
+  threshold: number,
+): boolean {
+  const samples = [edges.top, edges.bottom, edges.left, edges.right];
+  const first = samples[0]!;
+  for (let i = 1; i < samples.length; i += 1) {
+    if (colorDistance(first, samples[i]!) > threshold) return false;
+  }
+  return true;
+}
+
 async function sampleEdge(
   bytes: Buffer,
   maxPixels: number,
@@ -199,8 +211,20 @@ function pixelAt(raw: RawImage, x: number, y: number): { r: number; g: number; b
   return { r: raw.data[i]!, g: raw.data[i + 1]!, b: raw.data[i + 2]!, a: raw.data[i + 3] ?? 255 };
 }
 
-function rowMatches(raw: RawImage, y: number, target: { r: number; g: number; b: number; a: number }, threshold: number): boolean {
-  for (let x = 0; x < raw.width; x += 1) {
+function rowMatchesExcludingCorners(
+  raw: RawImage,
+  y: number,
+  target: { r: number; g: number; b: number; a: number },
+  threshold: number,
+  cornerMargin: number,
+): boolean {
+  // A small region at each end of the row can carry a different color when
+  // the corner hosts a design element (a "tab", a label, a colored bracket).
+  // Skipping that region lets the walk see the actual edge color, otherwise
+  // the trim aborts on the first row because the corners do not match.
+  const fromX = Math.min(cornerMargin, Math.floor(raw.width / 2));
+  const toX = Math.max(fromX + 1, raw.width - fromX);
+  for (let x = fromX; x < toX; x += 1) {
     const p = pixelAt(raw, x, y);
     if (Math.abs(p.r - target.r) > threshold || Math.abs(p.g - target.g) > threshold || Math.abs(p.b - target.b) > threshold || Math.abs(p.a - target.a) > threshold) return false;
   }
@@ -234,20 +258,25 @@ function computeEdgeTrims(
   const bottomTarget = { r: edges.bottom.r, g: edges.bottom.g, b: edges.bottom.b, a: edges.bottom.alpha };
   const leftTarget = { r: edges.left.r, g: edges.left.g, b: edges.left.b, a: edges.left.alpha };
   const rightTarget = { r: edges.right.r, g: edges.right.g, b: edges.right.b, a: edges.right.alpha };
+  // Skip a small region at each corner of the row/column so a design element
+  // stuck to one corner (a colored tab, a fold, a badge) does not abort the
+  // walk on the very first pixel. The cap scales with the dimension so a tall
+  // narrow image does not eat the whole row and a wide one does not lose its
+  // middle.
+  const rowCornerMargin = Math.max(8, Math.floor(Math.min(raw.width, raw.height) * 0.05));
   // Walk the top rows first. Each row must be uniform top color across the
-  // full width — once the inner content shows up the row stops matching.
+  // middle band — once the inner content shows up the row stops matching.
   let top = 0;
-  while (top < raw.height && rowMatches(raw, top, topTarget, threshold)) top += 1;
+  while (top < raw.height && rowMatchesExcludingCorners(raw, top, topTarget, threshold, rowCornerMargin)) top += 1;
   // Walk the bottom rows. A row that overlaps the top trim cannot also count
   // as bottom trim, so we cap the walk to keep the bounding box consistent.
   let bottom = 0;
-  while (bottom < raw.height - top && rowMatches(raw, raw.height - 1 - bottom, bottomTarget, threshold)) bottom += 1;
+  while (bottom < raw.height - top && rowMatchesExcludingCorners(raw, raw.height - 1 - bottom, bottomTarget, threshold, rowCornerMargin)) bottom += 1;
   // The left/right columns only see the middle band between the already-found
-  // top and bottom borders. This avoids the "first column has the top color
-  // for its first rows and the bottom color for its last rows" trap that
-  // happens when each side has its own solid color.
-  const bandFromY = top;
-  const bandToY = raw.height - bottom;
+  // top and bottom borders, and skip a small region at the top/bottom of each
+  // column for the same reason as the row corner margin.
+  const bandFromY = top + rowCornerMargin;
+  const bandToY = raw.height - bottom - rowCornerMargin;
   if (bandToY <= bandFromY) return null;
   let left = 0;
   while (left < raw.width && columnMatchesBetween(raw, left, leftTarget, threshold, bandFromY, bandToY)) left += 1;
@@ -276,13 +305,28 @@ export async function autoTrimBytes(bytes: Buffer, options?: AutoTrimOptions): P
   if (!dims) return asNoTrim(bytes, { width: 0, height: 0 });
   if (dims.width < opts.minDimension || dims.height < opts.minDimension) return asNoTrim(bytes, dims);
 
-  // Sample the four corners. When they all agree on a single color, defer to
-  // sharp's optimized `trim` for the per-pixel walk; otherwise we read the raw
-  // image once and walk each edge against its own corner color.
+  // Sample the four corners AND the four edge strips. The corners decide the
+  // "fast path" (a single solid background where sharp's optimized `trim`
+  // wins), but the edge strips are what the per-edge walk actually uses —
+  // corners can carry a design element (a tab, a label) that differs from the
+  // rest of the edge. When the corners and the edge strips disagree, we skip
+  // the fast path and walk each edge against its own strip color.
   const corners = await sampleAllCorners(bytes, dims.width, dims.height, opts.maxPixels);
+  const edges = {
+    top: await sampleEdge(bytes, opts.maxPixels, "top", dims.width, dims.height),
+    bottom: await sampleEdge(bytes, opts.maxPixels, "bottom", dims.width, dims.height),
+    left: await sampleEdge(bytes, opts.maxPixels, "left", dims.width, dims.height),
+    right: await sampleEdge(bytes, opts.maxPixels, "right", dims.width, dims.height),
+  };
   if (!corners.topLeft && !corners.topRight && !corners.bottomLeft && !corners.bottomRight) return asNoTrim(bytes, dims);
+  if (!edges.top || !edges.bottom || !edges.left || !edges.right) return asNoTrim(bytes, dims);
 
-  if (anyTransparentCanvas(corners) || cornersAgree(corners, opts.threshold)) {
+  // The fast path is safe only when both the corners and the edge strips
+  // agree on a single color. If they disagree, the corner likely holds a
+  // design element and the per-edge walk must do the work.
+  const cornersUnanimous = anyTransparentCanvas(corners) || cornersAgree(corners, opts.threshold);
+  const edgesUnanimous = edgesAgree(edges as { top: BackgroundSample; bottom: BackgroundSample; left: BackgroundSample; right: BackgroundSample }, opts.threshold);
+  if (cornersUnanimous && edgesUnanimous) {
     const reference = corners.topLeft ?? corners.topRight ?? corners.bottomLeft ?? corners.bottomRight;
     if (!reference) return asNoTrim(bytes, dims);
     const isTransparentCanvas = reference.alpha < 0.5;
@@ -322,14 +366,9 @@ export async function autoTrimBytes(bytes: Buffer, options?: AutoTrimOptions): P
     };
   }
 
-  // Corners disagree: per-edge detection. Sample a thin strip from each edge so
-  // the walk uses the color actually present at that side, then walk inward.
-  const edges = {
-    top: await sampleEdge(bytes, opts.maxPixels, "top", dims.width, dims.height),
-    bottom: await sampleEdge(bytes, opts.maxPixels, "bottom", dims.width, dims.height),
-    left: await sampleEdge(bytes, opts.maxPixels, "left", dims.width, dims.height),
-    right: await sampleEdge(bytes, opts.maxPixels, "right", dims.width, dims.height),
-  };
+  // Corners disagree (or the corner color does not match the edges): per-edge
+  // detection. Each edge is walked against its own strip color, with a corner
+  // margin so a design element at the corner does not abort the walk.
   const raw = await readRaw(bytes, opts.maxPixels);
   if (!raw) return asNoTrim(bytes, dims);
   const trims = computeEdgeTrims(raw, edges, opts.threshold);

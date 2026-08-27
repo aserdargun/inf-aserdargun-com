@@ -223,4 +223,39 @@ describe("autoTrimBytes", () => {
     const result = await autoTrimBytes(bytes);
     expect(result.trimmed).toBe(false);
   });
+
+  it("trims when corners carry a design element that does not match the edge colors", async () => {
+    // Regression: the corner samples alone are not enough to decide the
+    // background color. A "tab" or label in the top-left corner can be a
+    // solid color that differs from the rest of the top edge — using it
+    // as the background hides the actual trim and leaves the borders in
+    // place. The fix takes the edge strips (which sample the middle 60% of
+    // each side, away from the corner decorations) and uses them when the
+    // corner color disagrees with the edge colors.
+    const W = 400, H = 200;
+    const PAD = 40;
+    const data = Buffer.alloc(W * H * 3);
+    function set(x: number, y: number, r: number, g: number, b: number) {
+      const i = (y * W + x) * 3;
+      data[i] = r; data[i + 1] = g; data[i + 2] = b;
+    }
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        // Light "paper" background, dark "frame" on the left/right, a dark
+        // "tab" in the top-left corner that the cornersAgree check would
+        // mistake for the background color of the top edge.
+        if (x < PAD || x >= W - PAD || y < PAD || y >= H - PAD) {
+          if (x < 80 && y < 60) set(x, y, 30, 30, 30); else set(x, y, 30, 30, 30);
+        } else {
+          set(x, y, 250, 250, 250);
+        }
+      }
+    }
+    const bytes = await sharp(data, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+    const result = await autoTrimBytes(bytes);
+    expect(result.trimmed).toBe(true);
+    // The light paper background must reach every edge of the bounding box.
+    expect(result.width).toBe(W - PAD * 2);
+    expect(result.height).toBe(H - PAD * 2);
+  });
 });
