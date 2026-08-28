@@ -211,6 +211,14 @@ function pixelAt(raw: RawImage, x: number, y: number): { r: number; g: number; b
   return { r: raw.data[i]!, g: raw.data[i + 1]!, b: raw.data[i + 2]!, a: raw.data[i + 3] ?? 255 };
 }
 
+// Minimum fraction of a row/column that must match the target color for the
+// row to count as a solid border. A 70% match lets a border carry a header
+// line, a few icons, or a thin secondary outline without aborting the walk,
+// while still rejecting rows that are genuinely mixed content. The previous
+// "all pixels must match" rule was too strict for screenshots whose top edge
+// holds the page title in a contrasting color.
+const ROW_MATCH_RATIO = 0.7;
+
 function rowMatchesExcludingCorners(
   raw: RawImage,
   y: number,
@@ -224,11 +232,17 @@ function rowMatchesExcludingCorners(
   // the trim aborts on the first row because the corners do not match.
   const fromX = Math.min(cornerMargin, Math.floor(raw.width / 2));
   const toX = Math.max(fromX + 1, raw.width - fromX);
+  const span = toX - fromX;
+  const minMatches = Math.max(1, Math.floor(span * ROW_MATCH_RATIO));
+  let matches = 0;
   for (let x = fromX; x < toX; x += 1) {
     const p = pixelAt(raw, x, y);
-    if (Math.abs(p.r - target.r) > threshold || Math.abs(p.g - target.g) > threshold || Math.abs(p.b - target.b) > threshold || Math.abs(p.a - target.a) > threshold) return false;
+    if (Math.abs(p.r - target.r) <= threshold && Math.abs(p.g - target.g) <= threshold && Math.abs(p.b - target.b) <= threshold && Math.abs(p.a - target.a) <= threshold) {
+      matches += 1;
+      if (matches >= minMatches) return true;
+    }
   }
-  return true;
+  return false;
 }
 
 function columnMatchesBetween(
@@ -239,11 +253,17 @@ function columnMatchesBetween(
   fromY: number,
   toY: number,
 ): boolean {
+  const span = toY - fromY;
+  const minMatches = Math.max(1, Math.floor(span * ROW_MATCH_RATIO));
+  let matches = 0;
   for (let y = fromY; y < toY; y += 1) {
     const p = pixelAt(raw, x, y);
-    if (Math.abs(p.r - target.r) > threshold || Math.abs(p.g - target.g) > threshold || Math.abs(p.b - target.b) > threshold || Math.abs(p.a - target.a) > threshold) return false;
+    if (Math.abs(p.r - target.r) <= threshold && Math.abs(p.g - target.g) <= threshold && Math.abs(p.b - target.b) <= threshold && Math.abs(p.a - target.a) <= threshold) {
+      matches += 1;
+      if (matches >= minMatches) return true;
+    }
   }
-  return true;
+  return false;
 }
 
 interface EdgeTrims { top: number; bottom: number; left: number; right: number; }
