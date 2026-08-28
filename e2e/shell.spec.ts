@@ -74,7 +74,7 @@ test("switches navigation atomically at the approved breakpoint and keeps Settin
   await expect(page.locator(".sidebar")).toBeHidden();
   await expect(page.locator(".mobile-nav")).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
-  await expect(page.locator(".mobile-nav").getByRole("link")).toHaveCount(4);
+  await expect(page.locator(".mobile-nav").getByRole("link")).toHaveCount(5);
 });
 
 test("persists an accessible keyboard theme choice", async ({ page }) => {

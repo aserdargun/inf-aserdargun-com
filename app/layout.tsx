@@ -17,7 +17,19 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
 };
 
-export const viewport: Viewport = { themeColor: "#ffffff" };
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  // Match the physical viewport so the layout engine uses real CSS pixels on
+  // mobile browsers. Without `width: "device-width"`, legacy handsets would
+  // assume a 980px canvas and down-scale the page, breaking the mobile
+  // bottom-nav and topbar placement.
+  width: "device-width",
+  initialScale: 1,
+  // `viewportFit: "cover"` lets the layout extend behind the iPhone notch and
+  // the home indicator; the safe-area insets are already honored by the
+  // mobile-nav padding-bottom and the app-main bottom padding.
+  viewportFit: "cover",
+};
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
