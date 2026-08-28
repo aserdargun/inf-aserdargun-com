@@ -29,6 +29,14 @@ export interface CaptureInput {
    */
   categories?: readonly Category[];
   tags?: readonly Tag[];
+  /**
+   * Optional AI-suggested content bounding box, expressed as fractions of the
+   * source image (0-1). When provided, the image is cropped to this box
+   * BEFORE the per-pixel auto-trim runs, so the auto-trim can clean up the
+   * AI's box edges if the model was a pixel or two generous. Null/undefined
+   * means "no AI crop", and the per-pixel auto-trim is the only crop pass.
+   */
+  crop?: { top: number; right: number; bottom: number; left: number } | null;
 }
 
 export type CaptureResult =

@@ -51,6 +51,24 @@ export const InfographicPatchSchema = z.strictObject({
 export const ConfirmDeleteSchema = z.strictObject({ confirm: z.literal(true) });
 export const ReviewRequestSchema = z.strictObject({ rating: ReviewRatingSchema });
 
+/**
+ * AI-suggested crop box. Each side is a fraction (0-1) of the source image
+ * dimension: `top` and `bottom` are measured from the top edge, `left` and
+ * `right` from the left edge. `top < bottom` and `left < right` always.
+ * Null when the model cannot identify a tighter content box than the full
+ * image (e.g. the image has no detectable margin).
+ */
+export const AiCropSuggestionSchema = z.strictObject({
+  top: z.number().min(0).max(1),
+  right: z.number().min(0).max(1),
+  bottom: z.number().min(0).max(1),
+  left: z.number().min(0).max(1),
+}).refine(
+  (value) => value.left < value.right && value.top < value.bottom,
+  "Crop box must have left<right and top<bottom",
+);
+export type AiCropSuggestion = z.infer<typeof AiCropSuggestionSchema>;
+
 export const AiMetadataSuggestionSchema = z.strictObject({
   title: PublicSafeTitleSchema.nullable(),
   notes: z.string().max(10_000).nullable(),
@@ -63,6 +81,15 @@ export const AiMetadataSuggestionSchema = z.strictObject({
    */
   category: z.string().trim().min(1).max(80).nullable(),
   topics: z.array(z.string().trim().min(1).max(80)).max(10),
+  /**
+   * AI-suggested bounding box around the actual content. Used as a
+   * smarter alternative to the per-pixel auto-trim when the image has
+   * margins the model can detect (browser chrome, social-media UI, the
+   * author's header strip). The capture endpoint crops the image to this
+   * box before persisting it. Null when the model cannot identify a tighter
+   * content box; the server then falls back to the per-pixel auto-trim.
+   */
+  crop: AiCropSuggestionSchema.nullable(),
   rationale: z.string().trim().min(1).max(500).nullable(),
   confidence: z.number().min(0).max(1),
 });
