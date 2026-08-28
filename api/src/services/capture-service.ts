@@ -75,7 +75,7 @@ export class CaptureService {
   }
 
   async capture(input: CaptureInput): Promise<CaptureResult> {
-    const image = await processImage(input);
+    const image = await processImage({ ...input, crop: input.crop ?? null });
     return withKeyedLock(`sha:${image.sha256}`, async () => {
       const existing = await this.options.storage.findByAppProperty(this.options.publicRootId, "infSha256", image.sha256);
       if (existing.length > 0 || createdHashes(await this.options.events.readAll()).has(image.sha256)) return { kind: "duplicate", original: existing[0] ?? null };

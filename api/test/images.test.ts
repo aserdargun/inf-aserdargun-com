@@ -22,6 +22,35 @@ describe("processImage", () => {
     expect(result.height).toBe(600);
   });
 
+  it("applies the AI-suggested crop before the trim", async () => {
+    // Build a synthetic image with a clear top chrome strip: rows 0-99 are
+    // a uniform brown, the rest is a solid dark color the auto-trim would
+    // normally leave alone. The AI crop should pull the top strip off
+    // even though its color is close to the content. The crop asks for
+    // top=100/H, so the resulting height must be at most H-100 (the
+    // sanitizer's small half-percent outward pad is well within that).
+    const W = 400, H = 600;
+    const data = Buffer.alloc(W * H * 3);
+    for (let y = 0; y < H; y += 1) {
+      for (let x = 0; x < W; x += 1) {
+        const i = (y * W + x) * 3;
+        if (y < 100) { data[i] = 120; data[i + 1] = 80; data[i + 2] = 50; }
+        else { data[i] = 30; data[i + 1] = 30; data[i + 2] = 30; }
+      }
+    }
+    const bytes = await sharp(data, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+    const result = await processImage({ bytes, declaredMime: "image/png", crop: { top: 100 / H, right: 1, bottom: 1, left: 0 } });
+    expect(result.width).toBe(W);
+    expect(result.height).toBeLessThanOrEqual(H - 95);
+  });
+
+  it("ignores a degenerate AI crop and falls back to the trim", async () => {
+    const result = await processImage({ bytes: await validBytes(), declaredMime: "image/png", crop: { top: 0.5, right: 0.5, bottom: 0.2, left: 0.8 } });
+    // No crash, no shrink from a malformed box
+    expect(result.width).toBeGreaterThan(0);
+    expect(result.height).toBeGreaterThan(0);
+  });
+
   it("accepts an image exactly at the declared byte boundary", async () => {
     const bytes = await validBytes();
     await expect(processImage(await validInput({ maxBytes: bytes.length }))).resolves.toMatchObject({

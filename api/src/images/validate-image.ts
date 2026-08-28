@@ -41,6 +41,13 @@ export interface ProcessImageInput {
    * supplied, the trim runs after decode and before the thumbnail is built.
    */
   trim?: import("./trim-options.js").AutoTrimConfig | null;
+  /**
+   * Optional AI-suggested content bounding box, expressed as fractions of the
+   * source image (0-1). When provided, the image is cropped to this box
+   * before the auto-trim runs. Coordinates must satisfy `left<right` and
+   * `top<bottom`; anything else is ignored and the crop is skipped.
+   */
+  crop?: { top: number; right: number; bottom: number; left: number } | null;
 }
 
 export interface ValidatedImageInput {

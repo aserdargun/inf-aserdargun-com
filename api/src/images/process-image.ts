@@ -13,6 +13,41 @@ import {
 export type { ImageProcessingErrorCode, ProcessImageInput, SupportedImageMime } from "./validate-image.js";
 export { ImageProcessingError } from "./validate-image.js";
 
+/**
+ * Translate the AI's normalized 0-1 crop box into an integer-pixel region
+ * suitable for sharp's `extract`. Returns null when the box is missing,
+ * degenerate (left>=right or top>=bottom), out of range, or too small to
+ * actually shrink the image.
+ */
+function sanitizeAiCrop(
+  crop: ProcessImageInput["crop"],
+  dimensions: { width: number; height: number },
+): { left: number; top: number; width: number; height: number } | null {
+  if (!crop) return null;
+  const { top, right, bottom, left } = crop;
+  if (![top, right, bottom, left].every((v) => Number.isFinite(v))) return null;
+  if (left < 0 || top < 0 || right > 1 || bottom > 1) return null;
+  if (left >= right || top >= bottom) return null;
+  // Pad the box outward by half a percent on every side so the AI's tight
+  // bounding does not shave a single pixel off a title that actually
+  // extended to the very edge of the box.
+  const padX = (right - left) * 0.005;
+  const padY = (bottom - top) * 0.005;
+  const fracLeft = Math.max(0, left - padX);
+  const fracTop = Math.max(0, top - padY);
+  const fracRight = Math.min(1, right + padX);
+  const fracBottom = Math.min(1, bottom + padY);
+  const pixelLeft = Math.round(fracLeft * dimensions.width);
+  const pixelTop = Math.round(fracTop * dimensions.height);
+  const pixelRight = Math.round(fracRight * dimensions.width);
+  const pixelBottom = Math.round(fracBottom * dimensions.height);
+  const width = pixelRight - pixelLeft;
+  const height = pixelBottom - pixelTop;
+  if (width <= 0 || height <= 0) return null;
+  if (width >= dimensions.width && height >= dimensions.height) return null;
+  return { left: pixelLeft, top: pixelTop, width, height };
+}
+
 export interface ProcessedImage {
   /**
    * An independent copy of the bytes that will be stored as the original file.
@@ -143,7 +178,7 @@ async function validatedThumbnailMetadata(bytes: Buffer): Promise<{ width: numbe
 
 export async function processImage(input: ProcessImageInput): Promise<ProcessedImage> {
   const validated = validateImageInput(input);
-  const sourceBytes = Buffer.from(validated.bytes);
+  let sourceBytes = Buffer.from(validated.bytes);
   const metadata = await readSourceMetadata(sourceBytes, validated.maxPixels);
   const detected = detectedMime(metadata);
   if (detected === null) {
@@ -155,6 +190,25 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
   const rawDimensions = dimensionsWithinPixelLimit(metadata, validated.maxPixels);
   const dimensions = logicalDimensions(metadata, rawDimensions);
 
+  // Apply the AI-suggested crop BEFORE the auto-trim. The AI is better at
+  // recognizing semantic margins (browser chrome, social-media UI, the
+  // author's header strip) than the per-pixel trim, so the trim only has
+  // to clean up the AI's pixel-level generosity. The crop is rejected when
+  // it is degenerate (right<=left or bottom<=top) or when it would not
+  // actually shrink the image.
+  const aiCrop = sanitizeAiCrop(input.crop, dimensions);
+  if (aiCrop) {
+    try {
+      const cropped = await sharp(sourceBytes, { limitInputPixels: validated.maxPixels })
+        .extract({ left: aiCrop.left, top: aiCrop.top, width: aiCrop.width, height: aiCrop.height })
+        .toBuffer();
+      sourceBytes = Buffer.from(cropped);
+    } catch {
+      // Crop failed (e.g. animated image, format edge case); fall through
+      // and let the per-pixel trim deal with the original bytes.
+    }
+  }
+
   const trimConfig = toTrimConfig(input.trim);
   const trimResult = trimConfig.enabled
     ? await autoTrimBytes(sourceBytes, {
@@ -164,10 +218,17 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
         maxPixels: trimConfig.maxPixels,
       })
     : null;
+  // After the AI crop, the working buffer is the cropped image. The trim
+  // may shrink it further. The stored dimensions must always reflect the
+  // actual bytes that go to storage, otherwise the public catalog will
+  // report a size that does not match the file the user sees.
+  const postCropDimensions = aiCrop
+    ? { width: aiCrop.width, height: aiCrop.height }
+    : dimensions;
   const originalBytes = trimResult?.bytes ?? sourceBytes;
   const storedDimensions = trimResult
     ? { width: trimResult.width, height: trimResult.height }
-    : dimensions;
+    : postCropDimensions;
   const trimApplied = !!trimResult?.trimmed;
   const originalWidth = trimResult?.originalWidth ?? dimensions.width;
   const originalHeight = trimResult?.originalHeight ?? dimensions.height;

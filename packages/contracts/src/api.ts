@@ -86,10 +86,11 @@ export const AiMetadataSuggestionSchema = z.strictObject({
    * smarter alternative to the per-pixel auto-trim when the image has
    * margins the model can detect (browser chrome, social-media UI, the
    * author's header strip). The capture endpoint crops the image to this
-   * box before persisting it. Null when the model cannot identify a tighter
-   * content box; the server then falls back to the per-pixel auto-trim.
+   * box before persisting it. Null/undefined when the model cannot
+   * identify a tighter content box; the server then falls back to the
+   * per-pixel auto-trim.
    */
-  crop: AiCropSuggestionSchema.nullable(),
+  crop: AiCropSuggestionSchema.nullable().optional(),
   rationale: z.string().trim().min(1).max(500).nullable(),
   confidence: z.number().min(0).max(1),
 });

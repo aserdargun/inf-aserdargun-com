@@ -306,6 +306,7 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
     if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
     const categoriesRaw = optionalFormString(form, "categories");
     const tagsRaw = optionalFormString(form, "tags");
+    const cropRaw = optionalFormString(form, "crop");
     const metadataResult = CaptureMetadataSchema.safeParse({
       title: optionalFormString(form, "title"),
       notes: optionalFormString(form, "notes"),
@@ -314,9 +315,32 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
     });
     if (!metadataResult.success) throw new AppError("INVALID_MULTIPART", 400, "Multipart metadata is invalid");
     const metadata = metadataResult.data;
-    const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata });
+    const crop = parseOptionalCrop(cropRaw);
+    const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata, crop });
     return jsonResponse(captured, captured.kind === "created" ? 201 : 200);
   });
+}
+
+/**
+ * Parse the optional AI-suggested crop box from a multipart part. Returns
+ * `null` when the part is absent, an empty string, malformed JSON, or a
+ * shape that cannot be turned into a valid 0-1 box. The capture service
+ * re-validates the box, so a bad value here simply falls back to the
+ * per-pixel auto-trim rather than rejecting the whole capture.
+ */
+function parseOptionalCrop(raw: string | undefined): { top: number; right: number; bottom: number; left: number } | null {
+  if (raw === undefined || raw.trim() === "") return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch { return null; }
+  if (!parsed || typeof parsed !== "object") return null;
+  const c = parsed as Record<string, unknown>;
+  const top = typeof c.top === "number" && Number.isFinite(c.top) ? c.top : NaN;
+  const right = typeof c.right === "number" && Number.isFinite(c.right) ? c.right : NaN;
+  const bottom = typeof c.bottom === "number" && Number.isFinite(c.bottom) ? c.bottom : NaN;
+  const left = typeof c.left === "number" && Number.isFinite(c.left) ? c.left : NaN;
+  if (![top, right, bottom, left].every((v) => Number.isFinite(v))) return null;
+  return { top, right, bottom, left };
 }
 
 /**

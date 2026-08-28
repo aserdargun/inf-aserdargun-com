@@ -27,6 +27,7 @@ interface AiSuggestion {
   language: string | null;
   category: string | null;
   topics: string[];
+  crop: { top: number; right: number; bottom: number; left: number } | null;
   rationale: string | null;
   confidence: number;
 }
@@ -88,6 +89,11 @@ export function CaptureForm() {
   const [aiStatus, setAiStatus] = useState<AiStatus>({ kind: "idle" });
   const [knownCategories, setKnownCategories] = useState<readonly TaxonomyEntry[]>([]);
   const [knownTags, setKnownTags] = useState<readonly TaxonomyEntry[]>([]);
+  // The AI-suggested content bounding box. Set when the suggestion returns
+  // a non-null crop, consumed by performSave so the server can crop the
+  // uploaded bytes to the tight content rectangle before the per-pixel
+  // auto-trim runs. Stays null when the AI does not produce a crop.
+  const [aiCrop, setAiCrop] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null);
   // Tracks an in-flight AI run that was started by "Add" because the user
   // had not yet waited for the auto-suggestion banner to settle. The submit
   // effect below consumes the resolved value before issuing the create.
@@ -114,6 +120,21 @@ export function CaptureForm() {
       const data = await apiRequest<{ suggestion: AiSuggestion }>("/api/infographics/suggest-metadata", { method: "POST", body: form });
       if (token !== requestToken.current) return;
       const { suggestion } = data;
+      // Stash the AI-suggested crop so performSave can ship it to the server.
+      // A fresh file or a manual clear of the suggestion must also clear the
+      // crop, otherwise a stale box from a previous image would be applied
+      // to the new upload.
+      if (suggestion.crop && typeof suggestion.crop === "object") {
+        const c = suggestion.crop as { top?: unknown; right?: unknown; bottom?: unknown; left?: unknown };
+        const values = [c.top, c.right, c.bottom, c.left];
+        if (values.every((v) => typeof v === "number" && Number.isFinite(v))) {
+          setAiCrop({ top: c.top as number, right: c.right as number, bottom: c.bottom as number, left: c.left as number });
+        } else {
+          setAiCrop(null);
+        }
+      } else {
+        setAiCrop(null);
+      }
       const applied: FieldKey[] = [];
       if (suggestion.title) { setFieldValue("title", suggestion.title); applied.push("title"); }
       if (suggestion.notes) { setFieldValue("notes", suggestion.notes); applied.push("notes"); }
@@ -171,6 +192,8 @@ export function CaptureForm() {
     setPreviewUrl(nextUrl);
     setError(null);
     for (const key of fieldKeys) setFieldValue(key, "");
+    // Drop any crop from a previous capture; the new AI run will replace it.
+    setAiCrop(null);
     void requestSuggestion(nextFile);
   }, [requestSuggestion, setFieldValue]);
   useEffect(() => () => { if (currentUrl.current) URL.revokeObjectURL(currentUrl.current); }, []);
@@ -254,6 +277,7 @@ export function CaptureForm() {
       const tags = parseTagList(ensured.tags, knownTags);
       if (tags.length > 0) data.append("tags", JSON.stringify(tags));
     }
+    if (aiCrop) data.append("crop", JSON.stringify(aiCrop));
 
     try {
       const response = await apiRequest<CaptureResponse>("/api/infographics", { method: "POST", body: data });
