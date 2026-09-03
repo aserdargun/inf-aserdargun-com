@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Infographics",
+  title: "INF - Infographics",
   applicationName: "Infographics",
   description: "Personal infographic learning system",
   // Icons are listed in smallest-first order so a single 32x32 PNG leads the
