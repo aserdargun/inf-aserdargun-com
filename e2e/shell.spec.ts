@@ -30,7 +30,7 @@ test("owner sees Today navigation and primary learning actions", async ({ page }
 test("uses Infographics as the document identity and browser favicon", async ({ page, request }) => {
   await page.goto("/view/");
 
-  await expect(page).toHaveTitle("Infographics");
+  await expect(page).toHaveTitle("INF - Infographics");
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.svg");
   const favicon = await request.get("/favicon.svg");
   expect(favicon.status()).toBe(200);
