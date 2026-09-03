@@ -24,15 +24,17 @@ describe("public PWA contract", () => {
     expect(existsSync(faviconPath)).toBe(true);
     const { data, info } = await sharp(faviconPath).resize(16, 16).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     expect(info).toMatchObject({ width: 16, height: 16, channels: 4 });
-    let bluePixels = 0;
-    let whitePixels = 0;
+    let limePixels = 0;
+    let darkPixels = 0;
     for (let offset = 0; offset < data.length; offset += 4) {
       const [red, green, blue, alpha] = data.subarray(offset, offset + 4);
-      if (alpha > 192 && blue > red * 1.4 && blue > green * 1.15) bluePixels += 1;
-      if (alpha > 192 && red > 224 && green > 224 && blue > 224) whitePixels += 1;
+      // brand lime #c8ff36 (R~200, G~255, B~54)
+      if (alpha > 192 && green > 200 && blue < 120 && red < 220) limePixels += 1;
+      // brand dark #121310 (R/G/B near 18)
+      if (alpha > 192 && red < 40 && green < 40 && blue < 40) darkPixels += 1;
     }
-    expect(bluePixels).toBeGreaterThan(80);
-    expect(whitePixels).toBeGreaterThan(12);
+    expect(limePixels).toBeGreaterThan(60);
+    expect(darkPixels).toBeGreaterThan(80);
   });
 
   test("ships exactly the local install icons with valid PNG dimensions", async () => {
