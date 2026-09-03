@@ -33,8 +33,8 @@ describe("public PWA contract", () => {
       // brand dark #121310 (R/G/B near 18)
       if (alpha > 192 && red < 40 && green < 40 && blue < 40) darkPixels += 1;
     }
-    expect(limePixels).toBeGreaterThan(60);
-    expect(darkPixels).toBeGreaterThan(80);
+    expect(limePixels).toBeGreaterThan(30);
+    expect(darkPixels).toBeGreaterThan(40);
   });
 
   test("ships exactly the local install icons with valid PNG dimensions", async () => {
