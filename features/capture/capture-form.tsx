@@ -32,6 +32,12 @@ interface AiSuggestion {
   confidence: number;
 }
 
+interface AiResolution {
+  suggestion: AiSuggestion;
+  categories: readonly TaxonomyEntry[];
+  tags: readonly TaxonomyEntry[];
+}
+
 type AiStatus =
   | { kind: "idle" }
   | { kind: "loading" }
@@ -94,10 +100,7 @@ export function CaptureForm() {
   // uploaded bytes to the tight content rectangle before the per-pixel
   // auto-trim runs. Stays null when the AI does not produce a crop.
   const [aiCrop, setAiCrop] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null);
-  // Tracks an in-flight AI run that was started by "Add" because the user
-  // had not yet waited for the auto-suggestion banner to settle. The submit
-  // effect below consumes the resolved value before issuing the create.
-  const pendingAddRef = useRef<{ resolve: () => void; reject: (reason?: unknown) => void } | null>(null);
+  const suggestionRequestRef = useRef<Promise<AiResolution | null> | null>(null);
 
   const setFieldValue = useCallback((name: FieldKey, value: string) => {
     const form = formRef.current;
@@ -107,18 +110,23 @@ export function CaptureForm() {
   }, []);
 
   const clearSuggestion = useCallback(() => {
+    requestToken.current += 1;
+    suggestionRequestRef.current = null;
     setAiStatus({ kind: "idle" });
+    setAiCrop(null);
     for (const key of fieldKeys) setFieldValue(key, "");
   }, [setFieldValue]);
 
-  const requestSuggestion = useCallback(async (nextFile: File) => {
+  const requestSuggestion = useCallback(async (nextFile: File): Promise<AiResolution | null> => {
     const token = ++requestToken.current;
     setAiStatus({ kind: "loading" });
     const form = new FormData();
     form.append("file", nextFile, nextFile.name);
+    const catalogPromise = apiRequest<{ categories: TaxonomyEntry[]; tags: TaxonomyEntry[] }>("/api/infographics")
+      .catch(() => null);
     try {
       const data = await apiRequest<{ suggestion: AiSuggestion }>("/api/infographics/suggest-metadata", { method: "POST", body: form });
-      if (token !== requestToken.current) return;
+      if (token !== requestToken.current) return null;
       const { suggestion } = data;
       // Stash the AI-suggested crop so performSave can ship it to the server.
       // A fresh file or a manual clear of the suggestion must also clear the
@@ -149,24 +157,31 @@ export function CaptureForm() {
         // the field before saving if they want something more specific.
         setFieldValue("tags", suggestion.category); applied.push("tags");
       }
-      try {
-        const catalog = await apiRequest<{ categories: TaxonomyEntry[]; tags: TaxonomyEntry[] }>("/api/infographics");
-        if (token !== requestToken.current) return;
+      let categories: readonly TaxonomyEntry[] = [];
+      let tags: readonly TaxonomyEntry[] = [];
+      const catalog = await catalogPromise;
+      if (token !== requestToken.current) return null;
+      if (catalog) {
         // Keep the full taxonomy entry so the save payload can reuse the real
         // UUIDs when the AI suggestion matches an existing label. The previous
         // shape only stored displayName+normalizedName and shipped the literal
         // string "existing" as the id, which the server's z.uuid() rejected and
         // dropped the entire capture (image + category + tags) on the floor.
-        setKnownCategories(catalog.categories.map((entry) => ({ id: entry.id, displayName: entry.displayName, normalizedName: entry.normalizedName, slug: entry.slug })));
-        setKnownTags(catalog.tags.map((entry) => ({ id: entry.id, displayName: entry.displayName, normalizedName: entry.normalizedName, slug: entry.slug })));
-      } catch { /* catalog is a best-effort hint; do not block the AI banner. */ }
+        categories = catalog.categories.map((entry) => ({ id: entry.id, displayName: entry.displayName, normalizedName: entry.normalizedName, slug: entry.slug }));
+        tags = catalog.tags.map((entry) => ({ id: entry.id, displayName: entry.displayName, normalizedName: entry.normalizedName, slug: entry.slug }));
+        setKnownCategories(categories);
+        setKnownTags(tags);
+      }
       if (applied.length === 0) {
         setAiStatus({ kind: "error", message: "The image was analysed but no fields could be suggested. You can still fill them manually." });
+        return null;
       } else {
-        setAiStatus({ kind: "ready", suggestion: { ...suggestion, topics: suggestion.topics ?? [] } });
+        const normalizedSuggestion = { ...suggestion, topics: suggestion.topics ?? [] };
+        setAiStatus({ kind: "ready", suggestion: normalizedSuggestion });
+        return { suggestion: normalizedSuggestion, categories, tags };
       }
     } catch (cause) {
-      if (token !== requestToken.current) return;
+      if (token !== requestToken.current) return null;
       const message = cause instanceof ApiClientError
         ? cause.status === 401 ? "Sign in to use AI suggestions."
         : cause.status === 403 ? "AI suggestions are not enabled for this account."
@@ -174,13 +189,24 @@ export function CaptureForm() {
         : cause.status === 415 ? "This image format is not supported for AI analysis."
         : cause.status === 422 ? "The AI refused to analyse this image."
         : cause.status === 429 ? "The AI suggestion service is rate-limiting requests. Try again in a moment."
+        : cause.status === 504 ? "AI analysis timed out. Try again."
         : cause.status === 503 ? "AI suggestions are not configured on the server."
         : cause.status === 0 ? "Could not reach Infographics. AI suggestion skipped."
         : "AI suggestion failed. You can still fill the fields manually."
         : "AI suggestion failed. You can still fill the fields manually.";
       setAiStatus({ kind: "error", message });
+      return null;
     }
   }, [setFieldValue]);
+
+  const beginSuggestion = useCallback((nextFile: File) => {
+    const pending = requestSuggestion(nextFile);
+    suggestionRequestRef.current = pending;
+    void pending.then(() => {
+      if (suggestionRequestRef.current === pending) suggestionRequestRef.current = null;
+    });
+    return pending;
+  }, [requestSuggestion]);
 
   const selectFile = useCallback((nextFile: File) => {
     if (!supportedImageMimes.has(nextFile.type)) { setError("Choose an image file."); return; }
@@ -194,55 +220,40 @@ export function CaptureForm() {
     for (const key of fieldKeys) setFieldValue(key, "");
     // Drop any crop from a previous capture; the new AI run will replace it.
     setAiCrop(null);
-    void requestSuggestion(nextFile);
-  }, [requestSuggestion, setFieldValue]);
+    void beginSuggestion(nextFile);
+  }, [beginSuggestion, setFieldValue]);
   useEffect(() => () => { if (currentUrl.current) URL.revokeObjectURL(currentUrl.current); }, []);
   const rejectClipboard = useCallback(() => setError("Choose an image file."), []);
   const chooseClipboard = useClipboardImage({ onImage: selectFile, onReject: rejectClipboard });
 
-  const retryAi = useCallback(() => { if (file && !saving) void requestSuggestion(file); }, [file, requestSuggestion, saving]);
+  const retryAi = useCallback(() => { if (file && !saving) void beginSuggestion(file); }, [beginSuggestion, file, saving]);
 
   // "Add" depends on the AI suggestion being applied (or a manually typed
   // category). If the user has not yet waited for the auto-suggestion banner
   // to settle, the submit kicks off a one-shot AI run and waits for it before
   // issuing the create call. Manual categories are always respected.
-  const ensureAi = useCallback(async (): Promise<{ category: string; tags: string } | null> => {
+  const ensureAi = useCallback(async (): Promise<{ category: string; tags: string; categories: readonly TaxonomyEntry[]; knownTags: readonly TaxonomyEntry[] } | null> => {
     if (!file) return null;
     const form = formRef.current;
     const categoryInput = form?.elements.namedItem("category") as HTMLInputElement | null;
     const tagsInput = form?.elements.namedItem("tags") as HTMLInputElement | null;
     const typedCategory = categoryInput?.value.trim() ?? "";
-    if (typedCategory) return { category: typedCategory, tags: tagsInput?.value.trim() ?? "" };
+    if (typedCategory) return { category: typedCategory, tags: tagsInput?.value.trim() ?? "", categories: knownCategories, knownTags };
     if (aiStatus.kind === "ready" && aiStatus.suggestion.category) {
       const typedTags = tagsInput?.value.trim() ?? "";
       // When the AI offered no topics, fall back to the category label so the
       // capture always lands with at least one tag in the Library.
-      if (!typedTags) return { category: aiStatus.suggestion.category, tags: aiStatus.suggestion.category };
-      return { category: aiStatus.suggestion.category, tags: typedTags };
+      if (!typedTags) return { category: aiStatus.suggestion.category, tags: aiStatus.suggestion.category, categories: knownCategories, knownTags };
+      return { category: aiStatus.suggestion.category, tags: typedTags, categories: knownCategories, knownTags };
     }
-    const inflight = new Promise<void>((resolve, reject) => { pendingAddRef.current = { resolve, reject }; });
-    void requestSuggestion(file);
-    try { await inflight; }
-    catch { return null; }
-    if (aiStatus.kind === "ready" && aiStatus.suggestion.category) {
+    const resolution = await (suggestionRequestRef.current ?? beginSuggestion(file));
+    if (resolution?.suggestion.category) {
       const typedTags = tagsInput?.value.trim() ?? "";
-      if (!typedTags) return { category: aiStatus.suggestion.category, tags: aiStatus.suggestion.category };
-      return { category: aiStatus.suggestion.category, tags: typedTags };
+      if (!typedTags) return { category: resolution.suggestion.category, tags: resolution.suggestion.category, categories: resolution.categories, knownTags: resolution.tags };
+      return { category: resolution.suggestion.category, tags: typedTags, categories: resolution.categories, knownTags: resolution.tags };
     }
     return null;
-  }, [aiStatus, file, requestSuggestion]);
-
-  // Resolve the "Add" gate when the AI request settles so the submit effect
-  // unblocks.
-  useEffect(() => {
-    const pending = pendingAddRef.current;
-    if (!pending) return;
-    if (aiStatus.kind === "ready" || aiStatus.kind === "error" || aiStatus.kind === "idle") {
-      pendingAddRef.current = null;
-      if (aiStatus.kind === "error") pending.reject(new Error(aiStatus.message));
-      else pending.resolve();
-    }
-  }, [aiStatus]);
+  }, [aiStatus, beginSuggestion, file, knownCategories, knownTags]);
 
   async function performSave() {
     if (saving || isSubmitting.current) return;
@@ -271,10 +282,10 @@ export function CaptureForm() {
     // categoriesAssigned, and tagsAssigned events in a single transaction.
     // No follow-up PATCH is needed and there is no race between the create
     // response and the library's next read.
-    const categoryPayload = ensured.category ? [createCategory(ensured.category, knownCategories)] : [];
+    const categoryPayload = ensured.category ? [createCategory(ensured.category, ensured.categories)] : [];
     if (categoryPayload.length > 0) data.append("categories", JSON.stringify(categoryPayload));
     if (ensured.tags.trim()) {
-      const tags = parseTagList(ensured.tags, knownTags);
+      const tags = parseTagList(ensured.tags, ensured.knownTags);
       if (tags.length > 0) data.append("tags", JSON.stringify(tags));
     }
     if (aiCrop) data.append("crop", JSON.stringify(aiCrop));
@@ -308,7 +319,7 @@ export function CaptureForm() {
 
   return <form ref={formRef} className="capture-form" onSubmit={handleSave}>
     <PageHeader description="Paste, drop, or choose an image. AI suggestions appear automatically." descriptionId="capture-help" title="Add infographic" />
-    <div className="capture-workspace">
+    <div className="capture-workspace" data-state={previewUrl ? "selected" : "empty"}>
       <div className="capture-workspace__media">
         <CaptureDropzone compact={previewUrl !== null} disabled={saving} onChooseClipboard={chooseClipboard} onFile={selectFile} />
         {previewUrl ? <figure className="capture-preview"><img alt="Infographic preview" src={previewUrl} /><figcaption>{file?.name}</figcaption></figure> : <p aria-live="polite" className="visually-hidden">No image selected.</p>}
@@ -345,10 +356,11 @@ function AiStatusBanner({ status, onClear, onRetry }: { status: AiStatus; onClea
   }
   if (status.kind === "ready") {
     const { suggestion } = status;
-    const filled = [suggestion.title, suggestion.notes, suggestion.category, ...(Array.isArray(suggestion.topics) ? suggestion.topics : [])].filter((value) => typeof value === "string" && value.length > 0).length;
+    const filled = [suggestion.title, suggestion.notes, suggestion.category, suggestion.topics?.some((topic) => topic.trim().length > 0) ? "tags" : null]
+      .filter((value) => typeof value === "string" && value.trim().length > 0).length;
     const ratio = Math.round((suggestion.confidence ?? 0) * 100);
     const headline = suggestion.category
-      ? <>AI suggested {filled} field{filled === 1 ? "" : "s"} (will move to <strong>{suggestion.category}</strong>).</>
+      ? <>AI suggested {filled} field{filled === 1 ? "" : "s"} (will use <strong>{suggestion.category}</strong>).</>
       : <>AI suggested {filled} field{filled === 1 ? "" : "s"}.</>;
     return <div aria-live="polite" className="ai-banner ai-banner--ready" role="status">
       <Sparkles aria-hidden="true" size={18} strokeWidth={1.75} />

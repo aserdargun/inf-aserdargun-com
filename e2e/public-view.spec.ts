@@ -108,6 +108,17 @@ test("public gallery and static-path detail expose safe loading, empty, error an
   await expect(page.getByText("This infographic is not available.")).toBeVisible();
 });
 
+test("replaces a failed public thumbnail with an explicit fallback", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "serviceWorker", { configurable: true, value: undefined });
+  });
+  await mockPublic(page);
+  await page.unroute("**/api/public/images/**");
+  await page.route("**/api/public/images/**", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+  await page.goto("/view/");
+  await expect(page.getByRole("img", { name: `${item.title} preview unavailable` })).toHaveText("Preview unavailable");
+});
+
 test("public View Mode is responsive, keyboard reachable, and console-clean", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });

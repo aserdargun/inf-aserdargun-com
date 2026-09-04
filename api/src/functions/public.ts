@@ -33,7 +33,7 @@ function matchedRole(item: MaterializedInfographic, fileId: string): "original" 
 
 function publicCatalogQuery(request: RequestLike): { page: number; pageSize: number } {
   let params: URLSearchParams;
-  try { params = new URL(request.url).searchParams; } catch (cause) { console.error("URL parse failed", cause); throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid"); }
+  try { params = new URL(request.url).searchParams; } catch { throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid"); }
   const raw: Record<string, string> = {};
   for (const [key, value] of params) {
     // Reject duplicate keys so callers cannot smuggle an out-of-bounds pageSize
@@ -41,9 +41,8 @@ function publicCatalogQuery(request: RequestLike): { page: number; pageSize: num
     if (key in raw) throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid");
     raw[key] = value;
   }
-  console.log("Parsing query", raw);
   const parsed = PublicCatalogQuerySchema.safeParse(raw);
-  if (!parsed.success) { console.error("Parse failed", parsed.error); throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid"); }
+  if (!parsed.success) throw new AppError("INVALID_QUERY", 400, "Catalog query is invalid");
   return parsed.data;
 }
 
@@ -56,8 +55,12 @@ export async function publicList(request: RequestLike, deps: PublicDependencies)
   try {
     const query = publicCatalogQuery(request);
     const snapshot = await new CatalogService(deps.events).snapshot();
-    const live = await Promise.all(snapshot.infographics.map(async (item) => (await isLivePublicItem(item, deps)) ? item : null));
-    const ordered = sortForPublic(live.filter((item): item is MaterializedInfographic => item !== null));
+    // Publication events are the catalog source of truth. Verifying both Drive
+    // ancestors for every item made a 212-item first page fan out to 424 remote
+    // calls before slicing twelve cards. Detail and image endpoints still prove
+    // live root descent before returning content, so direct file access remains
+    // fail-closed without making the list hot path depend on Drive fan-out.
+    const ordered = sortForPublic(snapshot.infographics);
     const totalItems = ordered.length;
     const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / query.pageSize);
     const start = (query.page - 1) * query.pageSize;

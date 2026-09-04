@@ -13,7 +13,7 @@ import { LibraryPager } from "./library-pager";
 
 type LibraryState = "loading" | "empty" | "no-results" | "error" | "success";
 const LIBRARY_PAGE_SIZE = 24;
-const defaultFilters: LibraryFiltersValue = { q: "", category: "", tag: "", favorite: false, source: false, sort: "recent" };
+const defaultFilters: LibraryFiltersValue = { q: "", category: "", tag: "", favorite: false, sort: "recent" };
 function normalized(value: string) { return value.normalize("NFKC").trim().toLocaleLowerCase("en-US"); }
 function parsePage(value: string | null): number {
   if (value === null) return 1;
@@ -29,21 +29,20 @@ function parseFilters(search = window.location.search): { filters: LibraryFilter
       category: normalized(params.get("category") ?? ""),
       tag: normalized(params.get("tag") ?? ""),
       favorite: params.get("favorite") === "true",
-      source: params.get("source") === "true",
       sort: params.get("sort") === "least-seen" ? "least-seen" : "recent",
     },
   };
 }
 function filterUrl(value: LibraryFiltersValue, page: number) {
   const params = new URLSearchParams();
-  if (value.q) params.set("q", value.q); if (value.category) params.set("category", value.category); if (value.tag) params.set("tag", value.tag); if (value.favorite) params.set("favorite", "true"); if (value.source) params.set("source", "true"); if (value.sort !== "recent") params.set("sort", value.sort);
+  if (value.q) params.set("q", value.q); if (value.category) params.set("category", value.category); if (value.tag) params.set("tag", value.tag); if (value.favorite) params.set("favorite", "true"); if (value.sort !== "recent") params.set("sort", value.sort);
   if (page > 1) params.set("page", String(page));
   const query = params.toString(); return `${routes.library}${query ? `?${query}` : ""}`;
 }
-function hasActiveFilters(value: LibraryFiltersValue) { return value.q !== "" || value.category !== "" || value.tag !== "" || value.favorite || value.source || value.sort !== "recent"; }
+function hasActiveFilters(value: LibraryFiltersValue) { return value.q !== "" || value.category !== "" || value.tag !== "" || value.favorite || value.sort !== "recent"; }
 function catalogUrl(value: LibraryFiltersValue, page: number) {
   const params = new URLSearchParams();
-  if (value.q) params.set("q", value.q); if (value.category) params.set("category", value.category); if (value.tag) params.set("tag", value.tag); if (value.favorite) params.set("favorite", "true"); if (value.source) params.set("source", "true");
+  if (value.q) params.set("q", value.q); if (value.category) params.set("category", value.category); if (value.tag) params.set("tag", value.tag); if (value.favorite) params.set("favorite", "true");
   params.set("sort", value.sort); if (page > 1) params.set("page", String(page)); params.set("pageSize", String(LIBRARY_PAGE_SIZE));
   return `/api/infographics?${params.toString()}`;
 }
@@ -75,8 +74,8 @@ export function LibraryPage() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }, [catalog, filters, page]);
   const heading = <PageHeader description="Your organized infographics." title="Library" />;
-  if (state === "loading" && !catalog) return <section className="library-page">{heading}<PageState kind="loading" title="Loading Library…" /></section>;
-  if (state === "error") return <section className="library-page">{heading}<PageState action={<RetryButton onRetry={() => void load(filters, page)} />} kind="error" title="Library could not be loaded. Try again." /></section>;
-  if (state === "empty") return <section className="library-page">{heading}<PageState action={<a className="button button--primary" href={routes.add}>Add infographic</a>} description="Add an image to begin your Library." kind="empty" title="Library is empty." /></section>;
-  return <section className="library-page">{heading}<LibraryFilters categories={catalog!.categories} onChange={updateFilters} onClear={() => updateFilters(defaultFilters)} tags={catalog!.tags} value={filters} />{state === "loading" ? <PageState kind="loading" title="Loading Library…" /> : state === "no-results" ? <PageState action={<button className="button button--secondary" onClick={() => updateFilters(defaultFilters)} type="button">Clear filters</button>} kind="empty" title="No infographics match these filters." /> : <><LibraryGrid items={catalog!.infographics} /><LibraryPager page={catalog!.page} totalItems={catalog!.totalItems} totalPages={catalog!.totalPages} onChange={goToPage} /></>}</section>;
+  if (state === "loading" && !catalog) return <section className="library-page">{heading}<PageState icon={LibraryIcon} kind="loading" layout="compact" title="Loading Library…" /></section>;
+  if (state === "error") return <section className="library-page">{heading}<PageState action={<RetryButton onRetry={() => void load(filters, page)} />} icon={LibraryIcon} kind="error" layout="compact" title="Library could not be loaded. Try again." /></section>;
+  if (state === "empty") return <section className="library-page">{heading}<PageState action={<a className="button button--primary" href={routes.add}>Add infographic</a>} description="Add an image to begin your Library." icon={LibraryIcon} kind="empty" layout="compact" title="Library is empty." /></section>;
+  return <section className="library-page">{heading}<LibraryFilters categories={catalog!.categories} onChange={updateFilters} onClear={() => updateFilters(defaultFilters)} tags={catalog!.tags} value={filters} />{state === "loading" ? <PageState icon={LibraryIcon} kind="loading" layout="compact" title="Loading Library…" /> : state === "no-results" ? <PageState action={<button className="button button--secondary" onClick={() => updateFilters(defaultFilters)} type="button">Clear filters</button>} icon={LibraryIcon} kind="empty" layout="compact" title="No infographics match these filters." /> : <><LibraryGrid items={catalog!.infographics} /><LibraryPager page={catalog!.page} totalItems={catalog!.totalItems} totalPages={catalog!.totalPages} onChange={goToPage} /></>}</section>;
 }

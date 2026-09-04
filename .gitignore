@@ -1,4 +1,6 @@
 .worktrees/
+.DS_Store
+*.zip
 .superpowers/
 .codex/run/
 packages/*/dist/

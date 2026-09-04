@@ -17,6 +17,8 @@ export interface CachedEventStoreOptions {
  */
 export class CachedEventStore implements Pick<EventStore, "readAll" | "append"> {
   private readonly cache: LruCache<unknown[]>;
+  private pendingRead: Promise<unknown[]> | null = null;
+  private revision = 0;
 
   constructor(private readonly inner: EventStore, options: CachedEventStoreOptions) {
     if (options.readAllTtlMs <= 0) throw new Error("CachedEventStore TTL must be positive.");
@@ -26,14 +28,22 @@ export class CachedEventStore implements Pick<EventStore, "readAll" | "append"> 
   async readAll(): Promise<unknown[]> {
     const cached = this.cache.get("events:all");
     if (cached) return cached;
-    const value = await this.inner.readAll();
-    this.cache.set("events:all", value);
-    return value;
+    if (this.pendingRead) return this.pendingRead;
+    const revision = this.revision;
+    const pending = this.inner.readAll().then((value) => {
+      if (revision === this.revision) this.cache.set("events:all", value);
+      return value;
+    }).finally(() => {
+      if (this.pendingRead === pending) this.pendingRead = null;
+    });
+    this.pendingRead = pending;
+    return pending;
   }
 
   async append(input: InfEvent): Promise<void> {
-    await this.inner.append(input);
+    this.revision += 1;
     this.cache.delete("events:all");
+    await this.inner.append(input);
   }
 
   describe(): { hits: number; misses: number; size: number } {

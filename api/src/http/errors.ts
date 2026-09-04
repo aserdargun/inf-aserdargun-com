@@ -38,8 +38,10 @@ export function binaryResponse(bytes: Buffer, contentType: string): HttpResponse
   return { status: 200, headers: headers("image", { "content-type": contentType }), body: bytes };
 }
 
-export function errorResponse(error: unknown, kind: CacheKind = "private"): HttpResponse {
+export function errorResponse(error: unknown, _kind: CacheKind = "private"): HttpResponse {
   const appError = error instanceof AppError ? error : new AppError("INTERNAL", 500, "Internal server error");
   const body: ApiError = { code: appError.code, message: appError.status === 500 ? "Internal server error" : appError.message };
-  return jsonResponse(body, appError.status, kind);
+  // Errors are never cacheable. In particular, a transient public 5xx must not
+  // be replayed for a minute after the upstream dependency has recovered.
+  return jsonResponse(body, appError.status, "private");
 }

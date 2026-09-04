@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import sharp from "sharp";
 import { describe, expect, test } from "vitest";
 import type { InfEvent } from "@inf/contracts";
 import { CaptureService } from "../src/services/capture-service.js";
@@ -23,7 +24,7 @@ class MemoryStorage implements StoragePort {
   async moveFile() {} async trashFile() {} async findByAppProperty() { return []; } async isDescendant() { return true; }
 }
 
-function setup() {
+function setup(trim?: { enabled: boolean; threshold: number; minSavingsRatio: number; minDimension: number; maxPixels: number }) {
   const storage = new MemoryStorage();
   const events: InfEvent[] = [];
   const eventStore: Pick<EventStore, "readAll" | "append"> = { readAll: async () => events, append: async (event: InfEvent) => { events.push(event); } };
@@ -32,11 +33,35 @@ function setup() {
     libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails,
     now: () => new Date("2026-08-27T10:00:00.000Z"),
     uuid: (() => { let counter = 0; return () => `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`; })(),
+    trim,
   });
   return { service, events, storage };
 }
 
 describe("CaptureService atomic taxonomy", () => {
+  test("applies configured auto-trim before storing a phone screenshot", async () => {
+    const { service, storage } = setup({ enabled: true, threshold: 10, minSavingsRatio: 0.02, minDimension: 100, maxPixels: 40_000_000 });
+    const panel = await sharp({ create: { width: 350, height: 440, channels: 3, background: { r: 44, g: 64, b: 96 } } }).png().toBuffer();
+    const content = await sharp({ create: { width: 390, height: 500, channels: 3, background: { r: 242, g: 238, b: 226 } } })
+      .composite([{ input: panel, top: 30, left: 20 }])
+      .png()
+      .toBuffer();
+    const screenshot = await sharp({ create: { width: 390, height: 844, channels: 3, background: { r: 8, g: 8, b: 8 } } })
+      .composite([{ input: content, top: 172, left: 0 }])
+      .png()
+      .toBuffer();
+
+    const result = await service.capture({ bytes: screenshot, declaredMime: "image/png", name: "phone.png" });
+
+    expect(result.kind).toBe("created");
+    if (result.kind !== "created") return;
+    const stored = storage.files.get(result.original.id);
+    expect(stored).toBeDefined();
+    const metadata = await sharp(stored!.bytes).metadata();
+    expect(metadata.width).toBe(350);
+    expect(metadata.height).toBe(500);
+  });
+
   test("appends infographic.created, categoriesAssigned, and tagsAssigned in a single call when capture ships AI suggestions", async () => {
     const { service, events } = setup();
     const bytes = await fixtureImage();

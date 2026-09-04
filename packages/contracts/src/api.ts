@@ -132,8 +132,7 @@ export const OwnerCatalogResponseSchema = z.strictObject({
 
 const CatalogQuerySlugSchema = z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80);
 // Library-side pagination defaults: 24 fits the 4-column desktop grid (6 rows
-// per page) and stays light on the JSON response. Inbox raises pageSize at the
-// call site to keep the uncategorized backlog in a single round trip.
+// per page) and keeps the JSON response bounded.
 const OWNER_CATALOG_DEFAULT_PAGE_SIZE = 24;
 const OWNER_CATALOG_MAX_PAGE_SIZE = 200;
 export const OwnerCatalogQuerySchema = z.strictObject({

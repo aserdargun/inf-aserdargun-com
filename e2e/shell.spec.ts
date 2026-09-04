@@ -94,7 +94,7 @@ test("renders the Infographics wordmark across owner, login, and public surfaces
 
 test("keeps the desktop wordmark navigation target at least 44px tall", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 });
-  await page.goto("/");
+  await page.goto("/today/");
 
   const height = await page.locator(".sidebar .wordmark").evaluate((wordmark) => wordmark.getBoundingClientRect().height);
   expect(height).toBeGreaterThanOrEqual(44);
@@ -102,7 +102,7 @@ test("keeps the desktop wordmark navigation target at least 44px tall", async ({
 
 test("keeps the tablet wordmark navigation target at least 44px tall", async ({ page }) => {
   await page.setViewportSize({ width: 1099, height: 900 });
-  await page.goto("/");
+  await page.goto("/today/");
 
   const height = await page.locator(".mobile-topbar .wordmark").evaluate((wordmark) => wordmark.getBoundingClientRect().height);
   expect(height).toBeGreaterThanOrEqual(44);
@@ -110,7 +110,7 @@ test("keeps the tablet wordmark navigation target at least 44px tall", async ({ 
 
 test("keeps the mobile wordmark navigation target at least 44px tall", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/today/");
 
   const height = await page.locator(".mobile-topbar .wordmark").evaluate((wordmark) => wordmark.getBoundingClientRect().height);
   expect(height).toBeGreaterThanOrEqual(44);
@@ -128,7 +128,7 @@ test("uses the editorial design system and a wide owner workspace", async ({ pag
 });
 
 test("switches navigation atomically at the approved breakpoint and keeps Settings reachable", async ({ page }) => {
-  await page.setViewportSize({ width: 768, height: 900 });
+  await page.setViewportSize({ width: 1100, height: 900 });
   await page.goto("/today/");
   await expect(page.locator(".sidebar")).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeHidden();
@@ -167,7 +167,7 @@ const healthySettingsFixture = {
     publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [] },
     privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [] },
   },
-  data: { total: 0, inbox: 0, library: 0, archive: 0, due: 0, reviewed: 0, seen: 0 },
+  data: { total: 0, uncategorized: 0, library: 0, archive: 0, due: 0, reviewed: 0, seen: 0 },
   quarantine: { count: 0, reasons: [], rejectedFiles: [] },
   recovery: { inventorySchemaVersion: 1, items: [] },
 };
@@ -206,7 +206,7 @@ test("synchronizes every visible theme control across the 1099 and 1100 transiti
 });
 
 test("persists an accessible keyboard theme choice", async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.setViewportSize({ width: 1100, height: 900 });
   await page.goto("/today/");
   const toggle = page.getByRole("button", { name: "Switch to dark theme" });
   await toggle.focus();

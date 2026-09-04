@@ -22,13 +22,13 @@ Run uses loopback-only ports: Next 3000, Functions 7071, a private local API cap
 Pasting or dropping a screenshot on the Add page usually carries solid margins around the content. The API auto-trims those margins before storing the file so the original and its thumbnail reflect the content's tight bounding box. The trim is server-side and silent: the user sees the same capture flow, and the original Drive file records the pre-trim dimensions for transparency.
 
 - Default is on. Disable with `INF_AUTO_TRIM_SCREENSHOTS=false` (also `0`/`off`/`no`).
-- Background is detected from the top-left corner block (transparent corner → alpha canvas). The trim is skipped if the savings fall below `INF_AUTO_TRIM_MIN_SAVINGS` (default 0.02 = 2% of pixels).
-- The trim only runs for the **capture** and **image replace** flows. Drive Inbox sync reuses the file bytes as-is so existing manual uploads are not rewritten.
+- Background is sampled from the corners and four edges (transparent corner → alpha canvas). The trim is skipped if the savings fall below `INF_AUTO_TRIM_MIN_SAVINGS` (default 0.02 = 2% of pixels).
+- The trim runs for the **capture** and **image replace** flows. Existing Drive files are never rewritten automatically.
 - Failed trims return the input unchanged; the saved file is never smaller or more lossy than the user uploaded.
 
 ## Drive and recovery
 
-Production uses the public root `1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK` and a restricted sibling private root. Create Google OAuth credentials and keep `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, and the private/folder IDs in `.env.local` (0600), never in the frontend or repository. Manual image drops go in public `Inbox`; **Sync Drive** discovers them. Infographics retains originals, creates WebP thumbnails, and stores immutable private JSON events. Recovery is both Drive roots: copy the public images and private event hierarchy, then rebuild state by folding the events. Settings can export a portable inventory.
+Production uses the public root `1wijWSRvrjEZ3y78bKsAQS8mOP0OPvgsK` and a restricted sibling private root. Create Google OAuth credentials and keep `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, and the private/folder IDs in `.env.local` (0600), never in the frontend or repository. Images added through the application land directly in `Library`; the former Inbox/Sync staging workflow has been retired. Infographics retains originals, creates WebP thumbnails, and stores immutable private JSON events. Recovery is both Drive roots: copy the public images and private event hierarchy, then rebuild state by folding the events. Settings can export a portable inventory.
 
 The provisioning workflow performs a bounded loopback-only Desktop OAuth callback with PKCE/state validation, verifies the exact Drive owner, creates or selects the exact folder tree idempotently, fails closed on incomplete permission metadata, and writes credentials plus audit folder IDs without printing secret values. Full Drive scope is deliberate: `drive.file` cannot reliably read the pre-existing shared root or images pasted manually outside this app. Live authorization still requires the owner to complete Google's consent step.
 
@@ -46,7 +46,7 @@ node scripts/google-drive-provision.mjs
 # integration-test owner-only".
 ```
 
-Safe handoff is the mode-0600 ignored `.env.local`; never paste secret values into commands, logs, GitHub, frontend variables, or screenshots. The private `integration-test` root is owner-only and exists solely for the opt-in live adapter contract; normal tests skip it unless `INF_DRIVE_INTEGRATION=1` and all credentials/IDs are loaded. For a manual ingest, paste/upload a supported image into public `Inbox`, run the deployed app, choose **Sync Drive**, and verify it appears and Settings health is healthy. Sync creates only public-safe catalog projection data: the image remains observable to anonymous visitors in View Mode while notes, source details, tags, categories, review history, and other learning state stay private.
+Safe handoff is the mode-0600 ignored `.env.local`; never paste secret values into commands, logs, GitHub, frontend variables, or screenshots. The private `integration-test` root is owner-only and exists solely for the opt-in live adapter contract; normal tests skip it unless `INF_DRIVE_INTEGRATION=1` and all credentials/IDs are loaded. For a manual capture, use **Add**, verify the image appears in Library, and confirm Settings health is healthy. The public projection exposes only the image, title, publication date, and application-owned image URLs; notes, tags, categories, review history, and other learning state stay private.
 
 ```bash
 set -a
@@ -73,23 +73,12 @@ node scripts/google-drive-release.mjs verify-backup --backup "$BACKUP" --scratch
 
 The PWA caches a bounded public read experience only. It does not queue offline writes, synchronize in the background, or make private content offline-safe.
 
-Azure deployment is intentionally a later gated step: GitHub `aserdargun/inf-aserdargun-com`, West Europe Free Static Web Apps, with Google secrets supplied as Azure application settings. This milestone explicitly excludes custom-domain, DNS, IHS, certificate, TXT, and CNAME changes.
-
-Task 16 is not yet live. Before it starts, validate and push the public repository. The helper merges app settings through a 0600 temporary REST body, captures the deployment token in memory, deploys prebuilt `out/` + `api-dist/`, and checks generated-host HTML/API/image/auth/header boundaries without printing secrets.
+Production is deployed from GitHub `aserdargun/inf-aserdargun-com` to the West Europe Free Static Web App `swa-inf-aserdargun-com`. The custom production URL is `https://inf.aserdargun.com`; application settings remain server-side in Azure. Releases run the repository validation contract, deploy the prebuilt `out/` and `api-dist/` artifacts, then verify the generated host and custom domain without printing secrets.
 
 ```bash
-pnpm validate:codex
-gh repo create aserdargun/inf-aserdargun-com --public --source=. --remote=origin --push
-az login
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-az group create --name rg-inf-aserdargun-com --location westeurope
-az staticwebapp create --name swa-inf-aserdargun-com --resource-group rg-inf-aserdargun-com --location westeurope --sku Free
-node scripts/azure-static-web-app-release.mjs settings --env-file .env.local --subscription "$SUBSCRIPTION_ID" --resource-group rg-inf-aserdargun-com --name swa-inf-aserdargun-com
-pnpm build && pnpm api:build && pnpm artifact:verify
-node scripts/azure-static-web-app-release.mjs deploy --resource-group rg-inf-aserdargun-com --name swa-inf-aserdargun-com
-node scripts/azure-static-web-app-release.mjs verify --resource-group rg-inf-aserdargun-com --name swa-inf-aserdargun-com
-# Expected: View/public API 200, public security/cache headers, owner 302/401,
-# and customHostnames exactly 0.
+pnpm validate:ci
+git push origin main
+gh run watch --exit-status
+# Expected: the deployed commit matches main; View/public API/images return
+# healthy responses; owner routes stay protected; inf.aserdargun.com has valid TLS.
 ```
-
-Do not configure `inf.aserdargun.com`, DNS/IHS/TXT/CNAME records, certificates, or any custom domain in Task 16.

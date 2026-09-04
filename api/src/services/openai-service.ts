@@ -26,7 +26,10 @@ export interface SuggestMetadataInput {
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_TIMEOUT_MS = 25_000;
+// Azure Static Web Apps caps API requests at 45 seconds. Two attempts plus the
+// retry delay must settle comfortably inside that platform ceiling.
+const DEFAULT_TIMEOUT_MS = 18_000;
+const RETRY_DELAY_MS = 750;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // Vision model size cap; we already have a 20 MiB upload ceiling.
 
 const allowedMimes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -148,7 +151,7 @@ export class OpenAiService {
       } catch (error) {
         lastError = error;
         if (!(error instanceof AppError) || !isTransientAiError(error) || attempt === 1) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)));
       }
     }
     throw lastError instanceof AppError ? lastError : new AppError("AI_BAD_RESPONSE", 502, "AI suggestion service returned an invalid response.");

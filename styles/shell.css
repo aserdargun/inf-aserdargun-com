@@ -1,7 +1,7 @@
 .app-shell { min-height:100vh; }
 .sidebar { background:var(--bg-subtle); border-right:1px solid var(--border); display:none; flex-direction:column; height:100vh; left:0; padding:28px 24px; position:fixed; top:0; }
 .wordmark { font-size:24px; font-weight:750; letter-spacing:-.03em; line-height:28px; }
-.sidebar > .wordmark,.mobile-topbar > .wordmark { align-items:center; display:flex; min-height:44px; }
+.sidebar .wordmark,.mobile-topbar > .wordmark { align-items:center; display:flex; min-height:44px; }
 .sidebar nav { display:grid; gap:6px; margin-top:44px; }
 .nav-link { align-items:center; border-radius:var(--radius-control); display:flex; font-size:14px; font-weight:650; gap:12px; min-height:44px; padding:0 14px; }
 .nav-link:hover,.nav-link:focus-visible { background:var(--surface-hover); }

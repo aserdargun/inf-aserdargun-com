@@ -1,7 +1,7 @@
 "use client";
 
 import type { AiMetadataSuggestion, InfographicPatch, MaterializedInfographic, OwnerCatalogResponse } from "@inf/contracts";
-import { Archive, ArrowLeft, Heart, LoaderCircle, Pencil, Sparkles, Star, Trash2, X } from "lucide-react";
+import { Archive, ArrowLeft, Heart, Image as ImageIcon, LoaderCircle, Pencil, Sparkles, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { MediaCanvas } from "../../components/ui/media-canvas";
@@ -106,6 +106,7 @@ export function InfographicDetail() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminChecked, setAdminChecked] = useState(false);
   const deleteTrigger = useRef<HTMLButtonElement>(null);
+  const restoreDeleteFocus = useRef(false);
 
   const load = useCallback(async (requestedId: string | null) => {
     setError(""); setItem(null);
@@ -137,6 +138,12 @@ export function InfographicDetail() {
     });
   }, [item, taxonomy]);
 
+  useEffect(() => {
+    if (!restoreDeleteFocus.current || deleteOpen || busy !== null) return;
+    restoreDeleteFocus.current = false;
+    deleteTrigger.current?.focus();
+  }, [busy, deleteOpen]);
+
   const patch = useCallback(async (kind: "favorite" | "archive", value: boolean) => {
     if (!item || busy) return; setBusy(kind); setError("");
     try {
@@ -147,7 +154,7 @@ export function InfographicDetail() {
   }, [busy, item]);
 
   const closeDialog = () => { setDeleteOpen(false); queueMicrotask(() => deleteTrigger.current?.focus()); };
-  const remove = useCallback(async () => { if (!item || busy) return; setBusy("delete"); setError(""); try { await apiRequest(`/api/infographics/${encodeURIComponent(item.id)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true }) }); window.location.assign(routes.library); } catch { setBusy(null); setError("The infographic could not be deleted. Try again."); } }, [busy, item]);
+  const remove = useCallback(async () => { if (!item || busy) return; setBusy("delete"); setError(""); try { await apiRequest(`/api/infographics/${encodeURIComponent(item.id)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true }) }); window.location.assign(routes.library); } catch { restoreDeleteFocus.current = true; setBusy(null); setError("The infographic could not be deleted. Try again."); setDeleteOpen(false); } }, [busy, item]);
 
   const enterEdit = useCallback(async () => {
     if (!item) return;
@@ -252,26 +259,9 @@ export function InfographicDetail() {
     }
   }, [editState, item, taxonomy]);
 
-  // Loading renders a minimal shell that includes the detail image node so
-  // tests and screen readers see the page structure the moment the route
-  // mounts, before the GET round trip completes. The success path below
-  // replaces this in place with the authoritative content.
-  if (state === "loading") {
-    return <section aria-live="polite" className="detail-page">
-      <a className="detail-back" href={routes.library}><ArrowLeft aria-hidden="true" size={20} strokeWidth={1.75} />Back to Library</a>
-      <PageHeader title="Loading infographic…" />
-      <div className="detail-workspace">
-        <img alt="Loading infographic" className="detail-image" src="" />
-        <div className="detail-layout">
-          <section aria-label="Infographic metadata" className="detail-metadata">
-            <p className="form-message" role="status">Loading…</p>
-          </section>
-        </div>
-      </div>
-    </section>;
-  }
-  if (state === "missing") return <section className="detail-page"><PageState action={<a className="button button--primary" href={routes.library}>Back to Library</a>} kind="empty" title="This infographic is no longer available." /></section>;
-  if (state === "error") return <section className="detail-page"><PageState action={<RetryButton onRetry={() => void load(id)} />} kind="error" title="This infographic could not be loaded. Try again." /></section>;
+  if (state === "loading") return <section className="detail-page"><PageHeader title="Infographic" /><PageState icon={ImageIcon} kind="loading" layout="compact" title="Loading infographic…" /></section>;
+  if (state === "missing") return <section className="detail-page"><PageState action={<a className="button button--primary" href={routes.library}>Back to Library</a>} icon={ImageIcon} kind="empty" layout="compact" title="This infographic is no longer available." /></section>;
+  if (state === "error") return <section className="detail-page"><PageState action={<RetryButton onRetry={() => void load(id)} />} icon={ImageIcon} kind="error" layout="compact" title="This infographic could not be loaded. Try again." /></section>;
 
   const current = item!;
   const names = (ids: readonly string[], entries: readonly { id: string; displayName: string }[]) => ids.map((entry) => entries.find((candidate) => candidate.id === entry)?.displayName).filter((entry): entry is string => entry !== undefined).join(", ") || "—";
@@ -279,11 +269,12 @@ export function InfographicDetail() {
   const draft = activeDraft(editState);
 
   return <section className="detail-page">
+    <div className="detail-page__content" inert={deleteOpen || undefined}>
     <a className="detail-back" href={routes.library}><ArrowLeft aria-hidden="true" size={20} strokeWidth={1.75} />Back to Library</a>
     <PageHeader description={`Captured ${capturedDate(current.capturedAt)}`} title={current.title} />
     <div className="detail-workspace">
-      <img alt={current.title} className="detail-image" src={`/api/public/images/${encodeURIComponent(current.originalDriveFileId)}`} />
-      <div className="detail-layout">
+      <div className="detail-media"><MediaCanvas className="detail-image" variant="detail"><img alt={current.title} src={`/api/public/images/${encodeURIComponent(current.originalDriveFileId)}`} /></MediaCanvas></div>
+      <div className="detail-layout" data-order="learning-metadata-routine-history-archive-delete">
         <section aria-label="Infographic metadata" className="detail-metadata">
           {!isEditing ? <dl>
             <div><dt>Category</dt><dd>{names(current.categoryIds, taxonomy.categories)}</dd></div>
@@ -298,39 +289,42 @@ export function InfographicDetail() {
           /> : <p aria-live="polite" className="form-message" role="status">{editState.kind === "aiLoading" ? "Reading the image and drafting metadata…" : "Saving…"}</p>}
         </section>
         <aside aria-label="Infographic actions" className="detail-actions">
-          {!isEditing ? <Button disabled={busy !== null} onClick={() => void enterEdit()} variant="secondary">
+          {!isEditing ? <Button className="detail-edit-action" disabled={busy !== null} onClick={() => void enterEdit()} variant="secondary">
             <Pencil aria-hidden="true" size={20} strokeWidth={1.75} />Edit
           </Button> : null}
-          {isEditing ? <Button disabled={isEditLocked(editState)} onClick={cancelEdit} variant="secondary">
+          {isEditing ? <Button className="detail-edit-action" disabled={isEditLocked(editState)} onClick={cancelEdit} variant="secondary">
             <X aria-hidden="true" size={20} strokeWidth={1.75} />Cancel
           </Button> : null}
-          {!isEditing ? <Button disabled={busy !== null} onClick={() => void patch("favorite", !current.favorite)} variant="secondary">
-            <Heart aria-hidden="true" size={20} strokeWidth={1.75} />{current.favorite ? "Remove from favorites" : "Add to favorites"}
-          </Button> : null}
-          {!isEditing ? <Button disabled={busy !== null} onClick={() => void patch("archive", true)} variant="secondary">
-            <Archive aria-hidden="true" size={20} strokeWidth={1.75} />Archive
-          </Button> : null}
-          {!isEditing ? <a className="button button--secondary" href={routes.review}><Star aria-hidden="true" size={20} strokeWidth={1.75} />Start review</a> : null}
-          {!isEditing ? <Button disabled={busy !== null} onClick={() => setDeleteOpen(true)} ref={deleteTrigger} variant="secondary">
-            <Trash2 aria-hidden="true" size={20} strokeWidth={1.75} />Delete
-          </Button> : null}
+          <div className="detail-action-group">
+            {!isEditing ? <a className="button button--secondary detail-action--learning" href={routes.review}><Star aria-hidden="true" size={20} strokeWidth={1.75} />Start review</a> : null}
+            {!isEditing ? <Button className="detail-action--routine" disabled={busy !== null} onClick={() => void patch("favorite", !current.favorite)} variant="secondary">
+              <Heart aria-hidden="true" size={20} strokeWidth={1.75} />{current.favorite ? "Remove from favorites" : "Add to favorites"}
+            </Button> : null}
+            {!isEditing ? <Button className="detail-action--archive" disabled={busy !== null} onClick={() => void patch("archive", true)} variant="secondary">
+              <Archive aria-hidden="true" size={20} strokeWidth={1.75} />Archive
+            </Button> : null}
+            {!isEditing ? <Button className="detail-action--delete" disabled={busy !== null} onClick={() => setDeleteOpen(true)} ref={deleteTrigger} variant="secondary">
+              <Trash2 aria-hidden="true" size={20} strokeWidth={1.75} />Delete
+            </Button> : null}
+          </div>
           {isEditing && editState.kind === "aiReady" ? <Button onClick={applyAiToDraft} variant="secondary">
             <Sparkles aria-hidden="true" size={20} strokeWidth={1.75} />Apply AI to fields
           </Button> : null}
           {isEditing ? <Button disabled={isEditLocked(editState)} onClick={() => void runAi()} variant="secondary">
             {editState.kind === "aiLoading" ? <LoaderCircle aria-hidden="true" className="is-spinning" size={20} strokeWidth={1.75} /> : <Sparkles aria-hidden="true" size={20} strokeWidth={1.75} />}
-            {editState.kind === "aiLoading" ? "Filling with AI…" : "AI ile doldur"}
+            {editState.kind === "aiLoading" ? "Filling with AI…" : "Fill with AI"}
           </Button> : null}
           {isEditing ? <Button disabled={isEditLocked(editState)} onClick={() => void saveEdit()}>
             {editState.kind === "saving" ? "Saving…" : "Save changes"}
           </Button> : null}
         </aside>
+        <section className="detail-history"><h2>Review history</h2><p>Seen {current.seenCount} times</p><p>{current.reviewCount === 0 ? "No reviews recorded." : `${current.reviewCount} review${current.reviewCount === 1 ? "" : "s"} recorded.`}</p></section>
       </div>
     </div>
     {isEditing && editState.kind === "aiError" ? <p aria-live="polite" className="form-message form-message--error" role="status">{editState.message}</p> : null}
     {isEditing && editState.kind === "aiReady" ? <p aria-live="polite" className="form-message form-message--success" role="status">AI drafted the fields below. Review and save.</p> : null}
-    <section className="detail-history"><h2>Review history</h2><p>Seen {current.seenCount} times</p><p>{current.reviewCount === 0 ? "No reviews recorded." : `${current.reviewCount} review${current.reviewCount === 1 ? "" : "s"} recorded.`}</p></section>
     {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{error}</p> : null}
+    </div>
     {deleteOpen ? <DeleteDialog deleting={busy === "delete"} onCancel={closeDialog} onConfirm={() => void remove()} title={current.title} /> : null}
   </section>;
 }

@@ -14,7 +14,8 @@ const PUBLIC_TILE_HEIGHT = 300;
 const publicDate = (value: string) => new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(value));
 
 function PublicItem({ item, priority = "auto" }: { item: PublicInfographic; priority?: "high" | "low" | "auto" }) {
-  return <article className="public-grid__item"><a href={`/view/${item.id}/`} aria-label={`Open ${item.title}`}><div className="public-grid__image"><img alt={item.title} decoding="async" fetchPriority={priority} height={PUBLIC_TILE_HEIGHT} loading={priority === "high" ? "eager" : "lazy"} src={item.thumbnailUrl} width={PUBLIC_TILE_WIDTH} /></div><span className="public-grid__caption"><strong>{item.title}</strong><time dateTime={item.publishedAt}>{publicDate(item.publishedAt)}</time></span></a></article>;
+  const [imageFailed, setImageFailed] = useState(false);
+  return <article className="public-grid__item"><a href={`/view/${item.id}/`} aria-label={`Open ${item.title}`}><MediaCanvas className="public-grid__image" variant="gallery">{imageFailed ? <span aria-label={`${item.title} preview unavailable`} className="media-canvas__error" role="img">Preview unavailable</span> : <img alt={item.title} decoding="async" fetchPriority={priority} height={PUBLIC_TILE_HEIGHT} loading={priority === "high" ? "eager" : "lazy"} onError={() => setImageFailed(true)} src={item.thumbnailUrl} width={PUBLIC_TILE_WIDTH} />}</MediaCanvas><span className="public-grid__caption"><strong>{item.title}</strong><time dateTime={item.publishedAt}>{publicDate(item.publishedAt)}</time></span></a></article>;
 }
 
 function parsePageFromUrl(): number {

@@ -10,7 +10,7 @@ interface CaptureDropzoneProps {
   onFile: (file: File) => void;
 }
 
-export function CaptureDropzone({ disabled = false, onChooseClipboard, onFile }: CaptureDropzoneProps) {
+export function CaptureDropzone({ compact, disabled = false, onChooseClipboard, onFile }: CaptureDropzoneProps) {
   // The dropzone keeps a labelled region for screen readers and lets the document-level paste
   // listener (see useClipboardImage) accept an image anywhere on the page — desktop and mobile.
   return <section

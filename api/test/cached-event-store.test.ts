@@ -26,6 +26,24 @@ const sampleEvent = {
 } as unknown as InfEvent;
 
 describe("CachedEventStore", () => {
+  test("coalesces concurrent cache misses into one Drive read", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const inner = new FakeEventStore();
+    inner.setNext([sampleEvent]);
+    const originalRead = inner.readAll.bind(inner);
+    inner.readAll = async () => { await gate; return originalRead(); };
+    const store = new CachedEventStore(inner as never, { readAllTtlMs: 1_000, maxEntries: 1 });
+
+    const first = store.readAll();
+    const second = store.readAll();
+    release();
+
+    expect(await first).toEqual([sampleEvent]);
+    expect(await second).toEqual([sampleEvent]);
+    expect(inner.readAllCalls).toBe(1);
+  });
+
   test("caches readAll within TTL", async () => {
     const inner = new FakeEventStore();
     inner.setNext([sampleEvent]);

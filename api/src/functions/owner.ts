@@ -197,7 +197,7 @@ export function ownerReplaceImage(request: RequestLike, deps: OwnerDependencies)
     if (!file || typeof file === "string" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function" || !file.type) {
       throw new AppError("INVALID_MULTIPART", 400, "Multipart image file is required");
     }
-    const service = new ImageReplaceService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) });
+    const service = new ImageReplaceService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps), trim: deps.trim });
     const result = await service.replace({ infographicId: id, bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name });
     return jsonResponse(result.infographic, 200);
   });
@@ -316,7 +316,7 @@ export function ownerCapture(request: RequestLike, deps: OwnerDependencies): Pro
     if (!metadataResult.success) throw new AppError("INVALID_MULTIPART", 400, "Multipart metadata is invalid");
     const metadata = metadataResult.data;
     const crop = parseOptionalCrop(cropRaw);
-    const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps) }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata, crop });
+    const captured = await new CaptureService({ storage: deps.storage, events: deps.events as EventStore, publicRootId: deps.publicRootId, libraryFolderId: deps.libraryFolderId, thumbnailsFolderId: deps.thumbnailsFolderId, now: () => now(deps), uuid: () => uuid(deps), trim: deps.trim }).capture({ bytes: Buffer.from(await file.arrayBuffer()), declaredMime: file.type, name: file.name, ...metadata, crop });
     return jsonResponse(captured, captured.kind === "created" ? 201 : 200);
   });
 }

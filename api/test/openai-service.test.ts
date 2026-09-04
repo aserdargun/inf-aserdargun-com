@@ -27,6 +27,29 @@ const baseOptions = (fetchImpl: typeof fetch, overrides: Partial<ConstructorPara
 });
 
 describe("OpenAiService", () => {
+  it("settles its full timeout-and-retry budget before the Azure request ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener("abort", () => { const error = new Error("aborted"); error.name = "AbortError"; reject(error); });
+      })) as unknown as typeof fetch;
+      const service = new OpenAiService({ apiKey: "sk-test-1234567890abcdef", fetchImpl });
+      let settled = false;
+      const outcome = service.suggestMetadata({ bytes: samplePng, declaredMime: "image/png" })
+        .then(() => null, (error: unknown) => error)
+        .finally(() => { settled = true; });
+
+      await vi.advanceTimersByTimeAsync(40_000);
+
+      expect(settled).toBe(true);
+      await expect(outcome).resolves.toMatchObject({ code: "AI_TIMEOUT", status: 504 });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("posts the image as a data url and parses the suggestion envelope", async () => {
     const fetchImpl = vi.fn(async () => buildResponse({
       id: "chatcmpl-1",

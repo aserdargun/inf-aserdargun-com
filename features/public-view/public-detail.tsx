@@ -12,15 +12,16 @@ function idFromPathname(pathname: string) { const match = pathname.match(/^\/vie
 
 export function PublicDetail() {
   const [state, setState] = useState<State>("loading"); const [item, setItem] = useState<PublicInfographic | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
   const controller = useRef<AbortController | null>(null); const requestId = useRef(0);
   const load = useCallback(async () => {
     const id = idFromPathname(window.location.pathname); if (!id) { setItem(null); setState("missing"); return; }
-    controller.current?.abort(); const signal = new AbortController(); controller.current = signal; const active = ++requestId.current; setState("loading");
+    controller.current?.abort(); const signal = new AbortController(); controller.current = signal; const active = ++requestId.current; setImageFailed(false); setState("loading");
     try { const data = PublicInfographicSchema.parse(await apiRequest<unknown>(`/api/public/infographics/${id}`, { signal: signal.signal })); if (active !== requestId.current) return; setItem(data); setState("ready"); }
     catch (error) { if (signal.signal.aborted || active !== requestId.current) return; setItem(null); setState(error instanceof ApiClientError && error.status === 404 ? "missing" : "error"); }
   }, []);
   useEffect(() => { void load(); return () => controller.current?.abort(); }, [load]);
   return <section className="public-detail" aria-busy={state === "loading"}><a className="public-detail__back" href="/view/">Back to Infographics</a>{state === "loading" && <p className="public-state">Loading infographic…</p>}{state === "missing" && <div className="public-state"><p>This infographic is not available.</p><a className="button button--secondary" href="/view/">Back to Infographics</a></div>}{state === "error" && <div className="public-state public-state--error"><p>This infographic is unavailable right now.</p><button type="button" className="button button--secondary" onClick={() => void load()}>Try again</button></div>}{state === "ready" && item && <><header><h1>{item.title}</h1><time dateTime={item.publishedAt}>{date(item.publishedAt)}</time></header>{/* Detail page is the LCP target: keep the image eager and high priority
         but always async-decode so the heading does not stall. Intrinsic size
-        prevents the layout from jumping as the bitmap arrives. */}<img alt={item.title} className="public-detail__image" decoding="async" fetchPriority="high" height={1200} loading="eager" src={item.imageUrl} width={1600} /><p className="public-view-only">View only</p></>}</section>;
+        prevents the layout from jumping as the bitmap arrives. */}<MediaCanvas className="public-detail__image" variant="detail">{imageFailed ? <span aria-label={`${item.title} image unavailable`} className="media-canvas__error" role="img">Image unavailable</span> : <img alt={item.title} decoding="async" fetchPriority="high" height={1200} loading="eager" onError={() => setImageFailed(true)} src={item.imageUrl} width={1600} />}</MediaCanvas><p className="public-view-only">View only</p></>}</section>;
 }

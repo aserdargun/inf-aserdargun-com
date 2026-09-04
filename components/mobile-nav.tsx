@@ -2,7 +2,6 @@
 import { BookOpen, House, LogOut, Plus, RefreshCw, Settings, Sparkles } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { routes } from "../lib/routes";
-import { ThemeToggle } from "./theme-toggle";
 
 const items = [
   ["Today", routes.today, House],
@@ -21,11 +20,6 @@ export function MobileNav() {
       <header className="mobile-topbar">
         <a className="wordmark" href={routes.today}>Infographics</a>
         <div className="mobile-topbar__actions">
-          {/* Theme toggle is intentionally inside the topbar (not the bottom
-              nav) so the five nav slots stay focused on the core surfaces and
-              the toggle gets a labelled, single-purpose affordance. The
-              sidebar still hosts the same control on desktop. */}
-          <ThemeToggle />
           <a aria-label="Settings" className="mobile-settings" href={routes.settings} title="Settings">
             <Settings aria-hidden="true" size={24} strokeWidth={1.75} />
           </a>

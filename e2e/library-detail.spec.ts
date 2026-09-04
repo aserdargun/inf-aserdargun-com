@@ -159,14 +159,11 @@ test("searches, restores all server query filters through history, opens detail,
   await expect(page.getByRole("link", { name: "Open Memory hierarchy" })).toBeVisible();
   await expect.poll(() => mock.catalogRequests.some((search) => search.includes("q=MEMORY") && search.includes("category=gpu") && search.includes("tag=memory") && search.includes("sort=recent"))).toBeTruthy();
   await desktopFilters.getByLabel("Favorite").check();
-  await desktopFilters.getByLabel("Source").check();
-  await expect(page).toHaveURL(/favorite=true.*source=true/);
+  await expect(page).toHaveURL(/favorite=true/);
   await page.goBack();
-  await expect(desktopFilters.getByLabel("Favorite")).toBeChecked();
-  await expect(desktopFilters.getByLabel("Source")).not.toBeChecked();
+  await expect(desktopFilters.getByLabel("Favorite")).not.toBeChecked();
   await page.goForward();
   await expect(desktopFilters.getByLabel("Favorite")).toBeChecked();
-  await expect(desktopFilters.getByLabel("Source")).toBeChecked();
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-11-library-desktop.png" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-11-library-mobile.png" });
@@ -353,7 +350,7 @@ test("paginates the Library, syncs the URL, resets on filter change, and clamps 
   await expect(page).toHaveURL(/\/library\/$/);
 
   // Changing a filter must reset the page back to 1.
-  await page.getByLabel("Favorite").check();
+  await page.getByRole("form", { name: "Library filters" }).getByLabel("Favorite").check();
   await expect(page).toHaveURL(/favorite=true/);
   await expect(page).not.toHaveURL(/page=/);
 

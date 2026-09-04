@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { InfographicCreatedPayloadSchema, InfEventSchema, type Category, type InfEvent, type Tag } from "@inf/contracts";
 import { processImage } from "../images/process-image.js";
+import { DISABLED_AUTO_TRIM, type AutoTrimConfig } from "../images/trim-options.js";
 import { EventStore } from "../storage/event-store.js";
 import { withKeyedLock } from "../storage/keyed-lock.js";
 import type { StoragePort, StoredFile } from "../storage/storage-port.js";
@@ -13,6 +14,7 @@ export interface CaptureServiceOptions {
   thumbnailsFolderId: string;
   now?: () => Date;
   uuid?: () => string;
+  trim?: AutoTrimConfig;
 }
 
 export interface CaptureInput {
@@ -75,7 +77,7 @@ export class CaptureService {
   }
 
   async capture(input: CaptureInput): Promise<CaptureResult> {
-    const image = await processImage({ ...input, crop: input.crop ?? null });
+    const image = await processImage({ ...input, crop: input.crop ?? null, trim: this.options.trim ?? DISABLED_AUTO_TRIM });
     return withKeyedLock(`sha:${image.sha256}`, async () => {
       const existing = await this.options.storage.findByAppProperty(this.options.publicRootId, "infSha256", image.sha256);
       if (existing.length > 0 || createdHashes(await this.options.events.readAll()).has(image.sha256)) return { kind: "duplicate", original: existing[0] ?? null };

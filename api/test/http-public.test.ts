@@ -11,13 +11,14 @@ const eventId = "00000000-0000-4000-8000-000000000002";
 class MemoryStorage implements StoragePort {
   readonly files = new Map<string, { file: StoredFile; bytes: Buffer }>();
   descendants = new Set<string>();
+  isDescendantCalls = 0;
   async listChildren(folderId: string) { return [...this.files.values()].map(({ file }) => file).filter((file) => file.parentIds.includes(folderId) && !file.trashed); }
   async readFile(fileId: string) { const value = this.files.get(fileId); if (!value) throw new Error("missing"); return Buffer.from(value.bytes); }
   async createFile(input: CreateFileInput) { const id = input.fileId ?? randomUUID(); const file = { id, name: input.name, mimeType: input.mimeType, createdTime: "2026-08-21T10:00:00.000Z", parentIds: [input.parentId], appProperties: { ...(input.appProperties ?? {}) }, trashed: false }; this.files.set(id, { file, bytes: Buffer.from(input.bytes) }); return file; }
   async moveFile() { throw new Error("unused"); }
   async trashFile() { throw new Error("unused"); }
   async findByAppProperty() { return []; }
-  async isDescendant(fileId: string, rootId: string) { return rootId === ids.public && this.descendants.has(fileId) && this.files.get(fileId)?.file.trashed === false; }
+  async isDescendant(fileId: string, rootId: string) { this.isDescendantCalls += 1; return rootId === ids.public && this.descendants.has(fileId) && this.files.get(fileId)?.file.trashed === false; }
 }
 
 function createdEvent(overrides: Partial<{ eventId: string; infographicId: string; originalDriveFileId: string; thumbnailDriveFileId: string; title: string; capturedAt: string }> = {}): InfEvent {
@@ -43,12 +44,13 @@ async function body(response: { body?: string | Buffer }) { return JSON.parse(St
 
 describe("anonymous public HTTP API", () => {
   test("lists only the exact five public projection fields without authentication", async () => {
-    const { deps } = fixture();
+    const { deps, storage } = fixture();
     const response = await publicList(new Request("http://localhost/api/public/infographics"), deps);
     expect(response.status).toBe(200);
     expect(await body(response)).toEqual({ items: [{ id: infographicId, title: "GPU guide", publishedAt: "2026-08-20T09:00:00.000Z", thumbnailUrl: "/api/public/images/thumbnail-file", imageUrl: "/api/public/images/original-file" }], page: 1, pageSize: 12, totalItems: 1, totalPages: 1 });
     expect(response.headers?.["cache-control"]).toMatch(/^public/);
     expect(response.headers?.["content-security-policy"]).toContain("default-src 'self'");
+    expect(storage.isDescendantCalls).toBe(0);
   });
 
   test("returns an allowlisted public item and a 404 for a malformed or missing ID", async () => {
@@ -76,12 +78,13 @@ describe("anonymous public HTTP API", () => {
     expect((await publicImage(new Request("http://localhost/api/public/images/original-file"), deps)).status).toBe(404);
   });
 
-  test.each([["original-file", "trashed"], ["thumbnail-file", "trashed"], ["original-file", "missing"], ["thumbnail-file", "missing"]] as const)("omits an item whose %s is %s from public DTOs", async (fileId, state) => {
+  test.each([["original-file", "trashed"], ["thumbnail-file", "trashed"], ["original-file", "missing"], ["thumbnail-file", "missing"]] as const)("keeps the event-backed card stable but refuses detail for a %s that is %s", async (fileId, state) => {
     const { deps, storage } = fixture();
     if (state === "trashed") storage.files.get(fileId)!.file.trashed = true;
     else storage.files.delete(fileId);
     const list = await body(await publicList(new Request("http://localhost/api/public/infographics"), deps));
-    expect(list).toEqual({ items: [], page: 1, pageSize: 12, totalItems: 0, totalPages: 0 });
+    expect(list).toMatchObject({ page: 1, pageSize: 12, totalItems: 1, totalPages: 1 });
+    expect(list.items).toHaveLength(1);
     expect((await publicGet(new Request(`http://localhost/api/public/infographics/${infographicId}`), deps)).status).toBe(404);
   });
 
@@ -149,5 +152,6 @@ describe("anonymous public HTTP API", () => {
     const { deps } = fixture();
     const response = await publicList(new Request(`http://localhost/api/public/infographics?${query}`), deps);
     expect(response.status).toBe(expected);
+    expect(response.headers?.["cache-control"]).toBe("no-store");
   });
 });
