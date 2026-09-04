@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/button";
 import { MediaCanvas } from "../../components/ui/media-canvas";
 import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";
+import { ResilientImage } from "../../components/ui/resilient-image";
 import { ApiClientError, apiRequest, apiRequestForm } from "../../lib/api-client";
 import { routes } from "../../lib/routes";
 import { CategoryEditor } from "../taxonomy/category-editor";
@@ -273,7 +274,7 @@ export function InfographicDetail() {
     <a className="detail-back" href={routes.library}><ArrowLeft aria-hidden="true" size={20} strokeWidth={1.75} />Back to Library</a>
     <PageHeader description={`Captured ${capturedDate(current.capturedAt)}`} title={current.title} />
     <div className="detail-workspace">
-      <div className="detail-media"><MediaCanvas className="detail-image" variant="detail"><img alt={current.title} src={`/api/public/images/${encodeURIComponent(current.originalDriveFileId)}`} /></MediaCanvas></div>
+      <div className="detail-media"><MediaCanvas className="detail-image" variant="detail"><ResilientImage alt={current.title} fallbackLabel={`${current.title} image unavailable`} fallbackText="Image unavailable" src={`/api/public/images/${encodeURIComponent(current.originalDriveFileId)}`} /></MediaCanvas></div>
       <div className="detail-layout" data-order="learning-metadata-routine-history-archive-delete">
         <section aria-label="Infographic metadata" className="detail-metadata">
           {!isEditing ? <dl>

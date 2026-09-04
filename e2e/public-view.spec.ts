@@ -114,9 +114,14 @@ test("replaces a failed public thumbnail with an explicit fallback", async ({ pa
   });
   await mockPublic(page);
   await page.unroute("**/api/public/images/**");
-  await page.route("**/api/public/images/**", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+  let imageRequests = 0;
+  await page.route("**/api/public/images/**", (route) => {
+    imageRequests += 1;
+    return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
+  });
   await page.goto("/view/");
   await expect(page.getByRole("img", { name: `${item.title} preview unavailable` })).toHaveText("Preview unavailable");
+  expect(imageRequests).toBe(2);
 });
 
 test("public View Mode is responsive, keyboard reachable, and console-clean", async ({ page }) => {

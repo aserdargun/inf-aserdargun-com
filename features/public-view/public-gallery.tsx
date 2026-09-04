@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PublicCatalogPageSchema, type PublicCatalogPage, type PublicInfographic } from "@inf/contracts/public";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MediaCanvas } from "../../components/ui/media-canvas";
+import { ResilientImage } from "../../components/ui/resilient-image";
 import { apiRequest } from "../../lib/api-client";
 
 type State = "loading" | "ready" | "empty" | "error";
@@ -14,8 +15,7 @@ const PUBLIC_TILE_HEIGHT = 300;
 const publicDate = (value: string) => new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(value));
 
 function PublicItem({ item, priority = "auto" }: { item: PublicInfographic; priority?: "high" | "low" | "auto" }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  return <article className="public-grid__item"><a href={`/view/${item.id}/`} aria-label={`Open ${item.title}`}><MediaCanvas className="public-grid__image" variant="gallery">{imageFailed ? <span aria-label={`${item.title} preview unavailable`} className="media-canvas__error" role="img">Preview unavailable</span> : <img alt={item.title} decoding="async" fetchPriority={priority} height={PUBLIC_TILE_HEIGHT} loading={priority === "high" ? "eager" : "lazy"} onError={() => setImageFailed(true)} src={item.thumbnailUrl} width={PUBLIC_TILE_WIDTH} />}</MediaCanvas><span className="public-grid__caption"><strong>{item.title}</strong><time dateTime={item.publishedAt}>{publicDate(item.publishedAt)}</time></span></a></article>;
+  return <article className="public-grid__item"><a href={`/view/${item.id}/`} aria-label={`Open ${item.title}`}><MediaCanvas className="public-grid__image" variant="gallery"><ResilientImage alt={item.title} decoding="async" fallbackLabel={`${item.title} preview unavailable`} fallbackText="Preview unavailable" fetchPriority={priority} height={PUBLIC_TILE_HEIGHT} loading={priority === "high" ? "eager" : "lazy"} src={item.thumbnailUrl} width={PUBLIC_TILE_WIDTH} /></MediaCanvas><span className="public-grid__caption"><strong>{item.title}</strong><time dateTime={item.publishedAt}>{publicDate(item.publishedAt)}</time></span></a></article>;
 }
 
 function parsePageFromUrl(): number {
