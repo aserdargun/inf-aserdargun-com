@@ -1,6 +1,7 @@
 "use client";
 
 import type { OwnerCatalogResponse } from "@inf/contracts";
+import { Library as LibraryIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";

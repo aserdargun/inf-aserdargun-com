@@ -4,6 +4,7 @@ import type { AiMetadataSuggestion, InfographicPatch, MaterializedInfographic, O
 import { Archive, ArrowLeft, Heart, LoaderCircle, Pencil, Sparkles, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
+import { MediaCanvas } from "../../components/ui/media-canvas";
 import { PageHeader } from "../../components/ui/page-header";
 import { PageState, RetryButton } from "../../components/ui/page-state";
 import { ApiClientError, apiRequest, apiRequestForm } from "../../lib/api-client";

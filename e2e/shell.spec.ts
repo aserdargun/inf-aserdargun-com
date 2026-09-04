@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { expectFocusAboveBottomNavigation, expectViewportAccessibility } from "./support/accessibility";
 
 const item = {
   id: "00000000-0000-4000-8000-000000000001", title: "GPU memory hierarchy", notes: null,  originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
@@ -15,6 +16,44 @@ async function mockToday(page: import("playwright/test").Page, mode: "success" |
     if (mode === "error") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({ total: mode === "empty" ? 0 : 1, uncategorized: 0, library: 1, archive: 0, due: 1, reviewed: 0, seen: 0 }) });
   });
+}
+
+async function expectKeyboardPathTo(page: import("playwright/test").Page, target: import("playwright/test").Locator) {
+  const focusableSelector = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  let previousDomIndex = -1;
+
+  for (let press = 0; press < 24; press += 1) {
+    await page.keyboard.press("Tab");
+    const state = await page.evaluate((selector) => {
+      const active = document.activeElement as HTMLElement | null;
+      const focusables = Array.from(document.querySelectorAll<HTMLElement>(selector)).filter((element) => {
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+      });
+      const box = active?.getBoundingClientRect();
+      const visual = window.visualViewport;
+      const left = visual?.offsetLeft ?? 0;
+      const top = visual?.offsetTop ?? 0;
+      const right = left + (visual?.width ?? window.innerWidth);
+      const bottom = top + (visual?.height ?? window.innerHeight);
+      return {
+        domIndex: active == null ? -1 : focusables.indexOf(active),
+        name: active?.getAttribute("aria-label") ?? active?.textContent?.trim() ?? active?.tagName ?? "none",
+        box: box == null ? null : { left: box.left, top: box.top, right: box.right, bottom: box.bottom },
+        viewport: { left, top, right, bottom },
+        visible: box != null && box.top >= top && box.right > left && box.left < right && box.bottom <= bottom,
+      };
+    }, focusableSelector);
+    expect(state.domIndex).toBeGreaterThan(previousDomIndex);
+    expect(state.visible, `focused target must remain vertically contained and horizontally visible: ${JSON.stringify(state)}`).toBe(true);
+    previousDomIndex = state.domIndex;
+    if (await target.evaluate((element) => element === document.activeElement)) break;
+  }
+
+  await expect(target).toBeFocused();
+  await expectFocusAboveBottomNavigation(page, target);
 }
 
 test("owner sees Today navigation and primary learning actions", async ({ page }) => {
@@ -53,12 +92,36 @@ test("renders the Infographics wordmark across owner, login, and public surfaces
   await expect(page.locator(".public-view__footer strong")).toHaveText("Infographics");
 });
 
+test("keeps the desktop wordmark navigation target at least 44px tall", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await page.goto("/");
+
+  const height = await page.locator(".sidebar .wordmark").evaluate((wordmark) => wordmark.getBoundingClientRect().height);
+  expect(height).toBeGreaterThanOrEqual(44);
+});
+
+test("keeps the tablet wordmark navigation target at least 44px tall", async ({ page }) => {
+  await page.setViewportSize({ width: 1099, height: 900 });
+  await page.goto("/");
+
+  const height = await page.locator(".mobile-topbar .wordmark").evaluate((wordmark) => wordmark.getBoundingClientRect().height);
+  expect(height).toBeGreaterThanOrEqual(44);
+});
+
+test("keeps the mobile wordmark navigation target at least 44px tall", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const height = await page.locator(".mobile-topbar .wordmark").evaluate((wordmark) => wordmark.getBoundingClientRect().height);
+  expect(height).toBeGreaterThanOrEqual(44);
+});
+
 test("uses the editorial design system and a wide owner workspace", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1024 });
   await page.goto("/today/");
 
   await expect(page.locator(".sidebar")).toHaveCSS("width", "248px");
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(245, 242, 234)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(243, 240, 231)");
   await expect(page.locator(".app-main")).toHaveCSS("margin-left", "248px");
   await expect(page.locator(".today-page > .page-header")).toBeVisible();
   await expect(page.locator(".today-page > .page-header")).toHaveCSS("margin-bottom", "88px");
@@ -70,11 +133,76 @@ test("switches navigation atomically at the approved breakpoint and keeps Settin
   await expect(page.locator(".sidebar")).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeHidden();
 
-  await page.setViewportSize({ width: 767, height: 900 });
+  await page.setViewportSize({ width: 1099, height: 900 });
   await expect(page.locator(".sidebar")).toBeHidden();
+  await expect(page.locator(".mobile-topbar")).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
+  await expect(page.locator(".mobile-nav")).toHaveCSS("border-radius", "18px");
+
+  await page.setViewportSize({ width: 768, height: 900 });
+  await expect(page.locator(".sidebar")).toBeHidden();
+  await expect(page.locator(".mobile-topbar")).toBeVisible();
+  await expect(page.locator(".mobile-nav")).toBeVisible();
+  await expect(page.locator(".mobile-nav")).toHaveCSS("border-radius", "18px");
+
+  await page.setViewportSize({ width: 767, height: 900 });
+  await expect(page.locator(".mobile-nav")).toHaveCSS("border-radius", "0px");
   await expect(page.locator(".mobile-nav").getByRole("link")).toHaveCount(5);
+  await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
+});
+
+test("keeps theme selection out of tablet and mobile navigation chrome", async ({ page }) => {
+  await page.setViewportSize({ width: 1099, height: 900 });
+  await page.goto("/");
+  await expect(page.locator(".mobile-topbar .theme-toggle")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".mobile-topbar .theme-toggle")).toHaveCount(0);
+});
+
+const healthySettingsFixture = {
+  schemaVersion: 1,
+  application: { name: "Infographics", version: "0.1.0", runtimeVersion: "v22.0.0", usesAi: false },
+  connectionHealth: {
+    publicDrive: { rootId: "public", folderUrl: "https://drive.google.com/drive/folders/public", healthy: true, folders: [] },
+    privateDrive: { rootId: "private", folderUrl: "https://drive.google.com/drive/folders/private", healthy: true, folders: [] },
+  },
+  data: { total: 0, inbox: 0, library: 0, archive: 0, due: 0, reviewed: 0, seen: 0 },
+  quarantine: { count: 0, reasons: [], rejectedFiles: [] },
+  recovery: { inventorySchemaVersion: 1, items: [] },
+};
+
+test("keeps theme selection available through Settings on tablet", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.route("**/api/settings/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(healthySettingsFixture) }));
+  await page.goto("/settings/");
+  const toggle = page.getByRole("button", { name: "Switch to dark theme" });
+  await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
+  await toggle.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
+test("synchronizes every visible theme control across the 1099 and 1100 transition", async ({ page }) => {
+  await page.setViewportSize({ width: 1099, height: 900 });
+  await page.route("**/api/settings/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(healthySettingsFixture) }));
+  await page.goto("/settings/");
+
+  const appearance = page.getByRole("region", { name: "Appearance" });
+  const appearanceToggle = appearance.locator(".theme-toggle");
+  await expect(appearanceToggle).toHaveAccessibleName("Switch to dark theme");
+  await appearanceToggle.click();
+  await expect(appearanceToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(appearanceToggle).toHaveAccessibleName("Switch to light theme");
+  await expect(appearanceToggle).toHaveAttribute("title", "Switch to light theme");
+
+  await page.setViewportSize({ width: 1100, height: 900 });
+  const visibleToggles = page.getByRole("button", { name: "Switch to light theme" });
+  await expect(visibleToggles).toHaveCount(2);
+  for (const toggle of await visibleToggles.all()) {
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(toggle).toHaveAttribute("title", "Switch to light theme");
+    await expect(toggle.locator("svg")).toHaveClass(/lucide-sun/);
+  }
 });
 
 test("persists an accessible keyboard theme choice", async ({ page }) => {
@@ -124,6 +252,16 @@ test("shows loading, empty, error, and success Today states with exact copy", as
   await page.reload();
   await expect(page.getByText("Nothing needs your attention right now.", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Add infographic" })).toBeVisible();
+  await expect(page.locator(".today-empty")).toHaveAttribute("data-layout", "compact");
+  await expect(page.locator(".today-empty svg.lucide-circle-check-big")).toHaveCount(1);
+  const addBox = await page.getByRole("link", { name: "Add infographic" }).boundingBox();
+  expect(addBox?.height).toBeGreaterThanOrEqual(44);
+  for (const viewport of [{ width: 390, height: 844 }, { width: 820, height: 1180 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    await expectViewportAccessibility(page);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectFocusAboveBottomNavigation(page, page.getByRole("link", { name: "Add infographic" }));
   await page.unrouteAll();
 
   await mockToday(page, "error");
@@ -133,9 +271,17 @@ test("shows loading, empty, error, and success Today states with exact copy", as
   await page.unrouteAll();
 
   await mockToday(page, "success");
+  await page.setViewportSize({ width: 1440, height: 1024 });
   await page.reload();
   await expect(page.getByText("Library 1", { exact: true })).toBeVisible();
   await expect(page.getByText("Due today 1", { exact: true })).toBeVisible();
+  await expect(page.locator(".status-row")).toHaveCSS("border-radius", "16px");
+  await expect(page.locator(".media-frame .media-canvas--thumbnail")).toHaveCount(1);
+  await expect(page.locator(".today-page")).toHaveCSS("max-width", "1280px");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".status-row")).toHaveCSS("display", "flex");
+  await expect(page.locator(".status-row")).toHaveCSS("border-radius", "0px");
+  await expect(page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).resolves.toBeTruthy();
   await expect(page.getByRole("heading", { name: "Recently added" })).toBeVisible();
   await expect(page.getByLabel("Recently added").getByRole("img", { name: "GPU memory hierarchy" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Review next" })).toBeVisible();
@@ -198,7 +344,18 @@ test("login presents the shared INF identity and a safe return to the public col
 
   await expect(page.locator(".login-page__intro")).toBeVisible();
   await expect(page.locator(".login-panel")).toBeVisible();
+  await expect(page.locator(".login-page__statement")).toHaveCSS("font-size", "30px");
+  await expect(page.locator(".login-panel")).toHaveCSS("background-color", "rgb(255, 254, 250)");
+  await expect(page.locator(".login-panel")).not.toHaveCSS("box-shadow", "none");
+  expect(await page.getByRole("heading", { name: "Sign in" }).evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(48.16, 1);
   await expect(page.getByRole("link", { name: "View public collection" })).toHaveAttribute("href", "/view/");
+  for (const viewport of [{ width: 390, height: 844 }, { width: 820, height: 1180 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    await expectViewportAccessibility(page);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectFocusAboveBottomNavigation(page, page.getByRole("button", { name: "Continue with GitHub" }));
+  await expect(page.locator(".login-page__statement")).toHaveCSS("font-size", "24px");
 });
 
 test("public View Mode exposes an admin sign-in entrypoint", async ({ page }) => {

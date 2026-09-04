@@ -2,6 +2,7 @@
 
 import { PublicInfographicSchema, type PublicInfographic } from "@inf/contracts/public";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MediaCanvas } from "../../components/ui/media-canvas";
 import { ApiClientError, apiRequest } from "../../lib/api-client";
 
 type State = "loading" | "ready" | "missing" | "error";

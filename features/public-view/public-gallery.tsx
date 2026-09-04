@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PublicCatalogPageSchema, type PublicCatalogPage, type PublicInfographic } from "@inf/contracts/public";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MediaCanvas } from "../../components/ui/media-canvas";
 import { apiRequest } from "../../lib/api-client";
 
 type State = "loading" | "ready" | "empty" | "error";

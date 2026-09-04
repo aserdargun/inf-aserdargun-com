@@ -1,6 +1,7 @@
 "use client";
 
 import type { MaterializedInfographic } from "@inf/contracts";
+import { MediaCanvas } from "../../components/ui/media-canvas";
 
 // Library tiles reuse the same 4:3 box as the rail. Render the photo at a 1.5x
 // device-pixel ratio so HiDPI screens do not request a second file later.

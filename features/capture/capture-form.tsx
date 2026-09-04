@@ -310,7 +310,7 @@ export function CaptureForm() {
     <PageHeader description="Paste, drop, or choose an image. AI suggestions appear automatically." descriptionId="capture-help" title="Add infographic" />
     <div className="capture-workspace">
       <div className="capture-workspace__media">
-        <CaptureDropzone disabled={saving} onChooseClipboard={chooseClipboard} onFile={selectFile} />
+        <CaptureDropzone compact={previewUrl !== null} disabled={saving} onChooseClipboard={chooseClipboard} onFile={selectFile} />
         {previewUrl ? <figure className="capture-preview"><img alt="Infographic preview" src={previewUrl} /><figcaption>{file?.name}</figcaption></figure> : <p aria-live="polite" className="visually-hidden">No image selected.</p>}
       </div>
       <div className="capture-workspace__details">

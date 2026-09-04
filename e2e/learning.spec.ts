@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { expectFocusAboveBottomNavigation, expectViewportAccessibility } from "./support/accessibility";
 
 const item = {
   id: "00000000-0000-4000-8000-000000000012", title: "Reviewable diagram", notes: null,  originalDriveFileId: "original", thumbnailDriveFileId: "thumbnail", sha256: "a".repeat(64), detectedMimeType: "image/png", width: 1200, height: 900,
@@ -23,6 +24,15 @@ test("surprise makes one persisted selection per intent without seen posts or re
   await page.goto("/surprise/");
   await expect(page.getByRole("img", { name: "Reviewable diagram" })).toBeVisible();
   await expect(page.locator(".surprise-page .learning-stage")).toBeVisible();
+  await expect(page.locator(".surprise-page .media-canvas--learning")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Reviewable diagram" })).toHaveCSS("object-fit", "contain");
+  for (const viewport of [{ width: 390, height: 844 }, { width: 820, height: 1180 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    await expectViewportAccessibility(page);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectFocusAboveBottomNavigation(page, page.getByRole("button", { name: "Show another" }));
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-12-surprise-desktop.png" });
   expect(surpriseCalls).toBe(1);
   await page.getByRole("button", { name: "Switch to dark theme" }).dispatchEvent("click");
@@ -72,6 +82,41 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   await page.goto("/review/");
   await expect(page.getByRole("heading", { name: "Next review" })).toBeVisible();
   await expect(page.locator(".review-page .learning-stage")).toBeVisible();
+  await expect(page.locator(".review-page .media-canvas--learning")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Reviewable diagram" })).toHaveCSS("object-fit", "contain");
+  await expect(page.locator(".rating-controls")).toHaveAttribute("data-equal-targets", "true");
+  await expect(page.getByRole("button", { name: /Again/ })).toHaveAttribute("data-rating", "again");
+  await expect(page.getByRole("button", { name: /Good/ })).toHaveAttribute("data-rating", "good");
+  for (const viewport of [{ width: 390, height: 844 }, { width: 820, height: 1180 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    await expectViewportAccessibility(page);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectFocusAboveBottomNavigation(page, page.getByRole("button", { name: /Good/ }));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const ratingControls = page.locator(".rating-controls");
+  const ratingButtons = ratingControls.locator(":scope > .button");
+  await expect.poll(() => ratingControls.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(/\s+/).length)).toBe(4);
+  const desktopTargets = await ratingButtons.evaluateAll((buttons) => buttons.map((button) => {
+    const bounds = button.getBoundingClientRect();
+    return { height: Math.round(bounds.height), width: Math.round(bounds.width) };
+  }));
+  expect(new Set(desktopTargets.map(({ width }) => width)).size).toBe(1);
+  expect(new Set(desktopTargets.map(({ height }) => height)).size).toBe(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => ratingControls.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(/\s+/).length)).toBe(2);
+  const mobileTargets = await ratingButtons.evaluateAll((buttons) => buttons.map((button) => {
+    const bounds = button.getBoundingClientRect();
+    return { height: Math.round(bounds.height), width: Math.round(bounds.width), x: Math.round(bounds.x), y: Math.round(bounds.y) };
+  }));
+  expect(new Set(mobileTargets.map(({ width }) => width)).size).toBe(1);
+  expect(new Set(mobileTargets.map(({ height }) => height)).size).toBe(1);
+  expect(mobileTargets[0]?.y).toBe(mobileTargets[1]?.y);
+  expect(mobileTargets[2]?.y).toBe(mobileTargets[3]?.y);
+  expect(mobileTargets[2]?.y).toBeGreaterThan(mobileTargets[0]?.y ?? 0);
+  expect(mobileTargets[0]?.x).toBe(mobileTargets[2]?.x);
+  expect(mobileTargets[1]?.x).toBe(mobileTargets[3]?.x);
+  await page.setViewportSize({ width: 1280, height: 720 });
   const goodButton = page.getByRole("button", { name: /Good/ });
   await goodButton.click();
   await expect.poll(() => reviewCalls).toBe(1);
@@ -87,7 +132,7 @@ test("reviews persist before advancing, supports shortcuts, and handles empty an
   await expect(saved).toBeVisible();
   await expect(saved).toHaveCSS("color", "rgb(22, 128, 106)");
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
-  await expect(saved).toHaveCSS("color", "rgb(98, 198, 174)");
+  await expect(saved).toHaveCSS("color", "rgb(103, 203, 179)");
   await expect(page.getByText("You are caught up.", { exact: true })).toBeVisible();
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-12-review-desktop.png" });
   expect(dueCalls).toBe(2);
@@ -117,11 +162,17 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   await page.route("**/api/settings/health", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...health, rawMalformedBody: "refresh_token=do-not-render" }) }));
   await page.goto("/settings/");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  const headings = await page.locator(".settings-page h2").allTextContents();
+  expect(headings.slice(0, 5)).toEqual(["Appearance", "Connection health", "Data health", "Backup and recovery", "Application details"]);
+  await expect(page.locator(".status-value--positive").first()).toContainText("Healthy");
+  await expect(page.getByRole("region", { name: "Appearance" }).getByRole("button", { name: /Switch to dark theme|Switch to light theme/ })).toBeVisible();
   await expect(page.locator(".settings-overview")).toBeVisible();
-  const healthy = page.locator(".health--ok");
+  const healthy = page.locator(".status-value--positive strong");
   await expect(healthy.first()).toHaveCSS("color", "rgb(22, 128, 106)");
-  await page.getByRole("button", { name: "Switch to dark theme" }).click();
-  await expect(healthy.first()).toHaveCSS("color", "rgb(98, 198, 174)");
+  await expect(page.getByRole("region", { name: "Public Drive" }).locator(".status-value--positive strong").first()).toHaveCSS("color", "rgb(22, 128, 106)");
+  await expect(page.getByRole("region", { name: "Data health" }).locator(".status-value--negative strong")).toHaveCSS("color", "rgb(178, 58, 58)");
+  await page.getByRole("region", { name: "Appearance" }).getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(healthy.first()).toHaveCSS("color", "rgb(103, 203, 179)");
   await expect(page.getByText("Infographics does not use AI.", { exact: true })).toBeVisible();
   const rejectedFiles = page.getByRole("list", { name: "Rejected files" });
   await expect(rejectedFiles).toHaveAccessibleName("Rejected files");
@@ -137,6 +188,12 @@ test("downloads a safe deterministic inventory and keeps Settings operational on
   expect(rejectedText[1]).toContain("newer-file");
   await expect(page.getByText("refresh_token=do-not-render", { exact: true })).toHaveCount(0);
   const button = page.getByRole("button", { name: "Export inventory JSON" });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 820, height: 1180 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    await expectViewportAccessibility(page);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectFocusAboveBottomNavigation(page, button);
   let downloadCount = 0;
   page.on("download", () => { downloadCount += 1; });
   const download = page.waitForEvent("download");
@@ -258,4 +315,19 @@ test("Settings surfaces safe export failures", async ({ page }) => {
   await page.goto("/settings/");
   await page.getByRole("button", { name: "Export inventory JSON" }).click();
   await expect(page.getByText("The inventory could not be exported. Try again.", { exact: true })).toBeVisible();
+});
+
+test("bounds Settings loading and error states with a Settings icon", async ({ page }) => {
+  await page.route("**/api/settings/health", () => new Promise(() => undefined));
+  await page.goto("/settings/");
+  await expect(page.getByText("Loading Settings…", { exact: true })).toBeVisible();
+  await expect(page.locator(".page-state")).toHaveAttribute("data-layout", "compact");
+  await expect(page.locator(".page-state svg.lucide-settings")).toHaveCount(1);
+
+  await page.unrouteAll();
+  await page.route("**/api/settings/health", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+  await page.reload();
+  await expect(page.getByText("Settings could not be loaded. Try again.", { exact: true })).toBeVisible();
+  await expect(page.locator(".page-state")).toHaveAttribute("data-layout", "compact");
+  await expect(page.locator(".page-state svg.lucide-settings")).toHaveCount(1);
 });

@@ -4,6 +4,7 @@ import { ImagePlus, Upload } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
 interface CaptureDropzoneProps {
+  compact: boolean;
   disabled?: boolean;
   onChooseClipboard: () => void;
   onFile: (file: File) => void;
@@ -16,6 +17,7 @@ export function CaptureDropzone({ disabled = false, onChooseClipboard, onFile }:
     aria-describedby="capture-help"
     aria-label="Image capture area. Paste an image, drop one here, or choose a file."
     className="capture-dropzone"
+    data-compact={compact ? "true" : "false"}
     data-testid="capture-dropzone"
     onDragOver={(event) => event.preventDefault()}
     onDrop={(event) => { event.preventDefault(); const [file] = Array.from(event.dataTransfer.files); if (file) onFile(file); }}

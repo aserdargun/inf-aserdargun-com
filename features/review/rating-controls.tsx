@@ -8,7 +8,7 @@ const ratings: Array<{ label: string; rating: ReviewRating; shortcut: string }> 
 ];
 
 export function RatingControls({ disabled, onRate }: { disabled: boolean; onRate: (rating: ReviewRating) => void }) {
-  return <div aria-label="Review ratings" className="rating-controls">{ratings.map(({ label, rating, shortcut }) => <Button disabled={disabled} key={rating} onClick={() => onRate(rating)} variant={rating === "good" ? "primary" : "secondary"}>{label}<kbd aria-label={`${label} shortcut ${shortcut}`}>{shortcut}</kbd></Button>)}</div>;
+  return <div aria-label="Review ratings" className="rating-controls" data-equal-targets="true">{ratings.map(({ label, rating, shortcut }) => <Button data-rating={rating} disabled={disabled} key={rating} onClick={() => onRate(rating)} variant={rating === "good" ? "primary" : "secondary"}>{label}<kbd aria-label={`${label} shortcut ${shortcut}`}>{shortcut}</kbd></Button>)}</div>;
 }
 
 export const ratingFromShortcut = (key: string): ReviewRating | undefined => ratings.find((rating) => rating.shortcut === key)?.rating;

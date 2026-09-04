@@ -1,5 +1,6 @@
 import { expect, test } from "playwright/test";
 import { readFileSync } from "node:fs";
+import { expectFocusAboveBottomNavigation, expectViewportAccessibility } from "./support/accessibility";
 
 const item = {
   id: "00000000-0000-4000-8000-000000000101",
@@ -60,6 +61,28 @@ test("anonymous View Mode uses only public DTO fields and APIs", async ({ page }
   await page.screenshot({ fullPage: true, path: ".superpowers/sdd/2026-08-20-inf-mvp-implementation/task-13-public-desktop.png" });
 });
 
+test("uses bounded public states and media canvases without exposing owner data", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "serviceWorker", { configurable: true, value: undefined });
+  });
+  await mockPublic(page, "empty");
+  await page.setViewportSize({ width: 1440, height: 1024 });
+  await page.goto("/view/");
+
+  const state = page.locator(".public-state");
+  await expect(state).toHaveCSS("max-width", "680px");
+  await expect(state).toHaveCSS("min-height", "0px");
+
+  await page.unrouteAll();
+  await mockPublic(page);
+  await page.reload();
+  await expect(page.locator(".public-grid .media-canvas--gallery")).toHaveCount(1);
+
+  await page.goto(`/view/${item.id}/`);
+  await expect(page.locator(".public-detail .media-canvas--detail")).toHaveCount(1);
+  await expect(page.locator("body")).not.toContainText(/Source URL|Platform|Category|Tags|favorite|review history|archive|settings/i);
+});
+
 test("public gallery and static-path detail expose safe loading, empty, error and not-found states", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(Navigator.prototype, "serviceWorker", { configurable: true, value: undefined });
@@ -91,6 +114,12 @@ test("public View Mode is responsive, keyboard reachable, and console-clean", as
   await mockPublic(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/view/");
+  for (const viewport of [{ width: 390, height: 844 }, { width: 820, height: 1180 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    await expectViewportAccessibility(page);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectFocusAboveBottomNavigation(page, page.getByRole("link", { name: "Admin sign in" }));
   await page.getByRole("link", { name: "Open GPU memory hierarchy" }).focus();
   await expect(page.getByRole("link", { name: "Open GPU memory hierarchy" })).toBeFocused();
   await expect(page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).resolves.toBeTruthy();
