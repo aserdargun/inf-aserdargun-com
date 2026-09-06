@@ -24,16 +24,16 @@ describe("public PWA contract", () => {
     expect(existsSync(faviconPath)).toBe(true);
     const { data, info } = await sharp(faviconPath).resize(16, 16).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     expect(info).toMatchObject({ width: 16, height: 16, channels: 4 });
-    let limePixels = 0;
+    let bluePixels = 0;
     let darkPixels = 0;
     for (let offset = 0; offset < data.length; offset += 4) {
       const [red, green, blue, alpha] = data.subarray(offset, offset + 4);
-      // brand lime #c8ff36 (R~200, G~255, B~54)
-      if (alpha > 192 && green > 200 && blue < 120 && red < 220) limePixels += 1;
+      // private blue #3b82f6 (R~59, G~130, B~246)
+      if (alpha > 192 && blue > 200 && green > 100 && green < 170 && red < 100) bluePixels += 1;
       // brand dark #121310 (R/G/B near 18)
       if (alpha > 192 && red < 40 && green < 40 && blue < 40) darkPixels += 1;
     }
-    expect(limePixels).toBeGreaterThan(30);
+    expect(bluePixels).toBeGreaterThan(30);
     expect(darkPixels).toBeGreaterThan(40);
   });
 
