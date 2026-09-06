@@ -1,6 +1,7 @@
 import sharp, { type Metadata } from "sharp";
 import { autoTrimBytes, type AutoTrimConfig } from "./auto-trim.js";
 import { sha256 } from "./hash.js";
+import { phoneChromeTrimBytes } from "./phone-chrome-trim.js";
 import { DISABLED_AUTO_TRIM } from "./trim-options.js";
 import {
   type ImageProcessingErrorCode,
@@ -209,6 +210,27 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
     }
   }
 
+  // Apply the phone-chrome trim BEFORE the general auto-trim. Phone
+  // screenshots (height/width >= 1.7) carry an iOS status bar at the top
+  // and a home-indicator strip at the bottom that the general per-pixel
+  // walk cannot see because the very first row of the status bar already
+  // has a few white pixels (time, battery icon). The phone-chrome pass
+  // removes a device-bezel-sized strip from the top and bottom; the
+  // general auto-trim still runs afterwards to tidy up the per-pixel
+  // edges the phone pass leaves behind.
+  const phoneChrome = await phoneChromeTrimBytes(sourceBytes, { maxPixels: validated.maxPixels });
+  if (phoneChrome) {
+    try {
+      const cropped = await sharp(sourceBytes, { limitInputPixels: validated.maxPixels })
+        .extract({ left: 0, top: phoneChrome.top, width: phoneChrome.width, height: phoneChrome.height })
+        .toBuffer();
+      sourceBytes = Buffer.from(cropped);
+    } catch {
+      // Phone-chrome extract failed; fall through and let the per-pixel
+      // trim deal with the original bytes.
+    }
+  }
+
   const trimConfig = toTrimConfig(input.trim);
   const trimResult = trimConfig.enabled
     ? await autoTrimBytes(sourceBytes, {
@@ -218,18 +240,22 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
         maxPixels: trimConfig.maxPixels,
       })
     : null;
-  // After the AI crop, the working buffer is the cropped image. The trim
-  // may shrink it further. The stored dimensions must always reflect the
-  // actual bytes that go to storage, otherwise the public catalog will
-  // report a size that does not match the file the user sees.
+  // After the AI crop and the phone-chrome pass, the working buffer is
+  // the cropped image. The trim may shrink it further. The stored
+  // dimensions must always reflect the actual bytes that go to storage,
+  // otherwise the public catalog will report a size that does not match
+  // the file the user sees.
   const postCropDimensions = aiCrop
     ? { width: aiCrop.width, height: aiCrop.height }
     : dimensions;
+  const postChromeDimensions = phoneChrome
+    ? { width: phoneChrome.width, height: phoneChrome.height }
+    : postCropDimensions;
   const originalBytes = trimResult?.bytes ?? sourceBytes;
   const storedDimensions = trimResult
     ? { width: trimResult.width, height: trimResult.height }
-    : postCropDimensions;
-  const trimApplied = !!trimResult?.trimmed;
+    : postChromeDimensions;
+  const trimApplied = !!trimResult?.trimmed || !!phoneChrome;
   const originalWidth = trimResult?.originalWidth ?? dimensions.width;
   const originalHeight = trimResult?.originalHeight ?? dimensions.height;
 

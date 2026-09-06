@@ -44,6 +44,51 @@ describe("processImage", () => {
     expect(result.height).toBeLessThanOrEqual(H - 95);
   });
 
+  it("strips a phone screenshot's status bar and home indicator when the aspect ratio is tall", async () => {
+    // Build a 1170x2532 image (iPhone 13/14 Pro dimensions) with a
+    // 132px iOS status bar and a 280px home indicator area. The capture
+    // pipeline must remove both strips even when the user has not
+    // supplied an AI crop and even when the auto-trim pass would leave
+    // the status bar alone (because the very first row of the status
+    // bar carries a few white pixels from the time / battery icon).
+    const width = 1170;
+    const height = 2532;
+    const statusBarHeight = 132;
+    const homeIndicatorHeight = 280;
+    const layers = [
+      {
+        input: await sharp({
+          create: { width, height: statusBarHeight, channels: 4, background: { r: 28, g: 28, b: 30, alpha: 1 } },
+        }).png().toBuffer(),
+        top: 0, left: 0,
+      },
+      {
+        input: await sharp({
+          create: { width, height: homeIndicatorHeight, channels: 4, background: { r: 28, g: 28, b: 30, alpha: 1 } },
+        }).png().toBuffer(),
+        top: height - homeIndicatorHeight, left: 0,
+      },
+    ];
+    const bytes = await sharp({
+      create: { width, height, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
+    })
+    .composite(layers)
+    .png()
+    .toBuffer();
+
+    const result = await processImage({ bytes, declaredMime: "image/png" });
+    // Phone chrome trim removed the top status bar (132px) and the
+    // bottom home indicator area (280px). The general auto-trim had no
+    // borders to remove afterwards, so the stored dimensions match the
+    // phone-chrome crop exactly.
+    expect(result.trimApplied).toBe(true);
+    expect(result.width).toBe(width);
+    expect(result.height).toBeLessThanOrEqual(height - statusBarHeight - homeIndicatorHeight + 2);
+    expect(result.height).toBeGreaterThanOrEqual(height - statusBarHeight - homeIndicatorHeight - 2);
+    expect(result.originalWidth).toBe(width);
+    expect(result.originalHeight).toBe(height);
+  });
+
   it("ignores a degenerate AI crop and falls back to the trim", async () => {
     const result = await processImage({ bytes: await validBytes(), declaredMime: "image/png", crop: { top: 0.5, right: 0.5, bottom: 0.2, left: 0.8 } });
     // No crash, no shrink from a malformed box
