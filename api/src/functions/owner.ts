@@ -129,7 +129,7 @@ function catalogQuery(request: RequestLike): OwnerCatalogQuery | undefined {
 }
 
 export function ownerSession(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
-  return owner(request, deps, async (_snapshot, mode) => jsonResponse({ authenticated: true, owner: deps.allowedGithubUser, mode }));
+  return authorized(request, deps, async (mode) => jsonResponse({ authenticated: true, owner: deps.allowedGithubUser, mode }));
 }
 
 export function ownerList(request: RequestLike, deps: OwnerDependencies): Promise<HttpResponse> {
@@ -163,11 +163,11 @@ export function ownerPatch(request: RequestLike, deps: OwnerDependencies): Promi
   return owner(request, deps, async (snapshot) => {
     const id = uuidPath(request, "/api/infographics/"); const item = new CatalogService(deps.events).item(snapshot, id);
     const patch = await parseJson(request, InfographicPatchSchema);
+    if (patch.archived === false) throw new AppError("INVALID_BODY", 400, "Archived infographics cannot be restored by this API");
     const metadata = Object.fromEntries(metadataKeys.filter((key) => patch[key] !== undefined).map((key) => [key, patch[key]]));
     if (Object.keys(metadata).length > 0) await deps.events.append(event(deps, "infographic.metadataUpdated", id, metadata));
     if (patch.favorite !== undefined) await deps.events.append(event(deps, "infographic.favoriteChanged", id, { favorite: patch.favorite }));
     if (patch.archived !== undefined) {
-      if (!patch.archived) throw new AppError("INVALID_BODY", 400, "Archived infographics cannot be restored by this API");
       await deps.events.append(event(deps, "infographic.archived", id, {}));
     }
     if (patch.categories !== undefined) await assignCategories(deps, item, patch.categories);

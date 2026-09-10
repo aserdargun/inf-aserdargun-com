@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { InfographicCreatedPayloadSchema, InfEventSchema, type Category, type InfEvent, type Tag } from "@inf/contracts";
+import { InfographicCreatedPayloadSchema, InfEventSchema, type Category, type Tag } from "@inf/contracts";
 import { processImage } from "../images/process-image.js";
 import { DISABLED_AUTO_TRIM, type AutoTrimConfig } from "../images/trim-options.js";
 import { EventStore } from "../storage/event-store.js";
@@ -25,9 +25,8 @@ export interface CaptureInput {
   notes?: string | null;
   /**
    * Optional taxonomy to assign in the same transaction as the create event.
-   * Categories and tags land on the new item via `infographic.categoriesAssigned`
-   * and `infographic.tagsAssigned` events, so the Library sees them on the
-   * very next read with no follow-up PATCH.
+   * Categories and tags are included in the creation event, so a failed
+   * taxonomy write cannot leave a partially published capture.
    */
   categories?: readonly Category[];
   tags?: readonly Tag[];
@@ -91,13 +90,14 @@ export class CaptureService {
     // same transaction so the Library sees them on the very next read.
     InfographicCreatedPayloadSchema.parse({ originalDriveFileId: "pending", thumbnailDriveFileId: "pending", sha256: image.sha256, detectedMimeType: image.detectedMime, width: image.width, height: image.height, title, notes: input.notes, capturedAt: timestamp, createdAt: timestamp, folderState: "Library" });
     const created: StoredFile[] = [];
+    let publicationAttempted = false;
     try {
       const original = await this.options.storage.createFile({
         name: safeFileName(input.name, `${infographicId}.image`),
         mimeType: image.detectedMime,
         parentId: this.options.libraryFolderId,
         bytes: image.originalBytes,
-        appProperties: { infSha256: image.sha256, infId: infographicId },
+        appProperties: { infSha256: image.sha256, infId: infographicId, ...(image.trimApplied ? { infTrimApplied: "1", infOriginalWidth: String(image.originalWidth), infOriginalHeight: String(image.originalHeight), infStoredWidth: String(image.width), infStoredHeight: String(image.height) } : {}) },
       });
       created.push(original);
       const thumbnail = await this.options.storage.createFile({
@@ -108,39 +108,23 @@ export class CaptureService {
         appProperties: { infSha256: image.sha256, infId: infographicId },
       });
       created.push(thumbnail);
-      const events: InfEvent[] = [];
-      events.push(InfEventSchema.parse({
+      const event = InfEventSchema.parse({
         eventId: this.uuid(), schemaVersion: 1, type: "infographic.created", occurredAt: timestamp, infographicId,
         payload: {
           originalDriveFileId: original.id, thumbnailDriveFileId: thumbnail.id, sha256: image.sha256,
           detectedMimeType: image.detectedMime, width: image.width, height: image.height, title,
           ...(input.notes !== undefined ? { notes: input.notes } : {}),
           capturedAt: timestamp, createdAt: timestamp, folderState: "Library",
+          categories: [...(input.categories ?? [])], tags: [...(input.tags ?? [])],
         },
-      }));
-      // Atomic taxonomy: when the client sends categories and/or tags with
-      // the capture (e.g. AI-suggested metadata from the Add form), we
-      // append the assignment events in the same write. This eliminates the
-      // post-capture PATCH and guarantees the new item is fully organized
-      // by the time the user lands on the Library.
-      const categories = input.categories ?? [];
-      if (categories.length > 0) {
-        events.push(InfEventSchema.parse({
-          eventId: this.uuid(), schemaVersion: 1, type: "infographic.categoriesAssigned", occurredAt: timestamp, infographicId,
-          payload: { categories: [...categories] },
-        }));
-      }
-      const tags = input.tags ?? [];
-      if (tags.length > 0) {
-        events.push(InfEventSchema.parse({
-          eventId: this.uuid(), schemaVersion: 1, type: "infographic.tagsAssigned", occurredAt: timestamp, infographicId,
-          payload: { tags: [...tags] },
-        }));
-      }
-      for (const event of events) await this.options.events.append(event);
+      });
+      // One immutable event contains the complete capture. If append reports an
+      // uncertain outcome, retain the media: the event may already be durable.
+      publicationAttempted = true;
+      await this.options.events.append(event);
       return { kind: "created", infographicId, title, original, thumbnail };
     } catch (error) {
-      await Promise.all(created.reverse().map(async (file) => { try { await this.options.storage.trashFile(file.id); } catch { /* cleanup cannot hide the primary error */ } }));
+      if (!publicationAttempted) await Promise.all(created.reverse().map(async (file) => { try { await this.options.storage.trashFile(file.id); } catch { /* cleanup cannot hide the primary error */ } }));
       throw error;
     }
     });

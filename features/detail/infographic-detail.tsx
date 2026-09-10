@@ -1,6 +1,6 @@
 "use client";
 
-import type { AiMetadataSuggestion, InfographicPatch, MaterializedInfographic, OwnerCatalogResponse } from "@inf/contracts";
+import { SessionResponseSchema, type AiMetadataSuggestion, InfographicPatch, MaterializedInfographic, OwnerCatalogResponse } from "@inf/contracts";
 import { Archive, ArrowLeft, Heart, Image as ImageIcon, LoaderCircle, Pencil, Sparkles, Star, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
@@ -99,13 +99,6 @@ export function InfographicDetail() {
   const [error, setError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editState, setEditState] = useState<EditState>({ kind: "view" });
-  // `isAdmin` is the gating flag for the Edit affordance. The detail page does
-  // not poll `/api/session` on every mount because doing so delays the
-  // read-only DOM in environments where the endpoint is slow or unmocked.
-  // Instead, we flip this lazily when the admin clicks Edit; the server-side
-  // authorizer still gates privileged mutations regardless of this flag.
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminChecked, setAdminChecked] = useState(false);
   const deleteTrigger = useRef<HTMLButtonElement>(null);
   const restoreDeleteFocus = useRef(false);
 
@@ -159,26 +152,15 @@ export function InfographicDetail() {
 
   const enterEdit = useCallback(async () => {
     if (!item) return;
-    // Lazily confirm the admin role the first time the user reaches for the
-    // Edit affordance. The check is one round trip; an anonymous visitor sees
-    // a friendly sign-in prompt instead of an Edit form they cannot save.
-    if (!adminChecked) {
-      try {
-        await apiRequest<{ authenticated: boolean; owner: string; mode: "github" | "local-bypass" }>("/api/session");
-        setIsAdmin(true);
-      } catch {
-        setIsAdmin(false);
-      } finally {
-        setAdminChecked(true);
-      }
-    }
-    if (!isAdmin && adminChecked) {
-      setError("Sign in as the owner to edit this infographic.");
+    try {
+      SessionResponseSchema.parse(await apiRequest<unknown>("/api/session"));
+    } catch {
+      setError("Owner access could not be confirmed. Sign in and try again.");
       return;
     }
     setEditState({ kind: "editing", draft: draftFromItem(item, taxonomy) });
     setError("");
-  }, [adminChecked, isAdmin, item, taxonomy]);
+  }, [item, taxonomy]);
   const cancelEdit = useCallback(() => { setEditState({ kind: "view" }); setError(""); }, []);
 
   const updateDraft = useCallback((patch: Partial<EditDraft>) => {
@@ -193,7 +175,7 @@ export function InfographicDetail() {
 
   const runAi = useCallback(async () => {
     if (!item) return;
-    if (editState.kind !== "editing" && editState.kind !== "aiError") return;
+    if (editState.kind !== "editing" && editState.kind !== "aiError" && editState.kind !== "aiReady") return;
     const base = editState.draft;
     setEditState({ kind: "aiLoading" });
     try {
@@ -234,14 +216,16 @@ export function InfographicDetail() {
     const draft = editState.draft;
     const patchBody: InfographicPatch = {};
     const trimmedTitle = draft.title.trim();
+    if (!trimmedTitle) { setError("Enter a title before saving."); return; }
+    const originalDraft = draftFromItem(item, taxonomy);
     if (trimmedTitle && trimmedTitle !== item.title) patchBody.title = trimmedTitle;
     const trimmedNotes = draft.notes.trim();
     const previousNotes = item.notes ?? "";
     if (trimmedNotes !== previousNotes) patchBody.notes = trimmedNotes ? trimmedNotes : null;
-    if (draft.category.trim()) {
-      patchBody.categories = [createTaxonomy(draft.category.trim(), taxonomy.categories)];
+    if (draft.category.trim() !== originalDraft.category) {
+      patchBody.categories = draft.category.trim() ? [createTaxonomy(draft.category.trim(), taxonomy.categories)] : [];
     }
-    if (draft.tags.trim()) {
+    if (draft.tags.trim() !== originalDraft.tags) {
       patchBody.tags = parseTagList(draft.tags, taxonomy.tags);
     }
     if (Object.keys(patchBody).length === 0) {
@@ -323,7 +307,7 @@ export function InfographicDetail() {
       </div>
     </div>
     {isEditing && editState.kind === "aiError" ? <p aria-live="polite" className="form-message form-message--error" role="status">{editState.message}</p> : null}
-    {isEditing && editState.kind === "aiReady" ? <p aria-live="polite" className="form-message form-message--success" role="status">AI drafted the fields below. Review and save.</p> : null}
+    {isEditing && editState.kind === "aiReady" ? <p aria-live="polite" className="form-message form-message--success" role="status">AI drafted the fields. Review and save.</p> : null}
     {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{error}</p> : null}
     </div>
     {deleteOpen ? <DeleteDialog deleting={busy === "delete"} onCancel={closeDialog} onConfirm={() => void remove()} title={current.title} /> : null}

@@ -206,8 +206,8 @@ describe("owner HTTP API", () => {
   test("returns deterministic surprise, due reviews, stats, and trashes files only after confirmed delete", async () => {
     const { deps, storage, events } = fixture();
     expect((await ownerSurprise(request("/api/surprise"), deps)).status).toBe(200);
-    expect(await json(await ownerDueReview(request("/api/review"), deps))).toEqual({ infographics: [] });
-    expect(await json(await ownerStats(request("/api/settings/stats"), deps))).toMatchObject({ total: 1, uncategorized: 1, due: 0 });
+    expect(await json(await ownerDueReview(request("/api/review"), deps))).toMatchObject({ infographics: [{ id: infographicId }] });
+    expect(await json(await ownerStats(request("/api/settings/stats"), deps))).toMatchObject({ total: 1, uncategorized: 1, due: 1 });
     expect((await ownerDelete(request(`/api/infographics/${infographicId}`, { method: "DELETE", body: JSON.stringify({ confirm: true }), headers: { ...authorizingHeader, "content-type": "application/json" } }), deps)).status).toBe(204);
     expect(storage.trashed.sort()).toEqual(["original", "thumbnail"]);
     expect(events.at(-1)?.type).toBe("infographic.deleted");
@@ -527,4 +527,39 @@ describe("owner HTTP API", () => {
     expect(response.status).toBe(409);
     expect(await json(response)).toMatchObject({ code: "ARCHIVED" });
   });
+});
+
+
+test("session authorization is independent of unavailable catalog storage", async () => {
+  const { deps, eventReads } = fixture();
+  deps.events.readAll = async () => { eventReads.count++; throw new Error("storage offline"); };
+  const response = await ownerSession(request("/api/session"), deps);
+  expect(response.status).toBe(200);
+  expect(eventReads.count).toBe(0);
+});
+
+test("rejects unsupported restore before appending any other patch fields", async () => {
+  const { deps, events } = fixture();
+  const response = await ownerPatch(request(`/api/infographics/${infographicId}`, {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Must not be written", favorite: true, archived: false }),
+  }), deps);
+  expect(response.status).toBe(400);
+  expect(events).toHaveLength(1);
+});
+
+test("Library count includes uncategorized items captured directly into Library", async () => {
+  const { deps } = fixture();
+  const response = await ownerStats(request("/api/settings/stats"), deps);
+  expect(await json(response)).toMatchObject({ total: 1, library: 1, uncategorized: 1 });
+});
+
+
+test("fresh captures enter the first-review queue and leave it after rating", async () => {
+  const { deps } = fixture();
+  const before = await json(await ownerDueReview(request("/api/review"), deps));
+  expect(before.infographics.map((item: { id: string }) => item.id)).toEqual([infographicId]);
+  await ownerReview(request(`/api/infographics/${infographicId}/reviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating: "good" }) }), deps);
+  const after = await json(await ownerDueReview(request("/api/review"), deps));
+  expect(after.infographics).toEqual([]);
 });

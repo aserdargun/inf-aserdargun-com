@@ -17,8 +17,8 @@ const defaultFilters: LibraryFiltersValue = { q: "", category: "", tag: "", favo
 function normalized(value: string) { return value.normalize("NFKC").trim().toLocaleLowerCase("en-US"); }
 function parsePage(value: string | null): number {
   if (value === null) return 1;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 1;
+  const parsed = /^\d+$/.test(value) ? Number(value) : 1;
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : 1;
 }
 function parseFilters(search = window.location.search): { filters: LibraryFiltersValue; page: number } {
   const params = new URLSearchParams(search);
@@ -55,6 +55,10 @@ export function LibraryPage() {
     try {
       const next = await apiRequest<OwnerCatalogResponse>(catalogUrl(nextFilters, nextPage), { signal: controller.signal });
       if (id !== requestId.current) return;
+      if (next.page !== nextPage) {
+        setPage(next.page);
+        window.history.replaceState(null, "", filterUrl(nextFilters, next.page));
+      }
       setCatalog(next); setState(next.infographics.length > 0 ? "success" : hasActiveFilters(nextFilters) || nextPage > 1 ? "no-results" : "empty");
     } catch {
       if (controller.signal.aborted || id !== requestId.current) return;
@@ -71,7 +75,7 @@ export function LibraryPage() {
     if (next < 1 || next > catalog.totalPages || next === page) return;
     setPage(next);
     window.history.pushState(null, "", filterUrl(filters, next));
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
   }, [catalog, filters, page]);
   const heading = <PageHeader description="Your organized infographics." title="Library" />;
   if (state === "loading" && !catalog) return <section className="library-page">{heading}<PageState icon={LibraryIcon} kind="loading" layout="compact" title="Loading Library…" /></section>;

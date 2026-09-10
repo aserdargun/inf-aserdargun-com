@@ -64,3 +64,57 @@ test("an early Add waits for the existing AI request and saves once", async ({ p
   expect(suggestionRequests).toBe(1);
   expect(captureRequests).toBe(1);
 });
+
+test("late AI preserves manual fields, includes the crop, and locks file selection during save", async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let capturedBody = "";
+  let suggestions = 0;
+  const crop = { top: 0.1, left: 0.1, bottom: 0.9, right: 0.9 };
+  await page.route("**/api/infographics**", (route) => {
+    if (route.request().method() === "POST") {
+      capturedBody = route.request().postDataBuffer()?.toString() ?? "";
+      return json(route, { kind: "created", infographicId: "00000000-0000-4000-8000-000000000099" }, 201);
+    }
+    return json(route, { infographics: [], categories: [], tags: [], page: 1, pageSize: 24, totalItems: 0, totalPages: 0 });
+  });
+  await page.route("**/api/infographics/suggest-metadata", async (route) => {
+    suggestions++;
+    await gate;
+    await json(route, { suggestion: { ...suggestion, crop } });
+  });
+  await page.goto("/add/");
+  await page.getByLabel("Choose infographic").setInputFiles({ name: "original.png", mimeType: "image/png", buffer: image });
+  await page.getByLabel("Title", { exact: true }).fill("My title");
+  await page.getByLabel("Category", { exact: true }).fill("My category");
+  await page.getByLabel("Notes", { exact: true }).fill("My notes");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByLabel("Choose infographic")).toBeDisabled();
+  await page.getByTestId("capture-dropzone").evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["replacement"], "replacement.png", { type: "image/png" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
+  });
+  await expect(page.locator(".capture-preview figcaption")).toHaveText("original.png");
+  release();
+  await expect(page).toHaveURL(/\/library\/$/);
+  expect(suggestions).toBe(1);
+  expect(capturedBody).toContain("My title");
+  expect(capturedBody).toContain("My category");
+  expect(capturedBody).toContain("My notes");
+  const savedCrop = capturedBody.match(/name="crop"\r\n\r\n([^\r]+)/)?.[1];
+  expect(JSON.parse(savedCrop ?? "null")).toEqual(crop);
+  expect(capturedBody).not.toContain("replacement.png");
+});
+
+test("discarding suggestions preserves manually edited text", async ({ page }) => {
+  await mockCatalog(page);
+  await page.route("**/api/infographics/suggest-metadata", (route) => json(route, { suggestion }));
+  await page.goto("/add/");
+  await page.getByLabel("Choose infographic").setInputFiles({ name: "memory.png", mimeType: "image/png", buffer: image });
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue(suggestion.title);
+  await page.getByLabel("Title", { exact: true }).fill("Keep this title");
+  await page.getByRole("button", { name: "Discard AI suggestions" }).click();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Keep this title");
+  await expect(page.getByLabel("Notes", { exact: true })).toHaveValue("");
+});

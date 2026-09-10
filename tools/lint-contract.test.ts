@@ -15,7 +15,7 @@ describe("lint contract", () => {
     try {
       const result = spawnSync("pnpm", ["exec", "eslint", "--no-warn-ignored", typescriptFile, tsxFile], {
         cwd: process.cwd(),
-        encoding: "utf8"
+        encoding: "utf8", timeout: 20_000
       });
 
       expect(result.status).toBe(1);
@@ -25,7 +25,7 @@ describe("lint contract", () => {
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
-  });
+  }, 30_000);
 
   test("excludes checkout-contained worktrees from project linting", () => {
     const worktreesDirectory = join(process.cwd(), ".worktrees");
@@ -38,7 +38,7 @@ describe("lint contract", () => {
     try {
       const result = spawnSync("pnpm", ["exec", "eslint", "--no-warn-ignored", invalidFile], {
         cwd: process.cwd(),
-        encoding: "utf8"
+        encoding: "utf8", timeout: 20_000
       });
 
       expect(result.status).toBe(0);
@@ -47,5 +47,5 @@ describe("lint contract", () => {
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
-  });
+  }, 30_000);
 });

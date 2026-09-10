@@ -41,9 +41,16 @@ export class CachedEventStore implements Pick<EventStore, "readAll" | "append"> 
   }
 
   async append(input: InfEvent): Promise<void> {
+    this.invalidate();
+    try { await this.inner.append(input); }
+    finally { this.invalidate(); }
+  }
+
+  private invalidate(): void {
     this.revision += 1;
     this.cache.delete("events:all");
-    await this.inner.append(input);
+    // A read started before or during the write cannot satisfy a later read.
+    this.pendingRead = null;
   }
 
   describe(): { hits: number; misses: number; size: number } {

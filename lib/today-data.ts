@@ -11,7 +11,7 @@ export function recentInfographics(items: readonly MaterializedInfographic[]): M
 
 /** Deleted entries are absent from the owner catalog contract; archived entries are excluded here before selecting the next review rows. */
 export function reviewNextInfographics(items: readonly MaterializedInfographic[]): MaterializedInfographic[] {
-  return [...items].filter((item) => !item.archived && item.reviewDueAt !== null).sort((left, right) => compareUtcTimestamps(left.reviewDueAt!, right.reviewDueAt!));
+  return [...items].filter((item) => !item.archived && (item.reviewDueAt !== null || item.folderState === "Library" && item.reviewCount === 0)).sort((left, right) => compareUtcTimestamps(left.reviewDueAt ?? left.capturedAt, right.reviewDueAt ?? right.capturedAt));
 }
 
 export function formatDueTiming(dueAt: string, now = new Date()): string {

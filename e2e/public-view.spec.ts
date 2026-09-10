@@ -181,3 +181,29 @@ test("home page opens the public gallery and never asks for sign-in", async ({ p
   await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
   await expect(page.locator(".public-view__admin-link")).toHaveAttribute("href", "/login/");
 });
+
+test("stalled public loading reaches a recoverable error state", async ({ page }) => {
+  await page.clock.install();
+  await page.route("**/api/public/infographics**", () => new Promise(() => undefined));
+  await page.goto("/view/");
+  await expect(page.getByText("Loading infographics…", { exact: true })).toBeVisible();
+  await page.clock.runFor(31_000);
+  await expect(page.getByText("This collection is unavailable right now.")).toBeVisible();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await mockPublic(page);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("link", { name: "Open GPU memory hierarchy" })).toBeVisible();
+});
+
+test("canonical server pagination repairs a stale deep link", async ({ page }) => {
+  await page.route("**/api/public/infographics**", (route) => {
+    const requested = Number(new URL(route.request().url()).searchParams.get("page") ?? 1);
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(publicPage([item], { page: Math.min(requested, 2), totalItems: 13, totalPages: 2 })) });
+  });
+  await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
+  await page.goto("/view/?page=999");
+  await expect(page).toHaveURL(/page=2$/);
+  await expect(page.getByLabel("Infographics pages")).toContainText("Page 2 of 2");
+  await page.getByRole("button", { name: "Previous page" }).click();
+  await expect(page.getByRole("link", { name: "Open GPU memory hierarchy" })).toBeVisible();
+});

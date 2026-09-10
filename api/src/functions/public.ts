@@ -63,9 +63,10 @@ export async function publicList(request: RequestLike, deps: PublicDependencies)
     const ordered = sortForPublic(snapshot.infographics);
     const totalItems = ordered.length;
     const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / query.pageSize);
-    const start = (query.page - 1) * query.pageSize;
+    const page = Math.min(query.page, Math.max(1, totalPages));
+    const start = (page - 1) * query.pageSize;
     const items = ordered.slice(start, start + query.pageSize).map(toPublicInfographic);
-    return jsonResponse({ items, page: query.page, pageSize: query.pageSize, totalItems, totalPages }, 200, "public");
+    return jsonResponse({ items, page, pageSize: query.pageSize, totalItems, totalPages }, 200, "public");
   } catch (error) { return errorResponse(error, "public"); }
 }
 

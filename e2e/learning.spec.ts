@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "playwright/test";
 import { expectFocusAboveBottomNavigation, expectViewportAccessibility } from "./support/accessibility";
 
@@ -7,7 +8,7 @@ const item = {
   seenCount: 0, categoryIds: [], tagIds: [], folderState: "Library", reviewCount: 0, lastReviewedAt: null, reviewDueAt: "2026-08-20T10:00:00.000Z",
 };
 
-const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Jg1cAAAAASUVORK5CYII=", "base64");
+const png = readFileSync("api/test/fixtures/valid-infographic.png");
 
 test("surprise makes one persisted selection per intent without seen posts or rerender duplicates", async ({ page }) => {
   let surpriseCalls = 0;

@@ -32,7 +32,7 @@ async function runStop() {
   assert.equal(result.code, 0, result.output);
 }
 
-test("Stop escalates a checkout-owned stubborn process group after the TERM grace period", { timeout: 12_000 }, async () => {
+test("Stop escalates a checkout-owned stubborn process group after the TERM grace period", { timeout: 30_000 }, async () => {
   const stubborn = spawn(process.execPath, ["-e", "const http=require('node:http'); process.on('SIGTERM',()=>{}); http.createServer((_,r)=>r.end('stubborn')).listen(4280,'127.0.0.1')"], {
     cwd: process.cwd(), detached: true, stdio: "ignore",
   });

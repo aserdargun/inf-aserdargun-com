@@ -20,7 +20,7 @@ export function CaptureDropzone({ compact, disabled = false, onChooseClipboard, 
     data-compact={compact ? "true" : "false"}
     data-testid="capture-dropzone"
     onDragOver={(event) => event.preventDefault()}
-    onDrop={(event) => { event.preventDefault(); const [file] = Array.from(event.dataTransfer.files); if (file) onFile(file); }}
+    onDrop={(event) => { event.preventDefault(); if (disabled) return; const [file] = Array.from(event.dataTransfer.files); if (file) onFile(file); }}
   >
     <ImagePlus aria-hidden="true" className="capture-dropzone__icon" size={64} strokeWidth={1.5} />
     <p className="capture-dropzone__hint">Paste, drop, or choose an image to capture.</p>

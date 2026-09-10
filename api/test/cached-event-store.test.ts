@@ -83,3 +83,30 @@ describe("CachedEventStore", () => {
     expect(() => new CachedEventStore(inner as never, { readAllTtlMs: 0, maxEntries: 1 })).toThrow();
   });
 });
+
+
+test("post-write reads neither join nor cache an older in-flight snapshot", async () => {
+  let release!: (events: unknown[]) => void;
+  const inner = new FakeEventStore();
+  const store = new CachedEventStore(inner as never, { readAllTtlMs: 1_000, maxEntries: 1 });
+  inner.readAll = () => new Promise((resolve) => { release = resolve; });
+  const old = store.readAll();
+  await store.append(sampleEvent);
+  inner.readAll = async () => [sampleEvent];
+  expect(await store.readAll()).toEqual([sampleEvent]);
+  release([]);
+  await old;
+  expect(await store.readAll()).toEqual([sampleEvent]);
+});
+
+test("invalidates snapshots populated while a write was in progress", async () => {
+  let finish!: () => void;
+  const inner = new FakeEventStore();
+  inner.append = () => new Promise<void>((resolve) => { finish = resolve; });
+  const store = new CachedEventStore(inner as never, { readAllTtlMs: 1_000, maxEntries: 1 });
+  const writing = store.append(sampleEvent);
+  expect(await store.readAll()).toEqual([]);
+  finish(); await writing;
+  inner.setNext([sampleEvent]);
+  expect(await store.readAll()).toEqual([sampleEvent]);
+});

@@ -336,3 +336,17 @@ describe("foldEvents", () => {
     expect(input).toEqual(before);
   });
 });
+
+
+test("legacy same-instant taxonomy survives random creation UUID order", () => {
+  const at = "2026-08-20T10:00:00.000Z";
+  const events = [
+    event("infographic.categoriesAssigned", "10000000-0000-4000-8000-000000000001", at, { categories: [CATEGORY] }),
+    event("infographic.created", "f0000000-0000-4000-8000-000000000002", at, createdPayload()),
+  ];
+  for (const order of [events, [...events].reverse()]) {
+    const result = foldEvents(order);
+    expect(result.quarantine).toEqual([]);
+    expect(result.catalog.infographics[0]?.categoryIds).toEqual([CATEGORY.id]);
+  }
+});

@@ -113,3 +113,26 @@ describe("CachedStorage", () => {
     expect(() => new CachedStorage(inner, { descentTtlMs: 1, fileTtlMs: 0, descentMaxEntries: 1, fileMaxEntries: 1 })).toThrow();
   });
 });
+
+
+test("a late ancestry result cannot repopulate the cache after a move", async () => {
+  const inner = new FakeStorage();
+  let release!: (value: boolean) => void;
+  inner.isDescendant = () => new Promise((resolve) => { release = resolve; });
+  const storage = new CachedStorage(inner, { descentTtlMs: 1_000, fileTtlMs: 1_000, descentMaxEntries: 16, fileMaxEntries: 16 });
+  const old = storage.isDescendant("file", "public");
+  await storage.moveFile("file", "public", "private");
+  release(true); await old;
+  inner.isDescendant = async () => false;
+  expect(await storage.isDescendant("file", "public")).toBe(false);
+});
+
+test("moving a parent invalidates cached ancestry for its children", async () => {
+  const inner = new FakeStorage();
+  inner.isDescendantResults.set("public:child", true);
+  const storage = new CachedStorage(inner, { descentTtlMs: 1_000, fileTtlMs: 1_000, descentMaxEntries: 16, fileMaxEntries: 16 });
+  expect(await storage.isDescendant("child", "public")).toBe(true);
+  await storage.moveFile("parent", "public", "private");
+  inner.isDescendantResults.set("public:child", false);
+  expect(await storage.isDescendant("child", "public")).toBe(false);
+});

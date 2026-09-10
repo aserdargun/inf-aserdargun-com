@@ -197,13 +197,16 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
   // to clean up the AI's pixel-level generosity. The crop is rejected when
   // it is degenerate (right<=left or bottom<=top) or when it would not
   // actually shrink the image.
-  const aiCrop = sanitizeAiCrop(input.crop, dimensions);
+  const aiCrop = (metadata.pages ?? 1) > 1 ? null : sanitizeAiCrop(input.crop, dimensions);
+  let aiCropApplied = false;
   if (aiCrop) {
     try {
       const cropped = await sharp(sourceBytes, { limitInputPixels: validated.maxPixels })
+        .rotate()
         .extract({ left: aiCrop.left, top: aiCrop.top, width: aiCrop.width, height: aiCrop.height })
         .toBuffer();
       sourceBytes = Buffer.from(cropped);
+      aiCropApplied = true;
     } catch {
       // Crop failed (e.g. animated image, format edge case); fall through
       // and let the per-pixel trim deal with the original bytes.
@@ -219,12 +222,14 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
   // general auto-trim still runs afterwards to tidy up the per-pixel
   // edges the phone pass leaves behind.
   const phoneChrome = await phoneChromeTrimBytes(sourceBytes, { maxPixels: validated.maxPixels });
+  let phoneChromeApplied = false;
   if (phoneChrome) {
     try {
       const cropped = await sharp(sourceBytes, { limitInputPixels: validated.maxPixels })
         .extract({ left: 0, top: phoneChrome.top, width: phoneChrome.width, height: phoneChrome.height })
         .toBuffer();
       sourceBytes = Buffer.from(cropped);
+      phoneChromeApplied = true;
     } catch {
       // Phone-chrome extract failed; fall through and let the per-pixel
       // trim deal with the original bytes.
@@ -240,24 +245,20 @@ export async function processImage(input: ProcessImageInput): Promise<ProcessedI
         maxPixels: trimConfig.maxPixels,
       })
     : null;
-  // After the AI crop and the phone-chrome pass, the working buffer is
-  // the cropped image. The trim may shrink it further. The stored
-  // dimensions must always reflect the actual bytes that go to storage,
-  // otherwise the public catalog will report a size that does not match
-  // the file the user sees.
-  const postCropDimensions = aiCrop
+  // Each pass contributes dimensions only when its crop actually succeeded.
+  const postCropDimensions = aiCropApplied && aiCrop
     ? { width: aiCrop.width, height: aiCrop.height }
     : dimensions;
-  const postChromeDimensions = phoneChrome
+  const postChromeDimensions = phoneChromeApplied && phoneChrome
     ? { width: phoneChrome.width, height: phoneChrome.height }
     : postCropDimensions;
   const originalBytes = trimResult?.bytes ?? sourceBytes;
   const storedDimensions = trimResult
     ? { width: trimResult.width, height: trimResult.height }
     : postChromeDimensions;
-  const trimApplied = !!trimResult?.trimmed || !!phoneChrome;
-  const originalWidth = trimResult?.originalWidth ?? dimensions.width;
-  const originalHeight = trimResult?.originalHeight ?? dimensions.height;
+  const trimApplied = aiCropApplied || phoneChromeApplied || !!trimResult?.trimmed;
+  const originalWidth = dimensions.width;
+  const originalHeight = dimensions.height;
 
   const thumbnailBytes = await makeThumbnail(originalBytes, validated.maxPixels);
   const thumbnail = await validatedThumbnailMetadata(thumbnailBytes);

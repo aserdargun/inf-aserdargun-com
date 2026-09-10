@@ -21,7 +21,7 @@ class MemoryStorage implements StoragePort {
   async listChildren() { return []; }
   async readFile(id: string) { const entry = this.files.get(id); if (!entry) throw new Error("missing"); return Buffer.from(entry.bytes); }
   async createFile(input: CreateFileInput) { const id = (input.fileId ?? `created-${this.files.size + 1}`); const file: StoredFile = { id, name: input.name, mimeType: input.mimeType, createdTime: "2026-08-27T10:00:00.000Z", parentIds: [input.parentId], appProperties: { ...(input.appProperties ?? {}) }, trashed: false }; this.files.set(id, { file, bytes: Buffer.from(input.bytes) }); return file; }
-  async moveFile() {} async trashFile() {} async findByAppProperty() { return []; } async isDescendant() { return true; }
+  async moveFile() {} async trashFile(id: string) { const entry = this.files.get(id); if (entry) entry.file.trashed = true; } async findByAppProperty() { return []; } async isDescendant() { return true; }
 }
 
 function setup(trim?: { enabled: boolean; threshold: number; minSavingsRatio: number; minDimension: number; maxPixels: number }) {
@@ -35,7 +35,7 @@ function setup(trim?: { enabled: boolean; threshold: number; minSavingsRatio: nu
     uuid: (() => { let counter = 0; return () => `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`; })(),
     trim,
   });
-  return { service, events, storage };
+  return { service, events, storage, eventStore };
 }
 
 describe("CaptureService atomic taxonomy", () => {
@@ -62,7 +62,7 @@ describe("CaptureService atomic taxonomy", () => {
     expect(metadata.height).toBe(500);
   });
 
-  test("appends infographic.created, categoriesAssigned, and tagsAssigned in a single call when capture ships AI suggestions", async () => {
+  test("publishes creation and taxonomy in one immutable event", async () => {
     const { service, events } = setup();
     const bytes = await fixtureImage();
     const category = { id: "00000000-0000-4000-8000-000000000020", displayName: "AI & Machine Learning", normalizedName: "ai & machine learning", slug: "ai-machine-learning" };
@@ -76,17 +76,8 @@ describe("CaptureService atomic taxonomy", () => {
     expect(result.infographicId).toBe("00000000-0000-4000-8000-000000000001");
     expect(result.title).toBe("Understanding LLM inference");
 
-    expect(events.map((event) => event.type)).toEqual([
-      "infographic.created",
-      "infographic.categoriesAssigned",
-      "infographic.tagsAssigned",
-    ]);
-    const created = events[0]!;
-    const categoriesAssigned = events[1]!;
-    const tagsAssigned = events[2]!;
-    expect(created.type).toBe("infographic.created");
-    expect(categoriesAssigned).toMatchObject({ type: "infographic.categoriesAssigned", infographicId: result.infographicId, payload: { categories: [category] } });
-    expect(tagsAssigned).toMatchObject({ type: "infographic.tagsAssigned", infographicId: result.infographicId, payload: { tags } });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "infographic.created", infographicId: result.infographicId, payload: { categories: [category], tags } });
 
     // Folding the events yields an infographic whose Library-ready
     // categoryIds and tagIds are populated by the same write — no PATCH
@@ -124,17 +115,21 @@ describe("CaptureService atomic taxonomy", () => {
     if (result.kind !== "created") return;
 
     const myEvents = events.filter((event) => "infographicId" in event && event.infographicId === result.infographicId);
-    expect(myEvents.map((event) => event.type)).toEqual([
-      "infographic.created",
-      "infographic.categoriesAssigned",
-      "infographic.tagsAssigned",
-    ]);
-    const assigned = myEvents.find((event) => event.type === "infographic.categoriesAssigned");
-    expect(assigned?.payload).toMatchObject({ categories: [{ id: existingId }] });
+    expect(myEvents).toHaveLength(1);
+    expect(myEvents[0]?.payload).toMatchObject({ categories: [{ id: existingId }], tags });
 
     const { foldEvents } = await import("@inf/domain");
     const folded = foldEvents(events).catalog.infographics.find((item) => item.id === result.infographicId);
     expect(folded?.categoryIds).toEqual([existingId]);
     expect(folded?.tagIds).toEqual([tags[0]!.id]);
   });
+});
+
+
+test("an uncertain creation acknowledgement never deletes published assets", async () => {
+  const { service, events, storage, eventStore } = setup();
+  eventStore.append = async (event) => { events.push(event); throw new Error("acknowledgement lost"); };
+  await expect(service.capture({ bytes: await fixtureImage(), declaredMime: "image/png", name: "retained.png" })).rejects.toThrow("acknowledgement lost");
+  expect(events).toHaveLength(1);
+  expect([...storage.files.values()].every(({ file }) => !file.trashed)).toBe(true);
 });

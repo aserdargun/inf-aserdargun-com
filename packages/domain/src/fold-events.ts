@@ -81,6 +81,9 @@ function compareEvents(left: ValidInput, right: ValidInput): number {
 
   return leftInstant.wholeSecondMilliseconds - rightInstant.wholeSecondMilliseconds
     || compareFractionalSeconds(leftInstant.fractionalSecond, rightInstant.fractionalSecond)
+    // Legacy captures emitted creation and taxonomy at the same instant.
+    // Creation must precede dependent events regardless of random UUID order.
+    || Number(right.event.type === "infographic.created") - Number(left.event.type === "infographic.created")
     || left.event.eventId.localeCompare(right.event.eventId);
 }
 
@@ -90,6 +93,8 @@ function applyCreated(state: FoldState, event: Extract<InfEvent, { type: "infogr
   }
 
   const payload = event.payload;
+  for (const category of payload.categories ?? []) state.categories.set(category.id, category);
+  for (const tag of payload.tags ?? []) state.tags.set(tag.id, tag);
   state.infographics.set(event.infographicId, {
     id: event.infographicId,
     title: payload.title,
@@ -104,11 +109,11 @@ function applyCreated(state: FoldState, event: Extract<InfEvent, { type: "infogr
     archived: false,
     createdAt: payload.createdAt,
     capturedAt: payload.capturedAt,
-    processedAt: null,
+    processedAt: payload.categories?.length ? event.occurredAt : null,
     lastSeenAt: null,
     seenCount: 0,
-    categoryIds: [],
-    tagIds: [],
+    categoryIds: (payload.categories ?? []).map(({ id }) => id),
+    tagIds: (payload.tags ?? []).map(({ id }) => id),
     folderState: payload.folderState,
     reviewCount: 0,
     lastReviewedAt: null,

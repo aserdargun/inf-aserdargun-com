@@ -27,9 +27,8 @@ export const CaptureMetadataSchema = z.strictObject({
   notes: z.string().max(10_000).nullable().optional(),
   /**
    * JSON-encoded array of {@link Category} objects. The capture service
-   * appends an `infographic.categoriesAssigned` event so the new item lands
-   * in the Library with its category in the same transaction as the create
-   * event — no follow-up PATCH is required.
+   * includes taxonomy in the creation event so the new item lands in
+   * Library fully classified — no follow-up PATCH is required.
    */
   categories: z.array(CategorySchema).optional(),
   /**

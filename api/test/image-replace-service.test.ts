@@ -33,7 +33,8 @@ class FailingStorage implements StoragePort {
     return this.inner.createFile(input);
   }
   moveFile(fileId: string, fromFolderId: string, toFolderId: string) { return this.inner.moveFile(fileId, fromFolderId, toFolderId); }
-  trashFile(fileId: string) { return this.inner.trashFile(fileId); }
+  failTrash = false;
+  trashFile(fileId: string) { if (this.failTrash) return Promise.reject(new Error("planned trash failure")); return this.inner.trashFile(fileId); }
   findByAppProperty(rootId: string, key: string, value: string) { return this.inner.findByAppProperty(rootId, key, value); }
   isDescendant(fileId: string, rootId: string) { return this.inner.isDescendant(fileId, rootId); }
 }
@@ -163,4 +164,33 @@ describe("ImageReplaceService", () => {
     const result = await f.replace.replace({ infographicId: first.infographicId, bytes: differentBytes, declaredMime: "image/png", name: "after-move.png" });
     expect(result.original.parentIds).toEqual([ids.library]);
   });
+});
+
+
+test("cleanup failure after publication preserves readable replacement media", async () => {
+  const f = await setup();
+  const bytes = await fixtureImage();
+  const first = await f.capture.capture({ bytes, declaredMime: "image/png", name: "first.png" });
+  if (first.kind !== "created") throw new Error("expected created");
+  const failing = new FailingStorage(f.local);
+  failing.failTrash = true;
+  const replacement = new ImageReplaceService({ storage: failing, events: f.events, publicRootId: ids.public, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, now: () => new Date("2026-08-26T10:00:00.000Z") });
+  const result = await replacement.replace({ infographicId: first.infographicId, bytes: Buffer.concat([bytes, Buffer.from([12])]), declaredMime: "image/png" });
+  expect(await f.local.readFile(result.infographic.originalDriveFileId)).toEqual(Buffer.concat([bytes, Buffer.from([12])]));
+  expect((await f.local.readFile(result.infographic.thumbnailDriveFileId)).length).toBeGreaterThan(0);
+});
+
+
+test("replacement order follows publication even when random UUIDs sort backwards", async () => {
+  const f = await setup();
+  const bytes = await fixtureImage();
+  const first = await f.capture.capture({ bytes, declaredMime: "image/png" });
+  if (first.kind !== "created") throw new Error("expected created");
+  let serial = 90;
+  const replacement = new ImageReplaceService({ storage: f.local, events: f.events, publicRootId: ids.public, libraryFolderId: ids.library, thumbnailsFolderId: ids.thumbnails, now: () => new Date("2026-08-25T10:00:00.000Z"), uuid: () => `00000000-0000-4000-8000-${String(serial--).padStart(12, "0")}` });
+  const second = await replacement.replace({ infographicId: first.infographicId, bytes: Buffer.concat([bytes, Buffer.from([20])]), declaredMime: "image/png" });
+  const third = await replacement.replace({ infographicId: first.infographicId, bytes: Buffer.concat([bytes, Buffer.from([21])]), declaredMime: "image/png" });
+  expect(third.infographic.originalDriveFileId).toBe(third.original.id);
+  expect(third.infographic.originalDriveFileId).not.toBe(second.original.id);
+  expect((await f.local.listChildren(ids.library)).map((entry) => entry.id)).toEqual([third.original.id]);
 });

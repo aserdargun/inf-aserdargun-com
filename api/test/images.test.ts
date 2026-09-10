@@ -241,3 +241,16 @@ describe("processImage", () => {
     expect([result.thumbnailWidth, result.thumbnailHeight]).toEqual([480, 960]);
   });
 });
+
+
+it("applies AI crop in the oriented coordinate space and records actual dimensions", async () => {
+  const bytes = await sharp({ create: { width: 120, height: 60, channels: 3, background: "red" } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+  const result = await processImage({ bytes, declaredMime: "image/jpeg", crop: { top: 0.5, left: 0, bottom: 1, right: 1 } });
+  const metadata = await sharp(result.originalBytes).metadata();
+  expect(result.trimApplied).toBe(true);
+  expect(result.originalWidth).toBe(60);
+  expect(result.originalHeight).toBe(120);
+  expect(result.width).toBe(metadata.width);
+  expect(result.height).toBe(metadata.height);
+  expect(result.height).toBeLessThan(120);
+});

@@ -54,7 +54,11 @@ export class CatalogService {
 
   due(snapshot: CatalogSnapshot, now: Date): MaterializedInfographic[] {
     const current = utcInstantFrom(now);
-    return sortDueItems(snapshot.infographics.filter((item) => !item.archived && item.reviewDueAt !== null && compareUtcInstants(utcInstantFrom(item.reviewDueAt), current) <= 0));
+    const active = snapshot.infographics.filter((item) => !item.archived && item.folderState === "Library");
+    const scheduled = sortDueItems(active.filter((item) => item.reviewDueAt !== null && compareUtcInstants(utcInstantFrom(item.reviewDueAt), current) <= 0));
+    const unseen = active.filter((item) => item.reviewDueAt === null && item.reviewCount === 0)
+      .sort((left, right) => left.capturedAt.localeCompare(right.capturedAt) || left.id.localeCompare(right.id));
+    return [...scheduled, ...unseen];
   }
 
   stats(snapshot: CatalogSnapshot, now: Date) {
@@ -62,7 +66,7 @@ export class CatalogService {
     return {
       total: items.length,
       uncategorized: items.filter((item) => !item.archived && item.categoryIds.length === 0).length,
-      library: items.filter((item) => !item.archived && item.categoryIds.length > 0).length,
+      library: items.filter((item) => !item.archived && item.folderState === "Library").length,
       archive: items.filter((item) => item.archived).length,
       due: this.due(snapshot, now).length,
       reviewed: items.reduce((total, item) => total + item.reviewCount, 0),

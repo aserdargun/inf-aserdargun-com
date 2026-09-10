@@ -22,14 +22,14 @@ function parsePageFromUrl(): number {
   if (typeof window === "undefined") return 1;
   const raw = new URLSearchParams(window.location.search).get("page");
   if (raw === null) return 1;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 1;
+  const parsed = /^\d+$/.test(raw) ? Number(raw) : 1;
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : 1;
 }
 
 function buildPageHref(page: number): string {
   // Preserve the existing query string so other filters survive pagination;
   // page is intentionally always re-written from the current value.
-  const url = new URL(typeof window === "undefined" ? "/view/" : window.location.href);
+  const url = new URL(typeof window === "undefined" ? "http://localhost/view/" : window.location.href);
   url.searchParams.delete("page");
   if (page > 1) url.searchParams.set("page", String(page));
   return `${url.pathname}${url.search}${url.hash}`;
@@ -49,6 +49,8 @@ export function PublicGallery() {
       const data = PublicCatalogPageSchema.parse(await apiRequest<unknown>(path, { signal: signal.signal }));
       if (active !== requestId.current) return;
       setPage(data);
+      setPageNumber(data.page);
+      if (data.page !== target) window.history.replaceState(null, "", buildPageHref(data.page));
       setState(data.items.length ? "ready" : data.totalItems === 0 ? "empty" : "ready");
     } catch {
       if (signal.signal.aborted || active !== requestId.current) return; setState("error");
@@ -69,7 +71,7 @@ export function PublicGallery() {
       // Update the address bar so the page is shareable; a pushState keeps the
       // browser history navigable with the back button.
       window.history.pushState({ page: next }, "", target);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
     }
     void load(next);
   }, [page, pageNumber, load]);
@@ -86,6 +88,7 @@ export function PublicGallery() {
     {state === "loading" && <p className="public-state">Loading infographics…</p>}
     {state === "empty" && <p className="public-state">No infographics are available.</p>}
     {state === "error" && <div className="public-state public-state--error"><p>This collection is unavailable right now.</p><button type="button" className="button button--secondary" onClick={() => void load(pageNumber)}>Try again</button></div>}
+    {state === "ready" && page?.items.length === 0 && <div className="public-state"><p>No infographics are on this page.</p><a className="button button--secondary" href="/view/">Back to Infographics</a></div>}
     {renderItems && page && (
       <>
         <div className="public-grid">{page.items.map((item, index) => <PublicItem item={item} key={item.id} priority={index < 6 ? "high" : "low"} />)}</div>

@@ -70,7 +70,7 @@ export class ImageReplaceService {
 
   async replace(input: ImageReplaceInput): Promise<ImageReplaceResult> {
     const image = await processImage({ ...input, trim: this.trim });
-    return withKeyedLock(`sha:${image.sha256}`, async () => {
+    return withKeyedLock(`infographic:${input.infographicId}`, () => withKeyedLock(`sha:${image.sha256}`, async () => {
       const existing = await this.options.storage.findByAppProperty(this.options.publicRootId, "infSha256", image.sha256);
       if (existing.some((file) => file.appProperties.infId && file.appProperties.infId !== input.infographicId)) {
         throw new AppError("DUPLICATE_IMAGE", 409, "This image is already in the library.");
@@ -85,8 +85,16 @@ export class ImageReplaceService {
       if (sha256FromEvents(eventStream).has(image.sha256) && !infographicShas.has(image.sha256)) {
         throw new AppError("DUPLICATE_IMAGE", 409, "This image is already in the library.");
       }
+      const catalog = new CatalogService({ readAll: async () => eventStream });
+      const current = catalog.item(await catalog.snapshot(), input.infographicId);
+      if (current.archived) throw new AppError("ARCHIVED", 409, "Archived infographics cannot be replaced");
+      const previousInstant = filterInfographicEvents(eventStream)
+        .filter((event) => event.infographicId === input.infographicId)
+        .reduce((latest, event) => Math.max(latest, Date.parse(event.occurredAt)), 0);
+      const occurredAt = new Date(Math.max(this.now().getTime(), previousInstant + 1)).toISOString();
       const created: StoredFile[] = [];
       const infographicId = input.infographicId;
+      let publicationAttempted = false;
       let original: StoredFile | undefined;
       let thumbnail: StoredFile | undefined;
       try {
@@ -117,9 +125,9 @@ export class ImageReplaceService {
           appProperties: { infSha256: image.sha256, infId: infographicId },
         });
         created.push(thumbnail);
-        const previous = await this.findCurrentAssets(eventStream, infographicId);
+        const previous = current;
         const event: InfEvent = InfEventSchema.parse({
-          eventId: this.uuid(), schemaVersion: 1, type: "infographic.imageReplaced", occurredAt: this.now().toISOString(), infographicId,
+          eventId: this.uuid(), schemaVersion: 1, type: "infographic.imageReplaced", occurredAt, infographicId,
           payload: {
             previousOriginalDriveFileId: previous.originalDriveFileId, previousThumbnailDriveFileId: previous.thumbnailDriveFileId,
             originalDriveFileId: original.id, thumbnailDriveFileId: thumbnail.id, sha256: image.sha256,
@@ -127,36 +135,22 @@ export class ImageReplaceService {
           },
         });
         InfographicImageReplacedPayloadSchema.parse(event.payload);
+        publicationAttempted = true;
         await this.options.events.append(event);
-        await this.options.storage.trashFile(previous.originalDriveFileId);
-        await this.options.storage.trashFile(previous.thumbnailDriveFileId);
+        // Once published, failures cleaning up superseded media must never
+        // trash the replacement that the catalog now references.
+        await Promise.allSettled([
+          this.options.storage.trashFile(previous.originalDriveFileId),
+          this.options.storage.trashFile(previous.thumbnailDriveFileId),
+        ]);
       } catch (error) {
-        await Promise.all(created.reverse().map(async (file) => { try { await this.options.storage.trashFile(file.id); } catch { /* cleanup cannot hide the primary error */ } }));
+        if (!publicationAttempted) await Promise.all(created.reverse().map(async (file) => { try { await this.options.storage.trashFile(file.id); } catch { /* cleanup cannot hide the primary error */ } }));
         throw error;
       }
       const snapshot = await new CatalogService(this.options.events).snapshot();
       const infographic = snapshot.infographics.find((candidate) => candidate.id === infographicId);
       if (!infographic) throw new AppError("NOT_FOUND", 404, "Infographic was not found after replace");
       return { infographic, original, thumbnail };
-    });
-  }
-
-  private async findCurrentAssets(events: readonly unknown[], infographicId: string): Promise<{ originalDriveFileId: string; thumbnailDriveFileId: string }> {
-    const sorted = filterInfographicEvents(events)
-      .filter((event) => event.infographicId === infographicId)
-      .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId));
-    let originalDriveFileId: string | undefined;
-    let thumbnailDriveFileId: string | undefined;
-    for (const event of sorted) {
-      if (event.type === "infographic.created") {
-        originalDriveFileId = event.payload.originalDriveFileId;
-        thumbnailDriveFileId = event.payload.thumbnailDriveFileId;
-      } else if (event.type === "infographic.imageReplaced") {
-        originalDriveFileId = event.payload.originalDriveFileId;
-        thumbnailDriveFileId = event.payload.thumbnailDriveFileId;
-      }
-    }
-    if (!originalDriveFileId || !thumbnailDriveFileId) throw new AppError("INTEGRITY", 500, "Cannot locate current Drive assets to replace");
-    return { originalDriveFileId, thumbnailDriveFileId };
+    }));
   }
 }

@@ -26,6 +26,7 @@ export interface CachedStorageOptions {
 export class CachedStorage implements StoragePort {
   private readonly descent: LruCache<boolean>;
   private readonly files: LruCache<Buffer>;
+  private revision = 0;
 
   constructor(private readonly inner: StoragePort, options: CachedStorageOptions) {
     if (options.descentTtlMs <= 0 || options.fileTtlMs <= 0) throw new Error("CachedStorage TTLs must be positive.");
@@ -38,8 +39,9 @@ export class CachedStorage implements StoragePort {
   async readFile(fileId: string): Promise<Buffer> {
     const cached = this.files.get(fileId);
     if (cached) return cached;
+    const revision = this.revision;
     const value = await this.inner.readFile(fileId);
-    this.files.set(fileId, value);
+    if (revision === this.revision) this.files.set(fileId, value);
     return value;
   }
 
@@ -50,13 +52,15 @@ export class CachedStorage implements StoragePort {
   }
 
   async moveFile(fileId: string, fromFolderId: string, toFolderId: string): Promise<void> {
-    await this.inner.moveFile(fileId, fromFolderId, toFolderId);
     this.invalidateForFile(fileId);
+    try { await this.inner.moveFile(fileId, fromFolderId, toFolderId); }
+    finally { this.invalidateForFile(fileId); }
   }
 
   async trashFile(fileId: string): Promise<void> {
-    await this.inner.trashFile(fileId);
     this.invalidateForFile(fileId);
+    try { await this.inner.trashFile(fileId); }
+    finally { this.invalidateForFile(fileId); }
   }
 
   async findByAppProperty(rootId: string, key: string, value: string): Promise<StoredFile[]> {
@@ -67,8 +71,9 @@ export class CachedStorage implements StoragePort {
     const key = `desc:${rootId}:${fileId}`;
     const cached = this.descent.get(key);
     if (cached !== undefined) return cached;
+    const revision = this.revision;
     const value = await this.inner.isDescendant(fileId, rootId);
-    this.descent.set(key, value);
+    if (revision === this.revision) this.descent.set(key, value);
     return value;
   }
 
@@ -81,7 +86,9 @@ export class CachedStorage implements StoragePort {
   }
 
   private invalidateForFile(fileId: string): void {
+    this.revision += 1;
     this.files.delete(fileId);
-    this.descent.invalidateWhere((key) => key.endsWith(`:${fileId}`));
+    // A moved folder can change the ancestry of every cached descendant.
+    this.descent.clear();
   }
 }

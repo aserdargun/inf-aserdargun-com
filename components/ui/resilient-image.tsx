@@ -15,7 +15,11 @@ function retryUrl(src: string): string {
 }
 
 /** Retries a transient media failure once, including failures that happen before hydration. */
-export function ResilientImage({ alt, fallbackLabel, fallbackText, src, ...props }: ResilientImageProps) {
+export function ResilientImage(props: ResilientImageProps) {
+  return <ImageAttempt key={props.src} {...props} />;
+}
+
+function ImageAttempt({ alt, fallbackLabel, fallbackText, src, ...props }: ResilientImageProps) {
   const [attempt, setAttempt] = useState<0 | 1>(0);
   const [failed, setFailed] = useState(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

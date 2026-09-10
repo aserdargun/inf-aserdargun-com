@@ -30,6 +30,9 @@ export const InfographicCreatedPayloadSchema = z.object({
   capturedAt: UtcDateTimeSchema,
   createdAt: UtcDateTimeSchema,
   folderState: DriveFolderStateSchema,
+  // Optional for compatibility with existing events; new captures publish taxonomy atomically.
+  categories: z.array(CategorySchema).optional(),
+  tags: z.array(TagSchema).optional(),
 });
 
 export const InfographicMetadataUpdatedPayloadSchema = z.object({

@@ -1,7 +1,7 @@
 "use client";
 
 import type { DueReviewResponse, MaterializedInfographic, ReviewRating } from "@inf/contracts";
-import Image from "next/image";
+import { ResilientImage } from "../../components/ui/resilient-image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MediaCanvas } from "../../components/ui/media-canvas";
 import { PageHeader } from "../../components/ui/page-header";
@@ -43,7 +43,7 @@ export function ReviewPage() {
   }, []);
 
   const rate = useCallback(async (rating: ReviewRating) => {
-    if (!item || savingRef.current) return;
+    if (state !== "success" || !item || savingRef.current) return;
     savingRef.current = true; setSaving(true); setMessage("Saving review…");
     try {
       await apiRequest(`/api/infographics/${item.id}/reviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating }) });
@@ -52,7 +52,7 @@ export function ReviewPage() {
       await load();
     } catch { setMessage("The review could not be saved. Try again."); }
     finally { savingRef.current = false; setSaving(false); }
-  }, [item, load]);
+  }, [item, load, state]);
 
   useEffect(() => {
     if (deferredAbort.current !== null) { window.clearTimeout(deferredAbort.current); deferredAbort.current = null; }
@@ -69,5 +69,5 @@ export function ReviewPage() {
     window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown);
   }, [item, rate]);
 
-  return <div className="learning-page review-page"><PageHeader title="Review" /><p aria-live="polite" className={`review-announcement${message.includes("could not") ? " error-copy" : ""}`}>{message}</p>{state === "loading" ? <PageState kind="loading" layout="stage" title={saving ? "Saving review…" : "Loading next review…"} /> : null}{state === "error" ? <PageState action={<RetryButton onRetry={() => void load()} />} kind="error" layout="stage" title="The review could not be loaded. Try again." /> : null}{state === "empty" ? <PageState action={<a className="button button--primary" href={routes.today}>Back to Today</a>} description="No reviews are due right now." kind="empty" layout="stage" title="You are caught up." /> : null}{state === "success" && item ? <section className="review-card learning-stage"><h2>Next review</h2><MediaCanvas className="learning-media" variant="learning"><Image alt={item.title} fill priority sizes="(max-width: 767px) calc(100vw - 40px), min(900px, 70vw)" src={`/api/public/images/${item.originalDriveFileId}`} /></MediaCanvas><h3>{item.title}</h3><p>Do you remember the main idea of this infographic?</p><RatingControls disabled={saving} onRate={rate} /></section> : null}</div>;
+  return <div className="learning-page review-page"><PageHeader title="Review" /><p aria-live="polite" className={`review-announcement${message.includes("could not") ? " error-copy" : ""}`}>{message}</p>{state === "loading" ? <PageState kind="loading" layout="stage" title={saving ? "Saving review…" : "Loading next review…"} /> : null}{state === "error" ? <PageState action={<RetryButton onRetry={() => void load()} />} kind="error" layout="stage" title="The review could not be loaded. Try again." /> : null}{state === "empty" ? <PageState action={<a className="button button--primary" href={routes.today}>Back to Today</a>} description="No reviews are due right now." kind="empty" layout="stage" title="You are caught up." /> : null}{state === "success" && item ? <section className="review-card learning-stage"><h2>Next review</h2><MediaCanvas className="learning-media" variant="learning"><ResilientImage alt={item.title} fallbackLabel={`${item.title} image unavailable`} fallbackText="Image unavailable" decoding="async" fetchPriority="high" style={{ position: "absolute", inset: 0 }} sizes="(max-width: 767px) calc(100vw - 40px), min(900px, 70vw)" src={`/api/public/images/${item.originalDriveFileId}`} /></MediaCanvas><h3>{item.title}</h3><p>Do you remember the main idea of this infographic?</p><RatingControls disabled={saving} onRate={rate} /></section> : null}</div>;
 }

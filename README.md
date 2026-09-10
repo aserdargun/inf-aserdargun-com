@@ -19,12 +19,12 @@ Run uses loopback-only ports: Next 3000, Functions 7071, a private local API cap
 
 ## Auto-trim on capture
 
-Pasting or dropping a screenshot on the Add page usually carries solid margins around the content. The API auto-trims those margins before storing the file so the original and its thumbnail reflect the content's tight bounding box. The trim is server-side and silent: the user sees the same capture flow, and the original Drive file records the pre-trim dimensions for transparency.
+Pasting or dropping a screenshot on the Add page usually carries solid margins around the content. The API auto-trims those margins before storing the file so the original and its thumbnail reflect the content's tight bounding box. The trim runs on the server: the user sees the same capture flow, and the original Drive file records the pre-trim dimensions for transparency.
 
 - Default is on. Disable with `INF_AUTO_TRIM_SCREENSHOTS=false` (also `0`/`off`/`no`).
 - Background is sampled from the corners and four edges (transparent corner → alpha canvas). The trim is skipped if the savings fall below `INF_AUTO_TRIM_MIN_SAVINGS` (default 0.02 = 2% of pixels).
 - The trim runs for the **capture** and **image replace** flows. Existing Drive files are never rewritten automatically.
-- Failed trims return the input unchanged; the saved file is never smaller or more lossy than the user uploaded.
+- Failed trims preserve the working image. AI cropping and auto-trim can reduce dimensions and re-encode the image; the stored dimensions and pre-trim metadata describe the actual result.
 
 ## Drive and recovery
 
@@ -70,6 +70,12 @@ node scripts/google-drive-release.mjs verify-backup --backup "$BACKUP" --scratch
 ```
 
 ## PWA and deployment
+
+New Library items enter the first-review queue automatically. Rating an item schedules its next review; overdue scheduled items take priority over first reviews.
+
+Capture publishes image references, category, and tags in one immutable creation event. Existing split taxonomy events remain readable. If an event write has an uncertain outcome, uploaded media is retained for recovery rather than risking deletion of published files. Failed cleanup of superseded images also preserves the current replacement.
+
+Client reads time out after 30 seconds; writes and AI suggestions have 120 seconds. A timed-out write asks the owner to check the result before retrying.
 
 The PWA caches a bounded public read experience only. It does not queue offline writes, synchronize in the background, or make private content offline-safe.
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { AiMetadataSuggestionSchema } from "@inf/contracts";
 import { Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -88,6 +89,9 @@ export function CaptureForm() {
   const currentUrl = useRef<string | null>(null);
   const isSubmitting = useRef(false);
   const requestToken = useRef(0);
+  const suggestionController = useRef<AbortController | null>(null);
+  const editedFields = useRef(new Set<FieldKey>());
+  const appliedFields = useRef(new Map<FieldKey, string>());
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<CaptureError | ApiErrorMessage | null>(null);
@@ -99,7 +103,7 @@ export function CaptureForm() {
   // a non-null crop, consumed by performSave so the server can crop the
   // uploaded bytes to the tight content rectangle before the per-pixel
   // auto-trim runs. Stays null when the AI does not produce a crop.
-  const [aiCrop, setAiCrop] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null);
+  const aiCrop = useRef<{ top: number; right: number; bottom: number; left: number } | null>(null);
   const suggestionRequestRef = useRef<Promise<AiResolution | null> | null>(null);
 
   const setFieldValue = useCallback((name: FieldKey, value: string) => {
@@ -110,24 +114,32 @@ export function CaptureForm() {
   }, []);
 
   const clearSuggestion = useCallback(() => {
+    if (isSubmitting.current) return;
     requestToken.current += 1;
+    suggestionController.current?.abort();
     suggestionRequestRef.current = null;
     setAiStatus({ kind: "idle" });
-    setAiCrop(null);
-    for (const key of fieldKeys) setFieldValue(key, "");
+    aiCrop.current = null;
+    for (const key of appliedFields.current.keys()) {
+      if (!editedFields.current.has(key)) setFieldValue(key, "");
+    }
+    appliedFields.current.clear();
   }, [setFieldValue]);
 
   const requestSuggestion = useCallback(async (nextFile: File): Promise<AiResolution | null> => {
+    suggestionController.current?.abort();
+    const controller = new AbortController();
+    suggestionController.current = controller;
     const token = ++requestToken.current;
     setAiStatus({ kind: "loading" });
     const form = new FormData();
     form.append("file", nextFile, nextFile.name);
-    const catalogPromise = apiRequest<{ categories: TaxonomyEntry[]; tags: TaxonomyEntry[] }>("/api/infographics")
+    const catalogPromise = apiRequest<{ categories: TaxonomyEntry[]; tags: TaxonomyEntry[] }>("/api/infographics", { signal: controller.signal })
       .catch(() => null);
     try {
-      const data = await apiRequest<{ suggestion: AiSuggestion }>("/api/infographics/suggest-metadata", { method: "POST", body: form });
+      const data = await apiRequest<{ suggestion: AiSuggestion }>("/api/infographics/suggest-metadata", { method: "POST", body: form, signal: controller.signal });
       if (token !== requestToken.current) return null;
-      const { suggestion } = data;
+      const suggestion = AiMetadataSuggestionSchema.parse(data.suggestion);
       // Stash the AI-suggested crop so performSave can ship it to the server.
       // A fresh file or a manual clear of the suggestion must also clear the
       // crop, otherwise a stale box from a previous image would be applied
@@ -136,26 +148,31 @@ export function CaptureForm() {
         const c = suggestion.crop as { top?: unknown; right?: unknown; bottom?: unknown; left?: unknown };
         const values = [c.top, c.right, c.bottom, c.left];
         if (values.every((v) => typeof v === "number" && Number.isFinite(v))) {
-          setAiCrop({ top: c.top as number, right: c.right as number, bottom: c.bottom as number, left: c.left as number });
+          aiCrop.current = { top: c.top as number, right: c.right as number, bottom: c.bottom as number, left: c.left as number };
         } else {
-          setAiCrop(null);
+          aiCrop.current = null;
         }
       } else {
-        setAiCrop(null);
+        aiCrop.current = null;
       }
       const applied: FieldKey[] = [];
-      if (suggestion.title) { setFieldValue("title", suggestion.title); applied.push("title"); }
-      if (suggestion.notes) { setFieldValue("notes", suggestion.notes); applied.push("notes"); }
-      if (suggestion.category) { setFieldValue("category", suggestion.category); applied.push("category"); }
+      const applyField = (key: FieldKey, value: string) => {
+        if (editedFields.current.has(key)) return;
+        setFieldValue(key, value);
+        appliedFields.current.set(key, value);
+      };
+      if (suggestion.title) { applyField("title", suggestion.title); applied.push("title"); }
+      if (suggestion.notes) { applyField("notes", suggestion.notes); applied.push("notes"); }
+      if (suggestion.category) { applyField("category", suggestion.category); applied.push("category"); }
       if (Array.isArray(suggestion.topics) && suggestion.topics.length > 0) {
         const topicText = suggestion.topics.map((topic) => topic.normalize("NFKC").trim()).filter(Boolean).join(", ");
-        if (topicText) { setFieldValue("tags", topicText); applied.push("tags"); }
+        if (topicText) { applyField("tags", topicText); applied.push("tags"); }
       } else if (suggestion.category) {
         // Fallback: when the AI does not suggest any topics, seed the tags
         // input with the category label so the form is never empty and the
         // server still receives a `tagsAssigned` event. The user can edit
         // the field before saving if they want something more specific.
-        setFieldValue("tags", suggestion.category); applied.push("tags");
+        applyField("tags", suggestion.category); applied.push("tags");
       }
       let categories: readonly TaxonomyEntry[] = [];
       let tags: readonly TaxonomyEntry[] = [];
@@ -176,7 +193,7 @@ export function CaptureForm() {
         setAiStatus({ kind: "error", message: "The image was analysed but no fields could be suggested. You can still fill them manually." });
         return null;
       } else {
-        const normalizedSuggestion = { ...suggestion, topics: suggestion.topics ?? [] };
+        const normalizedSuggestion = { ...suggestion, topics: suggestion.topics ?? [], crop: suggestion.crop ?? null };
         setAiStatus({ kind: "ready", suggestion: normalizedSuggestion });
         return { suggestion: normalizedSuggestion, categories, tags };
       }
@@ -209,6 +226,7 @@ export function CaptureForm() {
   }, [requestSuggestion]);
 
   const selectFile = useCallback((nextFile: File) => {
+    if (isSubmitting.current) return;
     if (!supportedImageMimes.has(nextFile.type)) { setError("Choose an image file."); return; }
     if (nextFile.size > MAX_IMAGE_BYTES) { setError("This image is too large. Choose an image up to 20 MB."); return; }
     const nextUrl = URL.createObjectURL(nextFile);
@@ -217,12 +235,18 @@ export function CaptureForm() {
     setFile(nextFile);
     setPreviewUrl(nextUrl);
     setError(null);
+    editedFields.current.clear();
+    appliedFields.current.clear();
     for (const key of fieldKeys) setFieldValue(key, "");
     // Drop any crop from a previous capture; the new AI run will replace it.
-    setAiCrop(null);
+    aiCrop.current = null;
     void beginSuggestion(nextFile);
   }, [beginSuggestion, setFieldValue]);
-  useEffect(() => () => { if (currentUrl.current) URL.revokeObjectURL(currentUrl.current); }, []);
+  useEffect(() => () => {
+    requestToken.current += 1;
+    suggestionController.current?.abort();
+    if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+  }, []);
   const rejectClipboard = useCallback(() => setError("Choose an image file."), []);
   const chooseClipboard = useClipboardImage({ onImage: selectFile, onReject: rejectClipboard });
 
@@ -237,8 +261,14 @@ export function CaptureForm() {
     const form = formRef.current;
     const categoryInput = form?.elements.namedItem("category") as HTMLInputElement | null;
     const tagsInput = form?.elements.namedItem("tags") as HTMLInputElement | null;
+    // Finish the current suggestion before taking the immutable save snapshot.
+    const pending = suggestionRequestRef.current;
+    const pendingResult = pending ? await pending : null;
+    const categories = pendingResult?.categories ?? knownCategories;
+    const resolvedTags = pendingResult?.tags ?? knownTags;
     const typedCategory = categoryInput?.value.trim() ?? "";
-    if (typedCategory) return { category: typedCategory, tags: tagsInput?.value.trim() ?? "", categories: knownCategories, knownTags };
+    if (typedCategory) return { category: typedCategory, tags: tagsInput?.value.trim() ?? "", categories, knownTags: resolvedTags };
+    if (pending) return null;
     if (aiStatus.kind === "ready" && aiStatus.suggestion.category) {
       const typedTags = tagsInput?.value.trim() ?? "";
       // When the AI offered no topics, fall back to the category label so the
@@ -278,8 +308,8 @@ export function CaptureForm() {
       if (notesValue.trim()) data.append("notes", notesValue.trim());
     }
     // Atomic capture: send the AI-suggested (or manually typed) category and
-    // tags together with the image so the server can append the create,
-    // categoriesAssigned, and tagsAssigned events in a single transaction.
+    // tags together with the image so the server can publish all of them
+    // in one immutable creation event.
     // No follow-up PATCH is needed and there is no race between the create
     // response and the library's next read.
     const categoryPayload = ensured.category ? [createCategory(ensured.category, ensured.categories)] : [];
@@ -288,7 +318,7 @@ export function CaptureForm() {
       const tags = parseTagList(ensured.tags, ensured.knownTags);
       if (tags.length > 0) data.append("tags", JSON.stringify(tags));
     }
-    if (aiCrop) data.append("crop", JSON.stringify(aiCrop));
+    if (aiCrop.current) data.append("crop", JSON.stringify(aiCrop.current));
 
     try {
       const response = await apiRequest<CaptureResponse>("/api/infographics", { method: "POST", body: data });
@@ -317,7 +347,12 @@ export function CaptureForm() {
     void performSave();
   };
 
-  return <form ref={formRef} className="capture-form" onSubmit={handleSave}>
+  return <form ref={formRef} className="capture-form" onInput={(event) => {
+    const target = event.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      if (fieldKeys.includes(target.name as FieldKey)) editedFields.current.add(target.name as FieldKey);
+    }
+  }} onSubmit={handleSave}>
     <PageHeader description="Paste, drop, or choose an image. AI suggestions appear automatically." descriptionId="capture-help" title="Add infographic" />
     <div className="capture-workspace" data-state={previewUrl ? "selected" : "empty"}>
       <div className="capture-workspace__media">
@@ -325,12 +360,12 @@ export function CaptureForm() {
         {previewUrl ? <figure className="capture-preview"><img alt="Infographic preview" src={previewUrl} /><figcaption>{file?.name}</figcaption></figure> : <p aria-live="polite" className="visually-hidden">No image selected.</p>}
       </div>
       <div className="capture-workspace__details">
-        <AiStatusBanner status={aiStatus} onClear={clearSuggestion} onRetry={retryAi} />
-        <section aria-labelledby="optional-details-title" className="capture-details"><h2 id="optional-details-title">Optional details</h2>
-          <label>Title<input maxLength={200} name="title" /></label>
-          <label>Category<input autoComplete="off" maxLength={80} name="category" placeholder="e.g. AI & Machine Learning" /></label>
-          <label>Tags<input autoComplete="off" maxLength={500} name="tags" placeholder="memory, cuda" /></label>
-          <label>Notes<textarea maxLength={10000} name="notes" rows={4} /></label>
+        <AiStatusBanner disabled={saving} status={aiStatus} onClear={clearSuggestion} onRetry={retryAi} />
+        <section aria-labelledby="optional-details-title" className="capture-details"><h2 id="optional-details-title">Details</h2>
+          <label>Title<input disabled={saving} maxLength={200} name="title" /></label>
+          <label>Category<input disabled={saving} autoComplete="off" maxLength={80} name="category" placeholder="e.g. AI & Machine Learning" /></label>
+          <label>Tags<input disabled={saving} autoComplete="off" maxLength={500} name="tags" placeholder="memory, cuda" /></label>
+          <label>Notes<textarea disabled={saving} maxLength={10000} name="notes" rows={4} /></label>
         </section>
         {error ? <p aria-live="polite" className="form-message form-message--error" role="status">{typeof error === "string" ? error : error.message}</p> : null}
         <div className="capture-form__actions">
@@ -349,7 +384,7 @@ export function CaptureForm() {
   </form>;
 }
 
-function AiStatusBanner({ status, onClear, onRetry }: { status: AiStatus; onClear: () => void; onRetry?: () => void }) {
+function AiStatusBanner({ status, onClear, onRetry, disabled = false }: { disabled?: boolean; status: AiStatus; onClear: () => void; onRetry?: () => void }) {
   if (status.kind === "idle") return null;
   if (status.kind === "loading") {
     return <div aria-live="polite" className="ai-banner ai-banner--loading" role="status"><Sparkles aria-hidden="true" size={18} strokeWidth={1.75} /><span>Reading the image and drafting metadata…</span></div>;
@@ -360,7 +395,7 @@ function AiStatusBanner({ status, onClear, onRetry }: { status: AiStatus; onClea
       .filter((value) => typeof value === "string" && value.trim().length > 0).length;
     const ratio = Math.round((suggestion.confidence ?? 0) * 100);
     const headline = suggestion.category
-      ? <>AI suggested {filled} field{filled === 1 ? "" : "s"} (will use <strong>{suggestion.category}</strong>).</>
+      ? <>AI suggested {filled} field{filled === 1 ? "" : "s"} (category: <strong>{suggestion.category}</strong>).</>
       : <>AI suggested {filled} field{filled === 1 ? "" : "s"}.</>;
     return <div aria-live="polite" className="ai-banner ai-banner--ready" role="status">
       <Sparkles aria-hidden="true" size={18} strokeWidth={1.75} />
@@ -369,7 +404,7 @@ function AiStatusBanner({ status, onClear, onRetry }: { status: AiStatus; onClea
         {suggestion.rationale ? <span>{suggestion.rationale}</span> : null}
         <span className="ai-banner__meta">confidence {ratio}%</span>
       </div>
-      <button aria-label="Discard AI suggestions" className="ai-banner__dismiss" onClick={onClear} type="button"><X aria-hidden="true" size={16} strokeWidth={1.75} /></button>
+      <button disabled={disabled} aria-label="Discard AI suggestions" className="ai-banner__dismiss" onClick={onClear} type="button"><X aria-hidden="true" size={16} strokeWidth={1.75} /></button>
     </div>;
   }
   return <div aria-live="polite" className="ai-banner ai-banner--error" role="status">
@@ -379,6 +414,6 @@ function AiStatusBanner({ status, onClear, onRetry }: { status: AiStatus; onClea
       <span>{status.message}</span>
       {onRetry ? <div className="ai-banner__actions"><button className="button button--quiet" onClick={onRetry} type="button">Try again</button></div> : null}
     </div>
-    <button aria-label="Dismiss AI suggestion status" className="ai-banner__dismiss" onClick={onClear} type="button"><X aria-hidden="true" size={16} strokeWidth={1.75} /></button>
+    <button disabled={disabled} aria-label="Dismiss AI suggestion status" className="ai-banner__dismiss" onClick={onClear} type="button"><X aria-hidden="true" size={16} strokeWidth={1.75} /></button>
   </div>;
 }

@@ -359,3 +359,33 @@ test("paginates the Library, syncs the URL, resets on filter change, and clamps 
   await expect(page.getByRole("link", { name: "Open Second page item" })).toBeVisible();
   await expect(page.locator(".library-pager")).toContainText("Page 2 of 2");
 });
+
+test("failed owner verification keeps editing closed and permits retry", async ({ page }) => {
+  await mockLibrary(page);
+  let authorized = false;
+  await page.route("**/api/session", (route) => route.fulfill({ status: authorized ? 200 : 401, contentType: "application/json", body: JSON.stringify(authorized ? { authenticated: true, owner: "aserdargun", mode: "github" } : {}) }));
+  await page.goto(`/infographic/${item.id}`);
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.getByText("Owner access could not be confirmed. Sign in and try again.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  authorized = true;
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
+});
+
+test("clearing taxonomy sends empty assignments and title-only edits preserve taxonomy", async ({ page }) => {
+  const mock = await mockLibrary(page);
+  await page.route("**/api/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ authenticated: true, owner: "aserdargun", mode: "github" }) }));
+  await page.goto(`/infographic/${item.id}`);
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Renamed infographic");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  expect(mock.patches).toEqual([{ title: "Renamed infographic" }]);
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Category", { exact: true }).fill("");
+  await page.getByLabel("Tags", { exact: true }).fill("");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  expect(mock.patches.at(-1)).toEqual({ categories: [], tags: [] });
+});

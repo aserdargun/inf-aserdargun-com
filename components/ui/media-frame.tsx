@@ -1,4 +1,6 @@
-import Image from "next/image";
 import { MediaCanvas } from "./media-canvas";
-interface MediaFrameProps { alt: string; caption: string; date: string; src: string; }
-export function MediaFrame({ alt, caption, date, src }: MediaFrameProps) { return <figure className="media-frame"><MediaCanvas className="media-frame__image" variant="thumbnail"><Image alt={alt} fill sizes="(max-width: 767px) 80vw, 25vw" src={src} /></MediaCanvas><figcaption><strong>{caption}</strong><span>{date}</span></figcaption></figure>; }
+import { ResilientImage } from "./resilient-image";
+interface MediaFrameProps { alt: string; caption: string; date: string; src: string; href: string; }
+export function MediaFrame({ alt, caption, date, src, href }: MediaFrameProps) {
+  return <a aria-label={`Open ${caption}`} href={href}><figure className="media-frame"><MediaCanvas className="media-frame__image" variant="thumbnail"><ResilientImage alt={alt} decoding="async" fallbackLabel={`${alt} preview unavailable`} fallbackText="Preview unavailable" src={src} /></MediaCanvas><figcaption><strong>{caption}</strong><span>{date}</span></figcaption></figure></a>;
+}
