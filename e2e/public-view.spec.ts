@@ -2,6 +2,9 @@ import { expect, test } from "playwright/test";
 import { readFileSync } from "node:fs";
 import { expectFocusAboveBottomNavigation, expectViewportAccessibility } from "./support/accessibility";
 
+// Mocked HTTP responses must stay under Playwright routing control.
+test.use({ serviceWorkers: "block" });
+
 const item = {
   id: "00000000-0000-4000-8000-000000000101",
   title: "GPU memory hierarchy",
