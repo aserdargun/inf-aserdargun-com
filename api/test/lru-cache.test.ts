@@ -2,6 +2,16 @@ import { describe, expect, test } from "vitest";
 import { LruCache } from "../src/cache/lru-cache.js";
 
 describe("LruCache", () => {
+  test("preserves access order within one clock tick and on replacement", () => {
+    const cache = new LruCache<string>({ maxEntries: 2, defaultTtlMs: 1000, now: () => 0 });
+    cache.set("a", "a"); cache.set("b", "b");
+    cache.get("a"); cache.set("c", "c");
+    expect(cache.get("b")).toBeUndefined();
+    expect(cache.get("a")).toBe("a");
+    cache.set("c", "updated"); cache.set("d", "d");
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("c")).toBe("updated");
+  });
   test("returns undefined for missing keys and tracks misses", () => {
     const cache = new LruCache<string>({ maxEntries: 4, defaultTtlMs: 1_000 });
     expect(cache.get("missing")).toBeUndefined();

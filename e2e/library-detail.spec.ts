@@ -263,6 +263,41 @@ test("keeps pending delete focus anchored until successful navigation", async ({
   await expect(dialog).toBeHidden();
 });
 
+test("coalesces rapid search typing while keeping the input and URL immediate", async ({ page }) => {
+  const mock = await mockLibrary(page);
+  await page.goto("/library/");
+  const search = page.getByLabel("Search library");
+  await expect(search).toBeVisible();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  const before = mock.catalogRequests.length;
+  for (const query of ["m", "me", "mem", "memo", "memor", "memory"]) {
+    await search.fill(query);
+    await expect(search).toHaveValue(query);
+  }
+  await expect(page).toHaveURL(/q=memory$/);
+  expect(mock.catalogRequests).toHaveLength(before);
+  await page.clock.runFor(250);
+  await expect.poll(() => mock.catalogRequests.length).toBe(before + 1);
+  expect(new URLSearchParams(mock.catalogRequests.at(-1)).get("q")).toBe("memory");
+  await expect(page.getByRole("link", { name: "Open Memory hierarchy" })).toBeVisible();
+});
+
+test("history navigation cancels a pending search before it reaches the server", async ({ page }) => {
+  const mock = await mockLibrary(page);
+  await page.goto("/library/?q=ready");
+  const search = page.getByLabel("Search library");
+  await expect(search).toHaveValue("ready");
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await search.fill("cancelled");
+  await page.goBack();
+  await expect(search).toHaveValue("ready");
+  await page.clock.runFor(250);
+  await expect(page.getByRole("link", { name: "Open Memory hierarchy" })).toBeVisible();
+  expect(mock.catalogRequests.some((query) => new URLSearchParams(query).get("q") === "cancelled")).toBe(false);
+});
+
 test("keeps the latest URL query when an older Library response resolves last", async ({ page }) => {
   const second = { ...item, id: "00000000-0000-4000-8000-000000000023", title: "Second query" };
   let delayedFirst: import("playwright/test").Route | undefined;

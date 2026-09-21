@@ -12,6 +12,7 @@ pnpm dev:codex
 # http://127.0.0.1:4280
 pnpm build && pnpm preview:codex # production out/ artifact, same API/auth chain
 pnpm validate:codex
+pnpm e2e:all # Chromium, Firefox and WebKit (install their Playwright binaries first)
 pnpm stop:codex
 ```
 
@@ -76,6 +77,10 @@ New Library items enter the first-review queue automatically. Rating an item sch
 Capture publishes image references, category, and tags in one immutable creation event. Existing split taxonomy events remain readable. If an event write has an uncertain outcome, uploaded media is retained for recovery rather than risking deletion of published files. Failed cleanup of superseded images also preserves the current replacement.
 
 Client reads time out after 30 seconds; writes and AI suggestions have 120 seconds. A timed-out write asks the owner to check the result before retrying.
+
+Library search waits for a 200 ms pause in typing before sending the query; the input and URL update immediately. Concurrent requests for the same cached image or ancestry check share one upstream read. Drive metadata is shared only while in flight, and move/trash operations detach older requests so later reads recheck access. The LRU cache tracks actual access order even within the same millisecond.
+
+Lifecycle integration tests use a temporary storage root instead of deleting the local Library. `INF_LOCAL_STORAGE_ROOT` can select an isolated root for local verification; normal Run continues to use `.codex/run/storage`. The local API host includes AI suggestion and image replacement routes; unconfigured AI returns an explicit 503 response.
 
 The PWA caches a bounded public read experience only. It does not queue offline writes, synchronize in the background, or make private content offline-safe.
 

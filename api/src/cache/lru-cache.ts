@@ -17,8 +17,6 @@ interface Entry<V> {
   value: V;
   /** Absolute expiry timestamp in milliseconds (clock-units returned by `now`). */
   expiresAt: number;
-  /** Last accessed timestamp in milliseconds, used for LRU ordering. */
-  touchedAt: number;
 }
 
 export class LruCache<V> {
@@ -46,7 +44,9 @@ export class LruCache<V> {
       this.misses += 1;
       return undefined;
     }
-    entry.touchedAt = this.now();
+    // Map insertion order remains precise even when accesses share a clock tick.
+    this.entries.delete(key);
+    this.entries.set(key, entry);
     this.hits += 1;
     return entry.value;
   }
@@ -54,7 +54,8 @@ export class LruCache<V> {
   set(key: string, value: V, ttlMs: number = this.defaultTtlMs): void {
     if (ttlMs <= 0) throw new Error("LruCache ttlMs must be positive.");
     const now = this.now();
-    this.entries.set(key, { value, expiresAt: now + ttlMs, touchedAt: now });
+    this.entries.delete(key);
+    this.entries.set(key, { value, expiresAt: now + ttlMs });
     this.evictIfOverCapacity();
   }
 
@@ -75,11 +76,7 @@ export class LruCache<V> {
 
   private evictIfOverCapacity(): void {
     if (this.entries.size <= this.maxEntries) return;
-    let oldestKey: string | undefined;
-    let oldestTouched = Number.POSITIVE_INFINITY;
-    for (const [key, entry] of this.entries) {
-      if (entry.touchedAt < oldestTouched) { oldestTouched = entry.touchedAt; oldestKey = key; }
-    }
+    const oldestKey = this.entries.keys().next().value;
     if (oldestKey !== undefined) this.entries.delete(oldestKey);
   }
 }

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./schema-runtime";
 
 export const UuidSchema = z.uuid();
 export const UtcDateTimeSchema = z.iso.datetime().regex(/Z$/, "Timestamp must use UTC Z notation");

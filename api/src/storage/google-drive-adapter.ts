@@ -90,6 +90,7 @@ export class GoogleDriveAdapter implements StoragePort {
   private readonly jitter: (baseMilliseconds: number) => number;
   private readonly now: () => number;
   private readonly window: number[] = [];
+  private readonly pendingMetadata = new Map<string, Promise<StoredFile>>();
 
   constructor(private readonly options: GoogleDriveAdapterOptions) {
     if (!options.publicRootId || !options.privateRootId || options.publicRootId === options.privateRootId) {
@@ -150,16 +151,18 @@ export class GoogleDriveAdapter implements StoragePort {
     if (current.parentIds.length !== 1 || current.parentIds[0] !== fromFolderId) throw new Error("Drive file does not have the requested current parent.");
     await this.requireFolder(fromFolderId);
     await this.requireFolder(toFolderId);
+    this.pendingMetadata.clear();
     const response = await this.retry(() => this.client.files.update({
       fileId, addParents: toFolderId, removeParents: fromFolderId, fields: metadataFields,
-    }));
+    })).finally(() => this.pendingMetadata.clear());
     const moved = this.requireDirectChild(response.data, toFolderId);
     if (moved.id !== fileId || moved.trashed) throw new Error("Drive move response did not confirm a live target file.");
   }
 
   async trashFile(fileId: string): Promise<void> {
     await this.requireFile(fileId);
-    const response = await this.retry(() => this.client.files.update({ fileId, requestBody: { trashed: true }, fields: metadataFields }));
+    this.pendingMetadata.clear();
+    const response = await this.retry(() => this.client.files.update({ fileId, requestBody: { trashed: true }, fields: metadataFields })).finally(() => this.pendingMetadata.clear());
     const trashed = this.toStored(response.data);
     if (trashed.id !== fileId || !trashed.trashed) throw new Error("Drive trash response did not confirm the requested trashed file.");
   }
@@ -231,6 +234,7 @@ export class GoogleDriveAdapter implements StoragePort {
       visited.add(current);
       const metadata = await this.metadata(current);
       first ??= metadata;
+      if (metadata.trashed) throw new Error("Drive file ancestry is trashed and cannot be used.");
       if (metadata.parentIds.length !== 1) throw new Error("Drive file ancestry is missing or ambiguous.");
       current = metadata.parentIds[0];
     }
@@ -238,10 +242,20 @@ export class GoogleDriveAdapter implements StoragePort {
   }
 
   private async metadata(fileId: string, root = false): Promise<StoredFile> {
-    const response = await this.retry(() => this.client.files.get({ fileId, fields: metadataFields }));
-    const file = this.toStored(response.data);
-    if (root && !this.roots.has(file.id)) throw new Error("Drive root is not configured.");
-    return file;
+    if (root && !this.roots.has(fileId)) throw new Error("Drive root is not configured.");
+    const existing = this.pendingMetadata.get(fileId);
+    if (existing) return existing;
+    // Share only in-flight metadata, never retain authorization data after the
+    // request finishes. Concurrent event reads share their common ancestors.
+    const pending = this.retry(() => this.client.files.get({ fileId, fields: metadataFields })).then((response) => {
+      const file = this.toStored(response.data);
+      if (file.id !== fileId) throw new Error("Drive metadata did not confirm the requested file.");
+      return file;
+    }).finally(() => {
+      if (this.pendingMetadata.get(fileId) === pending) this.pendingMetadata.delete(fileId);
+    });
+    this.pendingMetadata.set(fileId, pending);
+    return pending;
   }
 
   private async listDirect(parentId: string): Promise<StoredFile[]> {

@@ -48,6 +48,7 @@ function catalogUrl(value: LibraryFiltersValue, page: number) {
 }
 
 export function LibraryPage() {
+  const deferSearch = useRef(false);
   const [state, setState] = useState<LibraryState>("loading"); const [catalog, setCatalog] = useState<OwnerCatalogResponse | null>(null); const [filters, setFilters] = useState<LibraryFiltersValue>(defaultFilters); const [page, setPage] = useState(1); const [ready, setReady] = useState(false); const requestId = useRef(0); const activeRequest = useRef<AbortController | null>(null);
   const load = useCallback(async (nextFilters: LibraryFiltersValue, nextPage: number) => {
     const id = ++requestId.current; activeRequest.current?.abort(); const controller = new AbortController(); activeRequest.current = controller;
@@ -67,12 +68,21 @@ export function LibraryPage() {
       if (activeRequest.current === controller) activeRequest.current = null;
     }
   }, []);
-  useEffect(() => { const restore = () => { const parsed = parseFilters(); setFilters(parsed.filters); setPage(parsed.page); }; restore(); setReady(true); window.addEventListener("popstate", restore); return () => { requestId.current += 1; activeRequest.current?.abort(); activeRequest.current = null; window.removeEventListener("popstate", restore); }; }, []);
-  useEffect(() => { if (ready) void load(filters, page); }, [filters, page, load, ready]);
-  const updateFilters = useCallback((next: LibraryFiltersValue) => { setFilters(next); setPage(1); window.history.pushState(null, "", filterUrl(next, 1)); }, []);
+  useEffect(() => { const restore = () => { deferSearch.current = false; const parsed = parseFilters(); setFilters(parsed.filters); setPage(parsed.page); }; restore(); setReady(true); window.addEventListener("popstate", restore); return () => { requestId.current += 1; activeRequest.current?.abort(); activeRequest.current = null; window.removeEventListener("popstate", restore); }; }, []);
+  useEffect(() => {
+    if (!ready) return;
+    // Keep input immediate, but send only the settled query. Invalidate older
+    // responses immediately so they cannot render during the debounce window.
+    requestId.current += 1;
+    activeRequest.current?.abort();
+    const timer = setTimeout(() => { deferSearch.current = false; void load(filters, page); }, deferSearch.current ? 200 : 0);
+    return () => { clearTimeout(timer); requestId.current += 1; activeRequest.current?.abort(); };
+  }, [filters, page, load, ready]);
+  const updateFilters = useCallback((next: LibraryFiltersValue) => { deferSearch.current = next.q !== filters.q; setFilters(next); setPage(1); window.history.pushState(null, "", filterUrl(next, 1)); }, [filters.q]);
   const goToPage = useCallback((next: number) => {
     if (!catalog) return;
     if (next < 1 || next > catalog.totalPages || next === page) return;
+    deferSearch.current = false;
     setPage(next);
     window.history.pushState(null, "", filterUrl(filters, next));
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });

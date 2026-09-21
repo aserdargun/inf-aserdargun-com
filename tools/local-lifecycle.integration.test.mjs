@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { request as httpRequest } from "node:http";
-import { access, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
@@ -88,11 +90,11 @@ function assertSecurity(response, cache) {
 
 test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop reaps the loopback tree", { timeout: 120_000 }, async () => {
   await run(process.execPath, ["scripts/stop-local.mjs"]);
-  await rm(".codex/run/storage", { recursive: true, force: true });
+  const storageRoot = await mkdtemp(join(tmpdir(), "inf-lifecycle-storage-"));
   const beforeNextEnv = await readFile("next-env.d.ts", "utf8");
   const beforeStatus = (await execFile("git", ["status", "--porcelain", "--", "next-env.d.ts"])).stdout;
   const local = spawn(process.execPath, ["scripts/local-dev.mjs"], {
-    cwd: process.cwd(), env: { ...process.env, INF_LOCAL_SKIP_API_BUILD: "true" }, stdio: ["ignore", "pipe", "pipe"],
+    cwd: process.cwd(), env: { ...process.env, OPENAI_API_KEY: "", INF_LOCAL_STORAGE_ROOT: storageRoot, INF_LOCAL_SKIP_API_BUILD: "true" }, stdio: ["ignore", "pipe", "pipe"],
   });
   let localOutput = "";
   local.stdout.on("data", (chunk) => { localOutput += chunk; });
@@ -101,7 +103,9 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
     const owner = await waitFor(async () => {
       const response = await fetch("http://127.0.0.1:4280/api/session");
       return response.status === 200 ? response : undefined;
-    }, "owner session through SWA/proxy/functions");
+    }, "owner session through SWA/proxy/functions").catch((error) => {
+      throw new Error(`${error.message}\n${localOutput}`, { cause: error });
+    });
     assert.deepEqual(await owner.json(), { authenticated: true, owner: "aserdargun", mode: "local-bypass" });
     const direct = await fetch("http://127.0.0.1:7071/api/session");
     assert.equal(direct.status, 403);
@@ -126,6 +130,20 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
     const invalidQuery = await fetch("http://127.0.0.1:4280/api/infographics?favorite=maybe"); assert.equal(invalidQuery.status, 400);
     const detail = await fetch(`http://127.0.0.1:4280/api/infographics/${id}`); assert.equal(detail.status, 200);
     const item = await detail.json(); assert.equal(item.notes, "private route note");
+
+    // Exercise the real dispatcher, including routes otherwise mocked by UI tests.
+    for (const route of ["/api/infographics/suggest-metadata", `/api/infographics/${id}/suggest`]) {
+      const denied = await fetch(`http://127.0.0.1:7071${route}`, { method: "POST" });
+      assert.equal(denied.status, 403);
+      const available = await fetch(`http://127.0.0.1:4280${route}`, { method: "POST" });
+      assert.equal(available.status, 503, route);
+      assert.equal((await available.json()).code, "AI_NOT_CONFIGURED");
+      assertSecurity(available, /no-store/);
+    }
+    const replace = await fetch(`http://127.0.0.1:4280/api/infographics/${id}/image`, { method: "POST" });
+    assert.equal(replace.status, 400);
+    const deniedReplace = await fetch(`http://127.0.0.1:7071/api/infographics/${id}/image`, { method: "POST" });
+    assert.equal(deniedReplace.status, 403);
 
     const publicListResponse = await fetch("http://127.0.0.1:4280/api/public/infographics");
     assert.equal(publicListResponse.status, 200); assertSecurity(publicListResponse, /public/);
@@ -176,7 +194,7 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
   } finally {
     const stopped = await run(process.execPath, ["scripts/stop-local.mjs"]);
     assert.equal(stopped.code, 0, stopped.output);
-    await rm(".codex/run/storage", { recursive: true, force: true });
+    await rm(storageRoot, { recursive: true, force: true });
   }
   await Promise.race([
     new Promise((resolveExit) => {
@@ -191,5 +209,4 @@ test("real 4280 to 7072 to 7071 chain covers every compiled API family and Stop 
   await assert.rejects(access(".codex/run/staticwebapp.local.json"));
   assert.equal(await readFile("next-env.d.ts", "utf8"), beforeNextEnv);
   assert.equal((await execFile("git", ["status", "--porcelain", "--", "next-env.d.ts"])).stdout, beforeStatus);
-  await rm(".codex/run", { recursive: true, force: true });
 });

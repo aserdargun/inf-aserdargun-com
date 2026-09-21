@@ -1,7 +1,7 @@
 import http from "node:http";
 import { createRuntime } from "../api-dist/dist/index.js";
 import { publicGet, publicImage, publicList } from "../api-dist/dist/functions/public.js";
-import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSurprise, ownerSync } from "../api-dist/dist/functions/owner.js";
+import { ownerCapture, ownerDelete, ownerDueReview, ownerGet, ownerList, ownerPatch, ownerReplaceImage, ownerReview, ownerSeen, ownerSession, ownerSettingsHealth, ownerStats, ownerSuggestForInfographic, ownerSuggestMetadata, ownerSurprise, ownerSync } from "../api-dist/dist/functions/owner.js";
 
 const port = Number.parseInt(process.env.INF_LOCAL_FUNCTIONS_PORT ?? "7071", 10);
 const MAX_REQUEST_BYTES = 20 * 1024 * 1024;
@@ -16,9 +16,12 @@ function route(method, path) {
   if (method === "POST" && path === "/api/sync") return () => ownerSync;
   if (method === "GET" && path === "/api/infographics") return () => ownerList;
   if (method === "POST" && path === "/api/infographics") return () => ownerCapture;
+  if (method === "POST" && path === "/api/infographics/suggest-metadata") return () => ownerSuggestMetadata;
   if (method === "GET" && /^\/api\/infographics\/[^/]+$/.test(path)) return () => ownerGet;
   if (method === "PATCH" && /^\/api\/infographics\/[^/]+$/.test(path)) return () => ownerPatch;
   if (method === "DELETE" && /^\/api\/infographics\/[^/]+$/.test(path)) return () => ownerDelete;
+  if (method === "POST" && /^\/api\/infographics\/[^/]+\/image$/.test(path)) return () => ownerReplaceImage;
+  if (method === "POST" && /^\/api\/infographics\/[^/]+\/suggest$/.test(path)) return () => ownerSuggestForInfographic;
   if (method === "POST" && /^\/api\/infographics\/[^/]+\/seen$/.test(path)) return () => ownerSeen;
   if (method === "POST" && /^\/api\/infographics\/[^/]+\/reviews$/.test(path)) return () => ownerReview;
   if (method === "GET" && path === "/api/surprise") return () => ownerSurprise;

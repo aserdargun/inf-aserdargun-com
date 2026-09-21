@@ -111,7 +111,10 @@ test("View Mode exposes a local manifest, icons, and non-blocking service-worker
   expect(external).toEqual([]);
 });
 
-test("deployed worker replaces a stale release, refreshes View navigation, and falls back offline", async ({ page, context }) => {
+test("deployed worker replaces a stale release, refreshes View navigation, and falls back offline", async ({ page, context, browserName }) => {
+  // https://playwright.dev/docs/service-workers: worker network emulation is
+  // supported only on Chromium. Native registration checks still run everywhere.
+  test.skip(browserName !== "chromium", "Playwright service-worker network emulation requires Chromium.");
   await page.goto("/login/");
   await page.evaluate(async () => {
     const old = await caches.open("PUBLIC-CACHE-v1-static");

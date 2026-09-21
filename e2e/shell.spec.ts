@@ -255,7 +255,8 @@ test("shows loading, empty, error, and success Today states with exact copy", as
   await expect(page.locator(".today-empty")).toHaveAttribute("data-layout", "compact");
   await expect(page.locator(".today-empty svg.lucide-circle-check-big")).toHaveCount(1);
   const addBox = await page.getByRole("link", { name: "Add infographic" }).boundingBox();
-  expect(addBox?.height).toBeGreaterThanOrEqual(44);
+  // Firefox's protocol can report a CSS 44px box as 43.99998474121094.
+  expect(addBox?.height ?? 0).toBeGreaterThanOrEqual(44 - 0.001);
   for (const viewport of [{ width: 390, height: 844 }, { width: 820, height: 1180 }, { width: 1024, height: 768 }]) {
     await page.setViewportSize(viewport);
     await expectViewportAccessibility(page);

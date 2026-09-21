@@ -17,7 +17,8 @@ test("rejects a bottom-navigation target that cannot receive focus", async ({ pa
   await expect(expectFocusAboveBottomNavigation(page, page.getByRole("button"))).rejects.toThrow();
 });
 
-test("rejects a focused target outside the mobile 200 percent visual viewport", async ({ page }) => {
+test("rejects a focused target outside the mobile 200 percent visual viewport", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Page-scale emulation uses Chromium's CDP protocol.");
   await page.setViewportSize({ width: 390, height: 844 });
   const session = await page.context().newCDPSession(page);
   await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });

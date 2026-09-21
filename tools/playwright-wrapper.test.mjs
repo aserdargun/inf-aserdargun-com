@@ -19,10 +19,13 @@ async function ready() {
 test("Playwright-style SIGTERM delegates cleanup instead of orphaning the local tree", { timeout: 30_000 }, async () => {
   const beforeNextEnv = await readFile("next-env.d.ts", "utf8");
   const wrapper = spawn(process.execPath, ["scripts/playwright-local-server.mjs"], {
-    cwd: process.cwd(), env: { ...process.env, INF_LOCAL_SKIP_API_BUILD: "true" }, stdio: "ignore",
+    cwd: process.cwd(), env: { ...process.env, INF_LOCAL_SKIP_API_BUILD: "true" }, stdio: ["ignore", "pipe", "pipe"],
   });
+  let output = "";
+  wrapper.stdout.on("data", (chunk) => { output += chunk; });
+  wrapper.stderr.on("data", (chunk) => { output += chunk; });
   try {
-    await ready();
+    await ready().catch((error) => { throw new Error(`${error.message}\n${output}`, { cause: error }); });
     const exited = new Promise((resolveExit) => wrapper.once("exit", resolveExit));
     wrapper.kill("SIGTERM");
     const code = await Promise.race([

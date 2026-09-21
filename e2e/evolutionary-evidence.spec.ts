@@ -47,34 +47,34 @@ async function mockPublicEvidence(page: Page) {
   await page.route("**/api/public/images/**", (route) => route.fulfill({ body: image, contentType: "image/png" }));
 }
 
-test("captures owner Evolutionary 2.0 evidence", async ({ page }) => {
+test("captures owner Evolutionary 2.0 evidence", async ({ page, browserName }, testInfo) => {
   await mockOwnerEvidence(page);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/today/");
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await expectDecodedImage(page.getByRole("img", { name: ownerItem.title }).first());
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: "docs/design/evidence/owner-desktop.png" });
+  await page.screenshot({ path: browserName === "chromium" ? "docs/design/evidence/owner-desktop.png" : testInfo.outputPath("owner-desktop.png") });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/add/");
   await page.getByLabel("Choose infographic").setInputFiles({ name: "learning-loop.png", mimeType: "image/png", buffer: image });
   await expectDecodedImage(page.getByRole("img", { name: "Infographic preview" }));
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: "docs/design/evidence/owner-mobile.png" });
+  await page.screenshot({ path: browserName === "chromium" ? "docs/design/evidence/owner-mobile.png" : testInfo.outputPath("owner-mobile.png") });
 });
 
-test("captures public Evolutionary 2.0 evidence", async ({ page }) => {
+test("captures public Evolutionary 2.0 evidence", async ({ page, browserName }, testInfo) => {
   await mockPublicEvidence(page);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/view/");
   await expectDecodedImage(page.getByRole("img", { name: publicItem.title }));
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: "docs/design/evidence/public-desktop.png" });
+  await page.screenshot({ path: browserName === "chromium" ? "docs/design/evidence/public-desktop.png" : testInfo.outputPath("public-desktop.png") });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await expectDecodedImage(page.getByRole("img", { name: publicItem.title }));
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: "docs/design/evidence/public-mobile.png" });
+  await page.screenshot({ path: browserName === "chromium" ? "docs/design/evidence/public-mobile.png" : testInfo.outputPath("public-mobile.png") });
 });

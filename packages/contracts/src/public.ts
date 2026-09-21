@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./schema-runtime";
 
 // This entry point deliberately owns its primitives so anonymous bundles never
 // traverse the owner entity or API schema graph.

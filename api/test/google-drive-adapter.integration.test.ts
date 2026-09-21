@@ -58,6 +58,36 @@ function fakeDrive() {
 }
 
 describe("GoogleDriveAdapter mocked integration", () => {
+  test("coalesces common ancestor metadata during concurrent reads without retaining authorization", async () => {
+    const fake = fakeDrive();
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", sleep: async () => {} });
+    await Promise.all(Array.from({ length: 20 }, () => storage.readFile("image")));
+    expect(fake.getCalls.filter((call) => call.alt !== "media")).toHaveLength(3);
+    fake.files.get("nested")!.trashed = true;
+    await expect(storage.readFile("image")).rejects.toThrow(/trashed/);
+  });
+
+  test("rejects mismatched metadata IDs before reading media", async () => {
+    const fake = fakeDrive();
+    const get = fake.client.files.get;
+    fake.client.files.get = async (params) => params.fileId === "image"
+      ? { data: { ...fake.files.get("image"), id: "foreign" } as DriveFile }
+      : get(params);
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private" });
+    await expect(storage.readFile("image")).rejects.toThrow(/requested file/);
+    expect(fake.getCalls.some((call) => call.alt === "media")).toBe(false);
+  });
+
+  test("retries a new metadata request after a shared failure", async () => {
+    const fake = fakeDrive();
+    const file = fake.files.get("image")!;
+    fake.files.delete("image");
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private" });
+    const failed = await Promise.allSettled([storage.readFile("image"), storage.readFile("image")]);
+    expect(failed.every((result) => result.status === "rejected")).toBe(true);
+    fake.files.set("image", file);
+    expect(await storage.readFile("image")).toEqual(Buffer.from("image bytes"));
+  });
   test("uses root-constrained fully paginated Drive list queries and recursive property search", async () => {
     const fake = fakeDrive();
     const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", jitter: () => 0 });

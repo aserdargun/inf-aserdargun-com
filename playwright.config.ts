@@ -1,5 +1,9 @@
 import { defineConfig } from "playwright/test";
 
+const browsers: ("chromium" | "firefox" | "webkit")[] = process.env.INF_E2E_ALL_BROWSERS === "true"
+  ? ["chromium", "firefox", "webkit"]
+  : ["chromium"];
+
 export default defineConfig({
   testDir: "./e2e",
   use: { baseURL: "http://127.0.0.1:4280" },
@@ -11,5 +15,5 @@ export default defineConfig({
     gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
   },
   workers: 1,
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }]
+  projects: browsers.map((browserName) => ({ name: browserName, use: { browserName } }))
 });

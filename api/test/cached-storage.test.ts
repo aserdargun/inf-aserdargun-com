@@ -48,6 +48,58 @@ class FakeStorage implements StoragePort {
 }
 
 describe("CachedStorage", () => {
+  test("twenty simultaneous image and ancestry requests perform one underlying read each", async () => {
+    const inner = new FakeStorage();
+    inner.readResults.set("image", Buffer.from("image"));
+    inner.isDescendantResults.set("public:image", true);
+    const storage = new CachedStorage(inner, { descentTtlMs: 1000, fileTtlMs: 1000, descentMaxEntries: 16, fileMaxEntries: 16 });
+    const results = await Promise.all(Array.from({ length: 20 }, () => Promise.all([
+      storage.readFile("image"), storage.isDescendant("image", "public"),
+    ])));
+    expect(results.every(([bytes, allowed]) => bytes.equals(Buffer.from("image")) && allowed)).toBe(true);
+    expect(inner.readCalls).toEqual(["image"]);
+    expect(inner.descentCalls).toEqual([["image", "public"]]);
+  });
+
+  test("a failed shared request is removed so a retry can recover", async () => {
+    const inner = new FakeStorage();
+    const storage = new CachedStorage(inner, { descentTtlMs: 1000, fileTtlMs: 1000, descentMaxEntries: 16, fileMaxEntries: 16 });
+    const results = await Promise.allSettled([storage.readFile("image"), storage.readFile("image")]);
+    expect(results.every((result) => result.status === "rejected")).toBe(true);
+    inner.readResults.set("image", Buffer.from("recovered"));
+    expect(await storage.readFile("image")).toEqual(Buffer.from("recovered"));
+    expect(inner.readCalls).toHaveLength(2);
+  });
+
+  test("post-mutation reads do not join stale reads or let their cleanup remove a newer request", async () => {
+    const inner = new FakeStorage();
+    const releases: Array<(bytes: Buffer) => void> = [];
+    inner.readFile = async () => new Promise<Buffer>((resolve) => releases.push(resolve));
+    const storage = new CachedStorage(inner, { descentTtlMs: 1000, fileTtlMs: 1000, descentMaxEntries: 16, fileMaxEntries: 16 });
+    const before = storage.readFile("image");
+    await storage.trashFile("image");
+    const after = storage.readFile("image");
+    releases[0](Buffer.from("old")); await before;
+    const joined = storage.readFile("image");
+    expect(releases).toHaveLength(2);
+    releases[1](Buffer.from("new"));
+    expect(await after).toEqual(Buffer.from("new"));
+    expect(await joined).toEqual(Buffer.from("new"));
+    expect(await storage.readFile("image")).toEqual(Buffer.from("new"));
+  });
+
+  test("moving a parent stops new ancestry requests joining an older child check", async () => {
+    const inner = new FakeStorage();
+    let release!: (value: boolean) => void;
+    inner.isDescendant = () => new Promise((resolve) => { release = resolve; });
+    const storage = new CachedStorage(inner, { descentTtlMs: 1000, fileTtlMs: 1000, descentMaxEntries: 16, fileMaxEntries: 16 });
+    const before = storage.isDescendant("child", "public");
+    await storage.moveFile("parent", "public", "private");
+    inner.isDescendant = async () => false;
+    expect(await storage.isDescendant("child", "public")).toBe(false);
+    release(true); await before;
+    expect(await storage.isDescendant("child", "public")).toBe(false);
+  });
   test("caches isDescendant results and tracks hit ratio", async () => {
     const inner = new FakeStorage();
     inner.isDescendantResults.set("root:file-1", true);

@@ -26,6 +26,8 @@ export interface CachedStorageOptions {
 export class CachedStorage implements StoragePort {
   private readonly descent: LruCache<boolean>;
   private readonly files: LruCache<Buffer>;
+  private readonly pendingFiles = new Map<string, Promise<Buffer>>();
+  private readonly pendingDescent = new Map<string, Promise<boolean>>();
   private revision = 0;
 
   constructor(private readonly inner: StoragePort, options: CachedStorageOptions) {
@@ -39,10 +41,17 @@ export class CachedStorage implements StoragePort {
   async readFile(fileId: string): Promise<Buffer> {
     const cached = this.files.get(fileId);
     if (cached) return cached;
+    const existing = this.pendingFiles.get(fileId);
+    if (existing) return existing;
     const revision = this.revision;
-    const value = await this.inner.readFile(fileId);
-    if (revision === this.revision) this.files.set(fileId, value);
-    return value;
+    const pending = this.inner.readFile(fileId).then((value) => {
+      if (revision === this.revision) this.files.set(fileId, value);
+      return value;
+    }).finally(() => {
+      if (this.pendingFiles.get(fileId) === pending) this.pendingFiles.delete(fileId);
+    });
+    this.pendingFiles.set(fileId, pending);
+    return pending;
   }
 
   async createFile(input: CreateFileInput): Promise<StoredFile> {
@@ -71,10 +80,17 @@ export class CachedStorage implements StoragePort {
     const key = `desc:${rootId}:${fileId}`;
     const cached = this.descent.get(key);
     if (cached !== undefined) return cached;
+    const existing = this.pendingDescent.get(key);
+    if (existing) return existing;
     const revision = this.revision;
-    const value = await this.inner.isDescendant(fileId, rootId);
-    if (revision === this.revision) this.descent.set(key, value);
-    return value;
+    const pending = this.inner.isDescendant(fileId, rootId).then((value) => {
+      if (revision === this.revision) this.descent.set(key, value);
+      return value;
+    }).finally(() => {
+      if (this.pendingDescent.get(key) === pending) this.pendingDescent.delete(key);
+    });
+    this.pendingDescent.set(key, pending);
+    return pending;
   }
 
   /** Diagnostics for the few places that surface cache hit ratios. */
@@ -88,7 +104,9 @@ export class CachedStorage implements StoragePort {
   private invalidateForFile(fileId: string): void {
     this.revision += 1;
     this.files.delete(fileId);
+    this.pendingFiles.delete(fileId);
     // A moved folder can change the ancestry of every cached descendant.
     this.descent.clear();
+    this.pendingDescent.clear();
   }
 }
