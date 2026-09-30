@@ -16,6 +16,10 @@ coverage/
 .env
 .env.local
 .env.*.local
+# Any other real environment file: .env.production, exported .env.rtf notes.
+# The tracked template stays the only committable member of the family.
+.env*
+!.env.example
 client_secret*.json
 credentials*.json
 token*.json
