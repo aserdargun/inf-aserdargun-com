@@ -6,6 +6,13 @@ const folderMimeType = "application/vnd.google-apps.folder";
 const metadataFields = "id,name,mimeType,createdTime,parents,appProperties,trashed";
 const listFields = `nextPageToken,files(${metadataFields})`;
 const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+/**
+ * Drive reports quota exhaustion as `403` with one of these reasons, reserving
+ * `429` for its additional backend rate-limit checks. Retrying on the status
+ * alone would also retry genuine permission denials, which never recover, so
+ * the reason string is what makes a 403 transient.
+ */
+const rateLimitReasons = new Set(["rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "backendError"]);
 
 interface DriveClient {
   files: {
@@ -64,6 +71,44 @@ function asErrorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== "object") return undefined;
   const candidate = error as { code?: unknown; response?: { status?: unknown } };
   return typeof candidate.code === "number" ? candidate.code : typeof candidate.response?.status === "number" ? candidate.response.status : undefined;
+}
+
+/** Depth-limited search for a Drive error `reason`, which lives at a different depth per transport (Gaxios puts it under `response.data.error.errors[].reason`). */
+function findReason(value: unknown, depth: number): string | undefined {
+  if (depth > 5 || !value || typeof value !== "object") return undefined;
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = findReason(entry, depth + 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.reason === "string") return record.reason;
+  for (const key of ["response", "errors", "error", "data", "body"]) {
+    const found = findReason(record[key], depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function asErrorReason(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  return findReason(error, 0);
+}
+
+/**
+ * A transient Drive failure is retryable. Statuses 429/5xx always are. A 403 is
+ * only retried when its reason is a rate limit: the catalog fan-out routinely
+ * crosses Drive's per-user quota, and treating that as fatal turned a slow
+ * dependency into a 500 for every concurrent reader.
+ */
+function isRetryableFailure(error: unknown): boolean {
+  const status = asErrorStatus(error) ?? -1;
+  if (retryableStatuses.has(status)) return true;
+  if (status !== 403) return false;
+  const reason = asErrorReason(error);
+  return reason !== undefined && rateLimitReasons.has(reason);
 }
 
 function assertString(value: unknown, field: string): string {
@@ -311,11 +356,13 @@ export class GoogleDriveAdapter implements StoragePort {
   }
 
   private async retry<T>(operation: () => Promise<T>): Promise<T> {
-    const delays = [250, 500, 1000];
+    // Four bounded attempts: enough to ride out a rate-limit window without ever
+    // approaching the Static Web Apps 45s managed-API ceiling.
+    const delays = [250, 500, 1000, 2000];
     for (let attempt = 0; ; attempt += 1) {
       await this.throttle();
       try { return await operation(); } catch (error) {
-        if (attempt >= delays.length || !retryableStatuses.has(asErrorStatus(error) ?? -1)) throw error;
+        if (attempt >= delays.length || !isRetryableFailure(error)) throw error;
         await this.sleep(delays[attempt] + this.jitter(delays[attempt]));
       }
     }

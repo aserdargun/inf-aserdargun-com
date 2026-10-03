@@ -57,6 +57,14 @@ function fakeDrive() {
   return { client, listCalls, getCalls, files };
 }
 
+/** Shape of a Drive quota rejection: HTTP 403 whose `reason` marks it as a rate limit. */
+function rateLimited(reason = "rateLimitExceeded") {
+  return Object.assign(new Error("Rate Limit Exceeded"), {
+    code: 403,
+    response: { status: 403, data: { error: { errors: [{ domain: "usageLimits", reason }], code: 403, message: "Rate Limit Exceeded" } } },
+  });
+}
+
 describe("GoogleDriveAdapter mocked integration", () => {
   test("coalesces common ancestor metadata during concurrent reads without retaining authorization", async () => {
     const fake = fakeDrive();
@@ -130,6 +138,44 @@ describe("GoogleDriveAdapter mocked integration", () => {
     fake.client.files.get = async () => { throw Object.assign(new Error("forbidden"), { code: 403 }); };
     await expect(storage.listChildren("inbox")).rejects.toThrow("forbidden");
     expect(delays).toEqual([250, 500, 1000]);
+  });
+
+  test("retries a 403 that carries a Drive rate-limit reason but not a permission denial", async () => {
+    const fake = fakeDrive();
+    const originalGet = fake.client.files.get;
+    let attempts = 0;
+    fake.client.files.get = async (params: Record<string, unknown>) => {
+      if (params.fileId === "inbox" && ++attempts < 3) throw rateLimited();
+      return originalGet(params);
+    };
+    const delays: number[] = [];
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", jitter: () => 0, sleep: async (ms) => { delays.push(ms); } });
+    await expect(storage.listChildren("inbox")).resolves.toHaveLength(1);
+    expect(attempts).toBe(3);
+    expect(delays).toEqual([250, 500]);
+  });
+
+  test("still fails fast on a 403 permission denial, with or without an unknown reason", async () => {
+    const fake = fakeDrive();
+    const delays: number[] = [];
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", jitter: () => 0, sleep: async (ms) => { delays.push(ms); } });
+
+    fake.client.files.get = async () => { throw Object.assign(new Error("insufficient permissions"), { code: 403, response: { data: { error: { errors: [{ reason: "insufficientFilePermissions" }] } } } }); };
+    await expect(storage.listChildren("inbox")).rejects.toThrow("insufficient permissions");
+    expect(delays).toEqual([]);
+
+    fake.client.files.get = async () => { throw Object.assign(new Error("forbidden"), { code: 403 }); };
+    await expect(storage.listChildren("inbox")).rejects.toThrow("forbidden");
+    expect(delays).toEqual([]);
+  });
+
+  test("exhausts a bounded retry budget for a sustained rate limit", async () => {
+    const fake = fakeDrive();
+    fake.client.files.get = async () => { throw rateLimited(); };
+    const delays: number[] = [];
+    const storage = new GoogleDriveAdapter({ client: fake.client, publicRootId: "public", privateRootId: "private", jitter: () => 0, sleep: async (ms) => { delays.push(ms); } });
+    await expect(storage.listChildren("inbox")).rejects.toThrow("Rate Limit Exceeded");
+    expect(delays).toEqual([250, 500, 1000, 2000]);
   });
 
   test("uploads fresh readable byte streams under one generated ID and recovers a 409 indeterminate success", async () => {

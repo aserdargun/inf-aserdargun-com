@@ -10,8 +10,11 @@ export { CachedEventStore, type CachedEventStoreOptions } from "./cached-event-s
  *      becomes visible within one read.
  *   - `readAllTtlMs=30s` keeps a public render consistent while a writer sees
  *      their own change on the next request.
+ *   - `maxStaleMs=300s` bounds how long a failed event fold may keep serving the
+ *      previous snapshot. Without it a Drive rate-limit window failed every
+ *      concurrent reader of the public gallery at once.
  */
 export const DEFAULT_CACHE_TTLS = {
   storage: { descentTtlMs: 60_000, fileTtlMs: 300_000, descentMaxEntries: 4_096, fileMaxEntries: 1_024 },
-  events: { readAllTtlMs: 30_000, maxEntries: 1 },
+  events: { readAllTtlMs: 30_000, maxEntries: 1, maxStaleMs: 300_000 },
 } as const;
